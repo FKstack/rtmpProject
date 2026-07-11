@@ -1,0 +1,54 @@
+﻿# =========================
+# Visual Studio
+# =========================
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# =========================
+# CMake build directories
+# =========================
+out/
+build/
+cmake-build-*/
+
+# CMake generated files
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+install_manifest.txt
+CTestTestfile.cmake
+Makefile
+compile_commands.json
+
+# Local CMake user configuration
+CMakeUserPresets.json
+
+# =========================
+# MSVC generated files
+# =========================
+*.obj
+*.pch
+*.pdb
+*.ilk
+*.idb
+*.tlog
+*.lastbuildstate
+*.exp
+
+# =========================
+# Qt Creator local files
+# =========================
+*.pro.user
+*.pro.user.*
+.qtc_clangd/
+.qtc_*/
+
+# =========================
+# Operating system files
+# =========================
+.DS_Store
+Thumbs.db
+Desktop.ini
