@@ -52,3 +52,7 @@ CMakeUserPresets.json
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Local test media
+test_data/
+*.mp4
