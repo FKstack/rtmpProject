@@ -4,10 +4,13 @@
 #include <QApplication>
 #include <QDebug>
 #include <QDir>
+#include <QEventLoop>
 #include <QFile>
 #include <QFrame>
 #include <QGridLayout>
+#include <QObject>
 #include <QTemporaryDir>
+#include <QTimer>
 
 #include "app/StyleLoader.h"
 #include "core/Singleton.h"
@@ -158,6 +161,65 @@ int main(int argc, char *argv[])
                     QStringLiteral("视频格子必须声明供 QSS 使用的 styleRole。"))) {
             return EXIT_FAILURE;
         }
+    }
+
+    auto *firstWidget = grid.videoWidgetAt(0);
+    auto *lastWidget = grid.videoWidgetAt(3);
+    auto *firstSurface = firstWidget->findChild<QFrame *>(QStringLiteral("videoSurface"));
+    auto *lastSurface = lastWidget->findChild<QFrame *>(QStringLiteral("videoSurface"));
+    firstWidget->setDeviceName(QStringLiteral("source-device"));
+    firstWidget->setStatusText(QStringLiteral("source-status"));
+    lastWidget->setDeviceName(QStringLiteral("target-device"));
+    lastWidget->setStatusText(QStringLiteral("target-status"));
+
+    if (!expect(!grid.swapVideoWidgets(-1, 0) &&
+                    !grid.swapVideoWidgets(0, grid.videoWidgetCount()) &&
+                    !grid.swapVideoWidgets(0, 0),
+                QStringLiteral("越界或相同索引的交换请求必须被拒绝。"))) {
+        return EXIT_FAILURE;
+    }
+
+    bool animationFinished = false;
+    QEventLoop animationLoop;
+    QTimer animationTimeout;
+    animationTimeout.setSingleShot(true);
+    QObject::connect(&grid, &VideoGridWidget::videoWidgetsSwapped, &animationLoop,
+                     [&animationFinished, &animationLoop](int firstIndex, int secondIndex) {
+                         animationFinished = firstIndex == 0 && secondIndex == 3;
+                         animationLoop.quit();
+                     });
+    QObject::connect(&animationTimeout, &QTimer::timeout, &animationLoop, &QEventLoop::quit);
+
+    if (!expect(grid.swapVideoWidgets(0, 3),
+                QStringLiteral("有效槽位交换应成功启动动画。")) ||
+        !expect(!grid.swapVideoWidgets(0, 1),
+                QStringLiteral("动画进行中必须拒绝新的交换请求。"))) {
+        return EXIT_FAILURE;
+    }
+
+    animationTimeout.start(1000);
+    animationLoop.exec();
+    animationTimeout.stop();
+
+    if (!expect(animationFinished, QStringLiteral("交换动画未在预期时间内完成。")) ||
+        !expect(grid.videoWidgetAt(0) == lastWidget && grid.videoWidgetAt(3) == firstWidget,
+                QStringLiteral("交换后两个槽位必须指向对方原有的 VideoWidget 对象。")) ||
+        !expect(grid.videoWidgetAt(0)->deviceName() == QStringLiteral("target-device") &&
+                    grid.videoWidgetAt(0)->statusText() == QStringLiteral("target-status") &&
+                    grid.videoWidgetAt(3)->deviceName() == QStringLiteral("source-device") &&
+                    grid.videoWidgetAt(3)->statusText() == QStringLiteral("source-status"),
+                QStringLiteral("标题和状态文本必须随实际 VideoWidget 对象移动。")) ||
+        !expect(grid.videoWidgetAt(0)->findChild<QFrame *>(QStringLiteral("videoSurface")) ==
+                    lastSurface &&
+                    grid.videoWidgetAt(3)->findChild<QFrame *>(QStringLiteral("videoSurface")) ==
+                        firstSurface,
+                QStringLiteral("视频区域子控件必须随实际 VideoWidget 对象移动。")) ||
+        !expect(firstWidget->isVisible() && lastWidget->isVisible() &&
+                    firstWidget->isDragEnabled() && lastWidget->isDragEnabled(),
+                QStringLiteral("动画结束后视频格应恢复可见且允许再次拖拽。")) ||
+        !expect(grid.layout()->count() == 4,
+                QStringLiteral("交换后网格布局仍应包含四个视频格。"))) {
+        return EXIT_FAILURE;
     }
 
     return EXIT_SUCCESS;

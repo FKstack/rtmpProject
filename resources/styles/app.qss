@@ -1,6 +1,6 @@
 QFrame[styleRole="videoWidget"] {
     background-color: #202020;
-    border: 1px solid #4a4a4a;
+    border: 2px solid #4a4a4a;
 }
 
 QFrame[styleRole="videoWidget"] QLabel#deviceNameLabel {
@@ -15,4 +15,19 @@ QFrame[styleRole="videoWidget"] QFrame#videoSurface {
 
 QFrame[styleRole="videoWidget"] QLabel#statusLabel {
     color: #bdbdbd;
+}
+
+QFrame[styleRole="videoWidget"][dragState="pressed"] {
+    background-color: #263847;
+    border-color: #4db8ff;
+}
+
+QFrame[styleRole="videoWidget"][dragState="dragSource"] {
+    background-color: #18242d;
+    border-color: #2f88c5;
+}
+
+QFrame[styleRole="videoWidget"][dragState="dragTarget"] {
+    background-color: #1f3a4b;
+    border: 2px dashed #72caff;
 }

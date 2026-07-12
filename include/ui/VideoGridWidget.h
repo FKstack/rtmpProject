@@ -4,6 +4,9 @@
 
 #include <QWidget>
 
+class QLabel;
+class QGridLayout;
+class QParallelAnimationGroup;
 class VideoWidget;
 
 /**
@@ -16,6 +19,8 @@ class VideoWidget;
  */
 class VideoGridWidget final : public QWidget
 {
+    Q_OBJECT
+
 public:
     /** @brief 当前固定布局中的视频格数量。 */
     static constexpr int kVideoWidgetCount = 4;
@@ -46,6 +51,39 @@ public:
      */
     [[nodiscard]] VideoWidget *videoWidgetAt(int index) const noexcept;
 
+    /**
+     * @brief 交换两个固定槽位中的实际 VideoWidget 对象。
+     *
+     * 该方法先更新布局与槽位映射，再使用两个控件快照执行双向位移动画。因此设备名称、
+     * 状态、视频区域和后续播放器绑定会作为同一对象整体移动。
+     *
+     * @param firstIndex 第一个从 0 开始的槽位索引。
+     * @param secondIndex 第二个从 0 开始的槽位索引。
+     * @return 成功启动交换动画时返回 true；索引无效、索引相同或已有动画时返回 false。
+     * @thread 必须在 Qt UI 线程中调用。
+     */
+    bool swapVideoWidgets(int firstIndex, int secondIndex);
+
+signals:
+    /**
+     * @brief 在两个视频格的交换动画完成后发出。
+     *
+     * @param firstIndex 交换前的第一个槽位索引。
+     * @param secondIndex 交换前的第二个槽位索引。
+     * @thread 在 Qt UI 线程中发出。
+     */
+    void videoWidgetsSwapped(int firstIndex, int secondIndex);
+
 private:
+    static constexpr int kColumnCount = 2;
+
+    void handleSwapRequested(VideoWidget *source, VideoWidget *target);
+    [[nodiscard]] int indexOf(const VideoWidget *videoWidget) const noexcept;
+    void setDragEnabledForAll(bool enabled);
+    [[nodiscard]] QLabel *createSnapshotOverlay(VideoWidget *videoWidget);
+
     std::array<VideoWidget *, kVideoWidgetCount> videoWidgets_{};
+    QGridLayout *gridLayout_ = nullptr;
+    QParallelAnimationGroup *swapAnimation_ = nullptr;
+    bool swapAnimationInProgress_ = false;
 };

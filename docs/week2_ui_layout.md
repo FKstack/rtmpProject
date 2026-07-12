@@ -7,6 +7,7 @@
 - 保留 Qt 6 Widgets、CMake、MSVC、C++17 的工程基础。
 - 在 `MainWindow` 中显示固定 2x2 视频宫格。
 - 每个视频格显示设备名称、连接状态和黑色视频占位区域。
+- 支持拖拽一个视频格到另一个视频格，以动画方式交换两个实际控件的位置。
 - 不接入 FFmpeg、RTMP、H.264、线程或真实视频帧。
 
 这一步的定位是先稳定 UI 结构。后续接入解码器时，只需要把 `VideoWidget` 的黑色视频区域替换为真实视频渲染逻辑，不需要重写窗口或网格布局。
@@ -72,6 +73,7 @@ MainWindow
 - 中间提供可扩展的黑色视频区域。
 - 在黑色视频区域中央显示状态文本。
 - 提供后续播放器可调用的基础接口。
+- 识别左键点击、拖拽源和拖拽目标，但不自行决定网格布局交换。
 
 当前公开接口：
 
@@ -80,11 +82,14 @@ void setDeviceName(const QString &deviceName);
 void setStatusText(const QString &statusText);
 QString deviceName() const;
 QString statusText() const;
+bool isDragEnabled() const noexcept;
 ```
 
 初始默认值是“未命名设备”和“未连接”。`VideoGridWidget` 创建具体设备格后，将它们设置为 `camera001` 到 `camera004`。
 
 黑色视频区域采用独立的 `QFrame`，其背景、边框和文字颜色由应用启动时加载的 `resources/styles/app.qss` 控制。`VideoWidget` 通过 `styleRole="videoWidget"` 与稳定的控件对象名暴露 QSS 选择器边界。这样后续可以在此位置增加 `QLabel/QImage` 显示、`paintEvent`，或替换为 `QOpenGLWidget`，不会影响设备标题和状态文本的布局。
+
+为了保证鼠标操作由最外层视频格统一接收，设备名称、视频区域和状态标签均设置为 `WA_TransparentForMouseEvents`。视频格内部使用 `application/x-rtmp-monitor-video-widget` MIME 类型标识同进程拖放，只有另一个 `VideoWidget` 才能成为有效目标。
 
 ### 3.2 `VideoGridWidget`
 
@@ -101,7 +106,31 @@ QString statusText() const;
 
 布局对两个行和两个列均设置了相同的 stretch，因此主窗口缩放时四个视频格会同步扩展。`videoWidgetAt(int)` 提供了按索引获取格子的入口，便于下一阶段将播放器实例绑定到指定设备格。
 
-### 3.3 `MainWindow`
+新增的 `swapVideoWidgets(int firstIndex, int secondIndex)` 交换的是 `videoWidgets_` 槽位数组和 `QGridLayout` 中的实际 `VideoWidget` 对象，不是复制设备名称或状态字符串。因此一个视频格内部的 `titleLabel_`、`videoSurface_`、`statusLabel_`，以及未来的解码帧、播放器控制器绑定都会作为同一对象整体移动。动画结束后发出 `videoWidgetsSwapped(int, int)`，供后续设备配置持久化模块订阅。
+
+### 3.3 拖拽交互与交换动画
+
+拖拽流程如下：
+
+```text
+左键按下
+  -> dragState=pressed，显示短暂蓝色高亮
+  -> 鼠标移动超过 QApplication::startDragDistance()
+  -> 创建 QDrag 和视频格快照
+  -> 拖入另一个 VideoWidget
+  -> 目标 dragState=dragTarget，显示蓝色虚线边框
+  -> 松开鼠标
+  -> VideoGridWidget 接收 swapRequested
+  -> 禁用所有视频格拖拽并交换真实控件槽位
+  -> 两张交换前快照以 220ms OutCubic 曲线双向移动
+  -> 删除快照、显示真实控件、恢复拖拽
+```
+
+不能直接对 `QGridLayout` 管理的真实控件做几何动画，因为布局会在事件循环中重设控件位置，导致动画抖动或被覆盖。当前实现使用 `VideoWidget::grab()` 创建两个鼠标穿透的 `QLabel` 快照覆盖层：真实控件先完成布局交换并临时隐藏，覆盖层负责视觉移动，动画结束后才重新显示真实控件。
+
+动画期间 `VideoGridWidget` 拒绝新的交换请求，避免多个拖放同时修改 `videoWidgets_` 映射。当前仅支持固定 2x2 网格中的两个槽位互换，不支持插入排序、跨窗口拖放或 9/16 宫格。
+
+### 3.4 `MainWindow`
 
 `MainWindow` 保持原有标题和初始尺寸 `1280x720`。它不再创建普通空 `QWidget`，而是将 `VideoGridWidget` 设为中央控件：
 
@@ -135,6 +164,8 @@ rtmp_monitor_ui_smoke_test
 
 同时启用 CTest，并新增 `rtmp_monitor_ui_smoke_test`。该测试没有引入 Qt Test 模块，只依赖现有的 Qt Widgets，因此保持当前依赖最小化。构建应用后，CMake 会将 `app.qss` 复制到可执行文件同级的 `styles/` 目录；外部文件缺失时应用自动回退 QRC 内置样式。
 
+`app.qss` 额外定义 `dragState="pressed"`、`dragSource` 和 `dragTarget` 的样式。所有状态都保持 2 像素边框宽度，避免拖入或点击时因边框尺寸变化导致布局抖动。
+
 ## 5. 自动化测试内容
 
 `tests/VideoGridSmokeTest.cpp` 会创建 `QApplication` 和 `VideoGridWidget`，然后验证：
@@ -145,6 +176,9 @@ rtmp_monitor_ui_smoke_test
 4. 每个格子的初始状态都是“未连接”。
 5. 每个格子都存在名为 `videoSurface` 的视频占位区域，并声明供 QSS 使用的 `styleRole`。
 6. `StyleLoader` 保持单例语义，支持外部 QSS 优先、QRC 回退和不可读外部文件回退。
+7. 槽位 0 与槽位 3 交换后，实际 `VideoWidget` 指针、标题、状态和 `videoSurface` 子控件都会随对象移动。
+8. 相同索引、越界索引和动画进行中的第二个交换请求都会被拒绝。
+9. 动画完成后四个视频格保持可见、可再次拖拽，网格布局仍包含四个控件。
 
 ## 6. 本次验证结果
 
@@ -186,6 +220,8 @@ ctest --test-dir "$env:TEMP\rtmp-monitor-week2-check" `
 1/1 Test #1: rtmp_monitor_ui_smoke_test ... Passed
 100% tests passed, 0 tests failed
 ```
+
+本次拖拽换位改造在同一 MSVC 和 Qt 环境下重新构建并通过 CTest。手工验收时，可将 `camera001` 拖到 `camera004`：点击应有短暂蓝色高亮，拖入目标应有虚线提示，松开后两张快照交叉移动，动画结束后两个完整视频格互换位置。
 
 ## 7. 本次未实现内容
 

@@ -1,9 +1,16 @@
 #pragma once
 
 #include <QFrame>
+#include <QPoint>
 #include <QString>
 
+class QDragEnterEvent;
+class QDragLeaveEvent;
+class QDragMoveEvent;
+class QDropEvent;
 class QLabel;
+class QMouseEvent;
+class VideoGridWidget;
 
 /**
  * @brief 单路设备视频的显示槽位。
@@ -15,6 +22,8 @@ class QLabel;
  */
 class VideoWidget final : public QFrame
 {
+    Q_OBJECT
+
 public:
     /**
      * @brief 创建带有标题、状态文本和黑色视频区域的视频格。
@@ -58,8 +67,58 @@ public:
      */
     [[nodiscard]] QString statusText() const;
 
+    /**
+     * @brief 判断当前视频格是否允许发起或接收拖拽。
+     *
+     * 交换动画期间由 VideoGridWidget 临时关闭拖拽，防止第二次拖放干扰尚未完成的
+     * 布局动画。
+     *
+     * @return 允许拖拽时返回 true。
+     * @thread 必须在 Qt UI 线程中调用。
+     */
+    [[nodiscard]] bool isDragEnabled() const noexcept;
+
+signals:
+    /**
+     * @brief 请求将源视频格与当前目标视频格交换。
+     *
+     * VideoWidget 只负责识别拖放目标，实际槽位交换与动画由 VideoGridWidget 统一处理。
+     *
+     * @param source 正在拖拽的源视频格。
+     * @param target 接收拖放的目标视频格。
+     * @thread 在 Qt UI 线程中发出。
+     */
+    void swapRequested(VideoWidget *source, VideoWidget *target);
+
+protected:
+    void mousePressEvent(QMouseEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
+    void mouseReleaseEvent(QMouseEvent *event) override;
+    void dragEnterEvent(QDragEnterEvent *event) override;
+    void dragMoveEvent(QDragMoveEvent *event) override;
+    void dragLeaveEvent(QDragLeaveEvent *event) override;
+    void dropEvent(QDropEvent *event) override;
+
 private:
+    enum class DragState {
+        Idle,
+        Pressed,
+        DragSource,
+        DragTarget,
+    };
+
+    void startDrag();
+    void setDragEnabled(bool enabled);
+    void setDragState(DragState state);
+    void refreshStyle();
+
+    friend class VideoGridWidget;
+
     QLabel *titleLabel_ = nullptr;
     QFrame *videoSurface_ = nullptr;
     QLabel *statusLabel_ = nullptr;
+    QPoint dragStartPosition_;
+    DragState dragState_ = DragState::Idle;
+    bool dragEnabled_ = true;
+    bool mousePressed_ = false;
 };
