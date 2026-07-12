@@ -32,6 +32,37 @@ endif()
 
 qt_standard_project_setup()
 
+set(RTMP_MONITOR_APP_SOURCES
+    include/core/Singleton.h
+    include/app/StyleLoader.h
+    src/app/StyleLoader.cpp
+)
+
+set(RTMP_MONITOR_STYLE_RESOURCE
+    resources/styles.qrc
+)
+
+qt_add_library(rtmp_monitor_app STATIC
+    ${RTMP_MONITOR_APP_SOURCES}
+)
+
+target_include_directories(rtmp_monitor_app
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+target_link_libraries(rtmp_monitor_app
+    PUBLIC
+        Qt6::Widgets
+)
+
+target_compile_options(rtmp_monitor_app
+    PRIVATE
+        /Zc:__cplusplus
+        /utf-8
+)
+
+# 将可复用的 UI 组合为独立静态库，使图形程序和冒烟测试共享同一份实现。
 set(RTMP_MONITOR_UI_SOURCES
     include/ui/VideoWidget.h
     src/ui/VideoWidget.cpp
@@ -64,10 +95,12 @@ qt_add_executable(rtmp_monitor
     src/main.cpp
     include/ui/MainWindow.h
     src/ui/MainWindow.cpp
+    ${RTMP_MONITOR_STYLE_RESOURCE}
 )
 
 target_link_libraries(rtmp_monitor
     PRIVATE
+        rtmp_monitor_app
         rtmp_monitor_ui
 )
 
@@ -80,12 +113,15 @@ target_compile_options(rtmp_monitor
 include(CTest)
 
 if(BUILD_TESTING)
+    # 冒烟测试只链接 UI 库，避免测试目标意外依赖后续播放器或网络模块。
     qt_add_executable(rtmp_monitor_ui_smoke_test
         tests/VideoGridSmokeTest.cpp
+        ${RTMP_MONITOR_STYLE_RESOURCE}
     )
 
     target_link_libraries(rtmp_monitor_ui_smoke_test
         PRIVATE
+            rtmp_monitor_app
             rtmp_monitor_ui
     )
 
@@ -100,7 +136,19 @@ endif()
 
 include(GNUInstallDirs)
 
+add_custom_command(TARGET rtmp_monitor POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:rtmp_monitor>/styles"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/resources/styles/app.qss"
+        "$<TARGET_FILE_DIR:rtmp_monitor>/styles/app.qss"
+    VERBATIM
+)
+
 install(TARGETS rtmp_monitor
     BUNDLE DESTINATION .
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+
+install(FILES resources/styles/app.qss
+    DESTINATION ${CMAKE_INSTALL_BINDIR}/styles
 )

@@ -1,0 +1,18 @@
+QFrame[styleRole="videoWidget"] {
+    background-color: #202020;
+    border: 1px solid #4a4a4a;
+}
+
+QFrame[styleRole="videoWidget"] QLabel#deviceNameLabel {
+    color: #f0f0f0;
+    font-weight: 600;
+}
+
+QFrame[styleRole="videoWidget"] QFrame#videoSurface {
+    background-color: #000000;
+    border: none;
+}
+
+QFrame[styleRole="videoWidget"] QLabel#statusLabel {
+    color: #bdbdbd;
+}

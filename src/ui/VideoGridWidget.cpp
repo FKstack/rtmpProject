@@ -10,6 +10,7 @@
 VideoGridWidget::VideoGridWidget(QWidget *parent)
     : QWidget(parent)
 {
+    // 第二周固定为 2x2，先验证布局和单路槽位边界，动态宫格留到设备管理模块完成后处理。
     auto *gridLayout = new QGridLayout(this);
     gridLayout->setContentsMargins(12, 12, 12, 12);
     gridLayout->setSpacing(12);
@@ -17,6 +18,7 @@ VideoGridWidget::VideoGridWidget(QWidget *parent)
     for (int index = 0; index < kVideoWidgetCount; ++index) {
         auto *videoWidget = new VideoWidget(this);
         videoWidget->setObjectName(QStringLiteral("videoWidget%1").arg(index + 1));
+        // 设备名称从 1 开始展示，避免将内部 0 基索引暴露给用户界面。
         videoWidget->setDeviceName(
             QStringLiteral("camera%1").arg(index + 1, 3, 10, QLatin1Char('0'))
         );

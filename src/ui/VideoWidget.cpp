@@ -1,7 +1,6 @@
 #include "ui/VideoWidget.h"
 
 #include <QLabel>
-#include <QPalette>
 #include <QSizePolicy>
 #include <QVBoxLayout>
 
@@ -12,6 +11,8 @@ VideoWidget::VideoWidget(QWidget *parent)
     setFrameShadow(QFrame::Plain);
     setMinimumSize(240, 160);
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    // 该属性是应用级 QSS 的稳定边界，避免视频格样式泄漏到后续其他 QFrame 控件。
+    setProperty("styleRole", "videoWidget");
 
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(8, 8, 8, 8);
@@ -20,15 +21,11 @@ VideoWidget::VideoWidget(QWidget *parent)
     titleLabel_ = new QLabel(this);
     titleLabel_->setObjectName(QStringLiteral("deviceNameLabel"));
 
+    // 将视频区域与标题、状态文本分离，后续可替换为 QImage 或 OpenGL 渲染而不改变外层布局。
     videoSurface_ = new QFrame(this);
     videoSurface_->setObjectName(QStringLiteral("videoSurface"));
     videoSurface_->setFrameShape(QFrame::NoFrame);
-    videoSurface_->setAutoFillBackground(true);
     videoSurface_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-
-    QPalette surfacePalette = videoSurface_->palette();
-    surfacePalette.setColor(QPalette::Window, Qt::black);
-    videoSurface_->setPalette(surfacePalette);
 
     auto *surfaceLayout = new QVBoxLayout(videoSurface_);
     surfaceLayout->setContentsMargins(12, 12, 12, 12);
@@ -41,13 +38,6 @@ VideoWidget::VideoWidget(QWidget *parent)
     surfaceLayout->addWidget(statusLabel_);
     layout->addWidget(titleLabel_);
     layout->addWidget(videoSurface_, 1);
-
-    setStyleSheet(
-        "QFrame { background-color: #202020; border: 1px solid #4a4a4a; }"
-        "QLabel#deviceNameLabel { color: #f0f0f0; font-weight: 600; }"
-        "QFrame#videoSurface { background-color: #000000; border: none; }"
-        "QLabel#statusLabel { color: #bdbdbd; }"
-    );
 
     setDeviceName(tr("未命名设备"));
     setStatusText(tr("未连接"));

@@ -19,10 +19,24 @@ include/ui/
 ├── VideoGridWidget.h             # 新增：管理固定 2x2 网格
 └── VideoWidget.h                 # 新增：单路视频格 UI
 
+include/app/
+└── StyleLoader.h                  # 应用级 QSS 加载服务
+
+include/core/
+└── Singleton.h                    # 通用 CRTP 单例模板
+
 src/ui/
 ├── MainWindow.cpp                # 修改：中央控件改为 VideoGridWidget
 ├── VideoGridWidget.cpp           # 新增：创建四个 VideoWidget
 └── VideoWidget.cpp               # 新增：设备名、状态和黑色视频占位区
+
+src/app/
+└── StyleLoader.cpp                # 外部 QSS 与 QRC 回退加载逻辑
+
+resources/
+├── styles/
+│   └── app.qss                    # 默认应用样式
+└── styles.qrc                     # QRC 资源映射
 
 tests/
 └── VideoGridSmokeTest.cpp        # 新增：2x2 网格冒烟测试
@@ -70,7 +84,7 @@ QString statusText() const;
 
 初始默认值是“未命名设备”和“未连接”。`VideoGridWidget` 创建具体设备格后，将它们设置为 `camera001` 到 `camera004`。
 
-黑色视频区域采用独立的 `QFrame`，并使用 `QPalette::Window` 设置为黑色。这样后续可以在此位置增加 `QLabel/QImage` 显示、`paintEvent`，或替换为 `QOpenGLWidget`，不会影响设备标题和状态文本的布局。
+黑色视频区域采用独立的 `QFrame`，其背景、边框和文字颜色由应用启动时加载的 `resources/styles/app.qss` 控制。`VideoWidget` 通过 `styleRole="videoWidget"` 与稳定的控件对象名暴露 QSS 选择器边界。这样后续可以在此位置增加 `QLabel/QImage` 显示、`paintEvent`，或替换为 `QOpenGLWidget`，不会影响设备标题和状态文本的布局。
 
 ### 3.2 `VideoGridWidget`
 
@@ -105,16 +119,21 @@ rtmp_monitor_ui
   ├── VideoWidget
   └── VideoGridWidget
 
+rtmp_monitor_app
+  └── StyleLoader
+
 rtmp_monitor
   ├── main.cpp
   ├── MainWindow
-  └── 链接 rtmp_monitor_ui
+  ├── 编译 styles.qrc
+  └── 链接 rtmp_monitor_ui 和 rtmp_monitor_app
 
 rtmp_monitor_ui_smoke_test
-  └── 链接 rtmp_monitor_ui
+  ├── 编译 styles.qrc
+  └── 链接 rtmp_monitor_ui 和 rtmp_monitor_app
 ```
 
-同时启用 CTest，并新增 `rtmp_monitor_ui_smoke_test`。该测试没有引入 Qt Test 模块，只依赖现有的 Qt Widgets，因此保持当前依赖最小化。
+同时启用 CTest，并新增 `rtmp_monitor_ui_smoke_test`。该测试没有引入 Qt Test 模块，只依赖现有的 Qt Widgets，因此保持当前依赖最小化。构建应用后，CMake 会将 `app.qss` 复制到可执行文件同级的 `styles/` 目录；外部文件缺失时应用自动回退 QRC 内置样式。
 
 ## 5. 自动化测试内容
 
@@ -124,7 +143,8 @@ rtmp_monitor_ui_smoke_test
 2. `QGridLayout` 中恰好有 4 个控件。
 3. 四个设备名称依次是 `camera001` 到 `camera004`。
 4. 每个格子的初始状态都是“未连接”。
-5. 每个格子都存在名为 `videoSurface` 的视频占位区域，且背景色为黑色。
+5. 每个格子都存在名为 `videoSurface` 的视频占位区域，并声明供 QSS 使用的 `styleRole`。
+6. `StyleLoader` 保持单例语义，支持外部 QSS 优先、QRC 回退和不可读外部文件回退。
 
 ## 6. 本次验证结果
 

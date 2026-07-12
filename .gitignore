@@ -54,5 +54,7 @@ Thumbs.db
 Desktop.ini
 
 # Local test media
+# RTMP 验证脚本默认从 testdata/test.mp4 读取测试视频。
+testdata/
 test_data/
 *.mp4
