@@ -1,48 +1,100 @@
 # RtmpMonitor
 
-RtmpMonitor 是一个面向 Windows PC 的多路嵌入式摄像头实时预览软件。嵌入式设备将 H.264 视频通过 RTMP 推送到流媒体服务器；PC 端后续将使用 Qt + FFmpeg 拉流、解码，并以多宫格方式显示画面。
+RtmpMonitor 是一个面向 Windows PC 的多路嵌入式摄像头监控客户端。目标链路是：嵌入式设备主动推送 H.264/RTMP，PC 端使用 FFmpeg 拉流解码，并通过 Qt Widgets 在一个窗口中显示多路实时画面。
 
-项目采用渐进式路线：先验证 RTMP 基础链路，再完成 Qt UI 框架，最后接入 FFmpeg 一路播放与多路解码。完整设计见 [项目规划](docs/project_plan.md)。
+项目采用渐进式实现：先用 nginx-rtmp 或 SRS 验证推流链路，再完成可维护的多路 UI 框架，随后接入一路 FFmpeg 播放并扩展多路解码。完整路线见 [项目规划](docs/project_plan.md)。
 
-## 当前进度
+## 当前状态
 
-| 阶段 | 状态 | 当前产出 |
-| --- | --- | --- |
-| 第 1 周：RTMP 推流链路验证 | 已完成 | `nginx-rtmp` + FFmpeg + ffplay 验证脚本及使用文档。 |
-| 第 2 周：Qt 2x2 多宫格布局 | 已完成 | `MainWindow`、`VideoWidget`、`VideoGridWidget`、CTests 冒烟测试。 |
-| QSS 样式加载 | 已完成 | `Singleton<StyleLoader>`、外部 QSS 优先、QRC 回退和部署复制规则。 |
-| 第 3 周：一路 FFmpeg 播放 | 待开始 | RTMP 拉流、H.264 解码、QImage 显示。 |
+| 阶段 | 状态 | 已完成内容 |
+|---|:---:|---|
+| 第 1 周：RTMP 链路验证 | 已完成 | nginx-rtmp、FFmpeg、ffplay 验证脚本和排查文档 |
+| 第 2 周：Qt 多路 UI | 已完成 | 1～16 路动态网格、添加动画、拖拽交换、单路全屏 |
+| QSS 与工程规范 | 已完成 | 外部 QSS 优先、QRC 回退、代码和注释规范 |
+| 第 3 周：一路 FFmpeg 播放 | 待开始 | RTMP 拉流、H.264 解码、QImage 显示 |
 
-当前程序已经显示固定 2x2 视频格：`camera001` 至 `camera004`。每个格子包含设备名称、“未连接”状态和黑色视频占位区域；尚未接入 FFmpeg、RTMP、H.264 解码或真实视频帧。
+当前版本没有接入 FFmpeg 开发库，也不会播放真实 RTMP 画面。每个视频格中的黑色区域是后续唯一的视频渲染承载区。
+
+## 已实现功能
+
+- 程序启动时真实创建一个 `Camera 01` 视频窗口。
+- 点击顶部“添加视频窗口”，可逐个创建到 `Camera 16`。
+- 根据数量自动使用 1x1、1x2、2x2、2x3、3x3、3x4 或 4x4 布局。
+- 拖拽任意两个视频格，交换实际 `VideoWidget` 对象和逻辑顺序。
+- 添加和交换使用快照动画，不直接动画 `QGridLayout` 管理的真实控件。
+- 双击视频格进入单路全屏，支持双击、`Esc` 和控制栏按钮退出。
+- 全屏底部提供自动隐藏的 Overlay 控制栏，静音和截图暂为接口占位。
+- 添加、拖拽和全屏通过统一状态互斥，避免动画重入。
+- 使用 `StyleLoader` 统一加载外部或 QRC 内置 QSS。
+
+## 动态布局
+
+| 视频窗口数量 | 布局 |
+|---:|:---:|
+| 1 | 1x1 |
+| 2 | 1x2 |
+| 3～4 | 2x2 |
+| 5～6 | 2x3 |
+| 7～9 | 3x3 |
+| 10～12 | 3x4 |
+| 13～16 | 4x4 |
+
+达到 16 路后，添加动作会禁用，并通过工具提示和状态栏说明数量上限。本阶段尚未实现删除视频窗口。
+
+## 界面操作
+
+| 操作 | 结果 |
+|---|---|
+| 点击“添加视频窗口” | 创建一路新视频格并自动重排 |
+| 按住一个视频格并拖到另一个视频格 | 交换两个真实视频格的位置 |
+| 双击普通视频格 | 进入该路全屏预览 |
+| 全屏时双击或按 `Esc` | 退出全屏并恢复原网格位置 |
+| 点击全屏控制栏“退出全屏” | 退出全屏 |
+| 全屏时移动到屏幕底部 | 显示悬浮控制栏 |
+
+## 技术栈
+
+- C++17
+- Qt 6 Widgets
+- CMake 3.21+
+- MSVC / Visual Studio 2022
+- Qt Test / CTest
+- FFmpeg 命令行工具：当前用于 RTMP 链路验证
+- FFmpeg 开发库：计划在第三周接入
+- nginx-rtmp 或 SRS：外部 RTMP Server
 
 ## 项目结构
 
 ```text
 rtmpProject/
-├── CMakeLists.txt                   # Qt 6 / MSVC / CTest / 样式部署构建规则
-├── CMakePresets.json                # 可共享的 CMake 预设
+├── CMakeLists.txt
+├── CMakePresets.json
 ├── README.md
 ├── docs/
-│   ├── project_plan.md              # 整体项目规划
-│   ├── rtmp_chain_verification.md   # 第一阶段 RTMP 验证说明
-│   ├── week2_ui_layout.md           # 第二周 UI 布局说明
-│   ├── style_loading.md             # QSS 加载与部署说明
-│   └── comment_style_guide.md       # C++/Qt 注释规范
+│   ├── project_plan.md
+│   ├── rtmp_chain_verification.md
+│   ├── week2_ui_layout.md
+│   ├── week2_dynamic_grid.md
+│   ├── week2_drag_and_fullscreen.md
+│   ├── style_loading.md
+│   ├── code_style_guide.md
+│   └── comment_style_guide.md
 ├── include/
-│   ├── app/StyleLoader.h            # 应用级 QSS 加载服务
-│   ├── core/Singleton.h             # 通用 CRTP 单例模板
-│   └── ui/                          # MainWindow、视频格和网格控件声明
+│   ├── app/                         # 应用级服务接口
+│   ├── core/                        # 通用基础设施
+│   └── ui/                          # Qt Widgets 接口
 ├── resources/
-│   ├── styles/app.qss               # 默认应用样式
-│   └── styles.qrc                   # 内置样式资源映射
+│   ├── styles/app.qss
+│   └── styles.qrc
 ├── scripts/
-│   └── verify_rtmp_chain.ps1        # FFmpeg + nginx-rtmp 验证脚本
+│   └── verify_rtmp_chain.ps1
 ├── src/
-│   ├── app/StyleLoader.cpp
-│   ├── ui/                          # Qt Widgets 实现
+│   ├── app/
+│   ├── ui/
 │   └── main.cpp
 └── tests/
-    └── VideoGridSmokeTest.cpp       # UI、单例和样式加载冒烟测试
+    ├── VideoGridSmokeTest.cpp
+    └── VideoGridDynamicTest.cpp
 ```
 
 ## 环境要求
@@ -52,78 +104,83 @@ rtmpProject/
 - Windows 10/11 x64。
 - Visual Studio 2022，并安装“使用 C++ 的桌面开发”工作负载。
 - CMake 3.21 或更高版本。
-- Qt 6 的 MSVC x64 Kit；当前验证环境使用 `E:\QT6\6.6.1\msvc2019_64`。
+- Qt 6 MSVC x64 Kit。当前验证环境为 Qt 6.6.1 `msvc2019_64`。
 
-必须使用 MSVC 版 Qt。不要将 `mingw_64` 版 Qt 与 Visual Studio/MSVC 混用；工程会在配置阶段主动拒绝该组合。
+工程会拒绝 MinGW 编译器或 MinGW Qt Kit，不能把 MinGW Qt 库与 MSVC 混用。
 
-### 第 1 阶段 RTMP 链路验证
+### RTMP 验证工具
 
-- FFmpeg，且 `ffmpeg`、`ffplay`、`ffprobe` 已加入 `PATH`。
-- FFmpeg 支持 `libx264`、RTMP 协议和 FLV 封装。
-- nginx-rtmp，默认目录为 `E:\DevTools\nginx-rtmp`。
-- 本地测试视频默认路径为 `testdata\test.mp4`；该目录已被 Git 忽略，不提交测试媒体。
+- `ffmpeg`、`ffplay`、`ffprobe` 已加入 `PATH`。
+- FFmpeg 支持 H.264、RTMP 和 FLV。
+- nginx-rtmp 或 SRS。
+- 本地测试视频默认放在 `testdata/test.mp4`，该目录不会提交到 Git。
 
-## 构建、测试与运行
+## 构建与测试
 
-在 Visual Studio 2022 的“开发人员 PowerShell”中设置 Qt Kit：
+应在 Visual Studio Developer PowerShell 中构建。普通 PowerShell 如果没有初始化 MSVC 环境，Ninja 可能无法找到 C++ 标准库头文件。
 
-```powershell
-$env:QTDIR = "E:\QT6\6.6.1\msvc2019_64"
-```
-
-配置并构建：
+当前机器已经配置 `Qt-Debug` 用户预设时，执行：
 
 ```powershell
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH="$env:QTDIR" -DBUILD_TESTING=ON
-cmake --build build --config Debug
-```
-
-运行自动化测试：
-
-```powershell
-ctest --test-dir build -C Debug --output-on-failure
+cmake --preset Qt-Debug
+cmake --build out/build/debug
+ctest --test-dir out/build/debug --output-on-failure
 ```
 
 运行程序：
 
 ```powershell
-.\build\Debug\rtmp_monitor.exe
+./out/build/debug/rtmp_monitor.exe
 ```
 
-若从命令行运行时提示缺少 Qt DLL，可使用 Qt Kit `bin` 目录中的 `windeployqt.exe` 部署依赖，或从 Qt Creator 直接运行。
+新环境没有 `Qt-Debug` 用户预设时，可使用通用 Visual Studio Generator：
+
+```powershell
+$env:QTDIR = "E:\QT6\6.6.1\msvc2019_64"
+cmake -S . -B out/build/vs2022 `
+    -G "Visual Studio 17 2022" `
+    -A x64 `
+    -DCMAKE_PREFIX_PATH="$env:QTDIR" `
+    -DBUILD_TESTING=ON
+cmake --build out/build/vs2022 --config Debug
+ctest --test-dir out/build/vs2022 -C Debug --output-on-failure
+```
+
+当前自动化测试包括：
+
+| 测试目标 | 主要覆盖 |
+|---|---|
+| `rtmp_monitor_ui_smoke_test` | QSS、拖拽对象交换、全屏转移和恢复 |
+| `rtmp_monitor_dynamic_grid_test` | 1～16 路布局、数量上限、状态互斥和工具栏状态 |
 
 ## QSS 样式加载
 
-应用启动时由 `StyleLoader` 统一加载 QSS：
+应用启动时按以下优先级加载：
 
 ```text
 <可执行文件目录>/styles/app.qss
-  -> 外部样式优先，修改后重启应用生效
+  -> 外部样式优先，修改后重启生效
 :/styles/app.qss
-  -> 外部文件缺失或不可读时的内置 QRC 回退
+  -> 外部文件缺失或不可读时使用 QRC 回退
 ```
 
-构建目标后，CMake 会自动把 `resources/styles/app.qss` 复制到可执行文件同级 `styles/` 目录。QSS 选择器和扩展方式见 [QSS 样式加载说明](docs/style_loading.md)。
+CMake 构建后会把 `resources/styles/app.qss` 复制到可执行文件同级 `styles/`。选择器契约和主题扩展方式见 [QSS 样式加载说明](docs/style_loading.md)。
 
-## RTMP 链路快速验证
+## RTMP 链路验证
 
-在项目根目录执行环境检查：
+环境检查：
 
 ```powershell
-powershell `
-    -NoProfile `
-    -ExecutionPolicy Bypass `
-    -File ".\scripts\verify_rtmp_chain.ps1" `
+powershell -NoProfile -ExecutionPolicy Bypass `
+    -File ./scripts/verify_rtmp_chain.ps1 `
     -Action Check
 ```
 
-一键启动 nginx-rtmp、FFmpeg 推流和 ffplay 播放：
+启动 nginx-rtmp、FFmpeg 推流和 ffplay：
 
 ```powershell
-powershell `
-    -NoProfile `
-    -ExecutionPolicy Bypass `
-    -File ".\scripts\verify_rtmp_chain.ps1" `
+powershell -NoProfile -ExecutionPolicy Bypass `
+    -File ./scripts/verify_rtmp_chain.ps1 `
     -Action All
 ```
 
@@ -133,16 +190,33 @@ powershell `
 rtmp://127.0.0.1:1935/live/camera001
 ```
 
-脚本参数、nginx 配置、退出顺序和排查流程见 [RTMP 推流链路验证脚本说明](docs/rtmp_chain_verification.md)。
+详细参数和问题排查见 [RTMP 推流链路验证说明](docs/rtmp_chain_verification.md)。
+
+## 敏感配置
+
+当前项目不需要 OpenAI 或其他 AI 服务 API Key。开发过程中使用的 GPT/API 凭据不得写入源码、README、CMake、脚本或提交记录。
+
+安全要求：
+
+- API Key 只保存在操作系统环境变量、密钥管理器或被 Git 忽略的 `.env` 文件中。
+- 不在日志、截图、测试输出和 RTMP URL 中记录密钥或完整 token。
+- 可以提交 `.env.example`，但只能包含占位符，例如 `OPENAI_API_KEY=replace_me`。
+- 提交前使用 `git status` 和密钥扫描检查暂存区。
+- 如果密钥曾经提交过，仅删除文件不够，必须立即吊销并轮换该密钥。
+
+`.gitignore` 已排除 `.env`、本地凭据目录、私钥文件、日志、转储、构建目录和测试媒体。
 
 ## 下一步
 
-下一阶段实现一路 `FFmpegPlayer`：在工作线程拉取 RTMP、解码 H.264、转换为 `QImage`，并只通过 Qt 信号槽更新指定的 `VideoWidget`。UI 线程不会执行网络读取或解码操作。
+第三周计划实现一路 `FFmpegPlayer`：在工作线程打开 RTMP、解析并解码 H.264、转换为 `QImage`，通过 Qt 信号槽更新指定 `VideoWidget`。UI 线程不得执行网络读取或解码。
 
 ## 文档索引
 
 - [项目规划](docs/project_plan.md)
 - [第二周 UI 布局说明](docs/week2_ui_layout.md)
+- [动态视频网格详解](docs/week2_dynamic_grid.md)
+- [拖拽换位与单路全屏详解](docs/week2_drag_and_fullscreen.md)
 - [QSS 样式加载说明](docs/style_loading.md)
-- [RTMP 推流链路验证脚本说明](docs/rtmp_chain_verification.md)
+- [RTMP 推流链路验证说明](docs/rtmp_chain_verification.md)
+- [项目代码规范](docs/code_style_guide.md)
 - [注释规范](docs/comment_style_guide.md)

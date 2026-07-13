@@ -80,8 +80,9 @@ StyleLoader::instance().applyApplicationStyle(app);
 | --- | --- | --- |
 | 视频格根控件 | `QFrame[styleRole="videoWidget"]` | 背景和边框。 |
 | 设备名称 | `QLabel#deviceNameLabel` | 标题颜色和字重。 |
-| 视频占位区 | `QFrame#videoSurface` | 黑色视频背景。 |
+| 视频占位区 | `QFrame[styleRole="videoSurface"]` | 黑色视频背景，换 parent 后仍然生效。 |
 | 状态文本 | `QLabel#statusLabel` | 状态文字颜色。 |
+| 主工具栏 | `QToolBar#videoToolBar` | 添加动作及其禁用反馈。 |
 
 修改这些 `objectName` 或 `styleRole` 等同于修改 UI 样式 API，必须同步更新 QSS、测试和相关文档。新组件应使用自己的 `styleRole`，不要在 `app.qss` 中使用无范围的 `QFrame`、`QLabel` 全局选择器。
 
@@ -123,7 +124,8 @@ status_panel.qss
 本次在 MSVC 19.41、Qt 6.6.1 `msvc2019_64` 环境下完成配置与 Debug 构建，并通过 CTest：
 
 ```text
-1/1 Test #1: rtmp_monitor_ui_smoke_test ... Passed
+1/2 Test #1: rtmp_monitor_ui_smoke_test ... Passed
+2/2 Test #2: rtmp_monitor_dynamic_grid_test ... Passed
 100% tests passed, 0 tests failed
 ```
 
@@ -133,4 +135,5 @@ status_panel.qss
 - 外部样式缺失时从 QRC 回退。
 - 外部样式存在时优先加载。
 - 外部样式不可读时回退 QRC。
-- 2x2 视频网格、设备名称、初始状态和 `styleRole` 保持正确。
+- 1～16 路动态视频网格、设备名称、工具栏禁用状态和 `styleRole` 保持正确。
+- 拖拽状态、全屏控制栏和黑色视频区域的样式作用域保持隔离。

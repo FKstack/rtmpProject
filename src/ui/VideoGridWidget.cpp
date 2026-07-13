@@ -1,147 +1,377 @@
 #include "ui/VideoGridWidget.h"
 
-#include <cstddef>
 #include <utility>
 
 #include <QAbstractAnimation>
+#include <QEasingCurve>
+#include <QGraphicsOpacityEffect>
 #include <QGridLayout>
-#include <QLatin1Char>
 #include <QLabel>
 #include <QParallelAnimationGroup>
+#include <QPixmap>
 #include <QPropertyAnimation>
+#include <QSize>
 
 #include "ui/VideoWidget.h"
 
 namespace {
 
-constexpr int kSwapAnimationDurationMs = 220;
+constexpr int kLayoutAnimationDurationMs = 220;
+constexpr qreal kNewWidgetInitialScale = 0.85;
+
+struct CapturedWidget
+{
+    QPointer<VideoWidget> widget;
+    QRect geometry;
+    QPixmap pixmap;
+};
+
+struct WidgetAnimationItem
+{
+    QPointer<VideoWidget> widget;
+    QRect startGeometry;
+    QRect endGeometry;
+    QPointer<QLabel> snapshot;
+};
+
+/**
+ * @brief 以矩形中心为基准生成缩放后的矩形。
+ */
+QRect centeredScaledRect(const QRect &source, qreal scale)
+{
+    const QSize scaledSize(qRound(source.width() * scale),
+                           qRound(source.height() * scale));
+    QRect scaledRect(QPoint(), scaledSize);
+    scaledRect.moveCenter(source.center());
+    return scaledRect;
+}
 
 } // namespace
 
 VideoGridWidget::VideoGridWidget(QWidget *parent)
     : QWidget(parent)
 {
-    // 第二周固定为 2x2，先验证布局和单路槽位边界，动态宫格留到设备管理模块完成后处理。
     gridLayout_ = new QGridLayout(this);
     gridLayout_->setContentsMargins(12, 12, 12, 12);
     gridLayout_->setSpacing(12);
 
-    for (int index = 0; index < kVideoWidgetCount; ++index) {
-        auto *videoWidget = new VideoWidget(this);
-        videoWidget->setObjectName(QStringLiteral("videoWidget%1").arg(index + 1));
-        // 设备名称从 1 开始展示，避免将内部 0 基索引暴露给用户界面。
-        videoWidget->setDeviceName(
-            QStringLiteral("camera%1").arg(index + 1, 3, 10, QLatin1Char('0'))
-        );
-        videoWidget->setStatusText(tr("未连接"));
+    videoWidgets_.append(createVideoWidget());
+    relayoutVideoWidgets();
+}
 
-        gridLayout_->addWidget(videoWidget, index / kColumnCount, index % kColumnCount);
-        videoWidgets_[static_cast<std::size_t>(index)] = videoWidget;
-
-        connect(videoWidget, &VideoWidget::swapRequested,
-                this, &VideoGridWidget::handleSwapRequested);
-        connect(videoWidget, &VideoWidget::fullscreenRequested, this,
-                [this](VideoWidget *requestedVideoWidget) {
-                    if (!swapAnimationInProgress_) {
-                        emit fullscreenRequested(requestedVideoWidget);
-                    }
-                });
+GridDimensions VideoGridWidget::calculateGridDimensions(int widgetCount) noexcept
+{
+    if (widgetCount <= 0 || widgetCount > kMaximumVideoWidgetCount) {
+        return {};
     }
 
-    gridLayout_->setColumnStretch(0, 1);
-    gridLayout_->setColumnStretch(1, 1);
-    gridLayout_->setRowStretch(0, 1);
-    gridLayout_->setRowStretch(1, 1);
+    int columns = 1;
+    while (columns < kMaximumGridDimension && columns * columns < widgetCount) {
+        ++columns;
+    }
+
+    return {(widgetCount + columns - 1) / columns, columns};
+}
+
+GridDimensions VideoGridWidget::gridDimensions() const noexcept
+{
+    return calculateGridDimensions(videoWidgetCount());
 }
 
 int VideoGridWidget::videoWidgetCount() const noexcept
 {
-    return kVideoWidgetCount;
+    return videoWidgets_.size();
 }
 
 VideoWidget *VideoGridWidget::videoWidgetAt(int index) const noexcept
 {
-    if (index < 0 || index >= kVideoWidgetCount) {
+    if (index < 0 || index >= videoWidgets_.size()) {
         return nullptr;
     }
 
-    return videoWidgets_[static_cast<std::size_t>(index)];
+    return videoWidgets_.at(index);
+}
+
+bool VideoGridWidget::canAddVideoWidget() const noexcept
+{
+    return interactionState_ == GridInteractionState::Idle &&
+           videoWidgets_.size() < kMaximumVideoWidgetCount;
+}
+
+VideoGridWidget::GridInteractionState VideoGridWidget::interactionState() const noexcept
+{
+    return interactionState_;
+}
+
+VideoWidget *VideoGridWidget::addVideoWidget()
+{
+    if (!canAddVideoWidget()) {
+        if (videoWidgets_.size() >= kMaximumVideoWidgetCount) {
+            emit maximumVideoWidgetCountReached();
+        }
+        return nullptr;
+    }
+
+    setInteractionState(GridInteractionState::AddingWidget);
+
+    QVector<CapturedWidget> capturedWidgets;
+    capturedWidgets.reserve(videoWidgets_.size());
+    bool canAnimate = isVisible();
+    for (auto *videoWidget : std::as_const(videoWidgets_)) {
+        const QRect oldGeometry = videoWidget->geometry();
+        if (oldGeometry.isEmpty()) {
+            canAnimate = false;
+        }
+        capturedWidgets.append({videoWidget, oldGeometry, videoWidget->grab()});
+    }
+
+    auto *newVideoWidget = createVideoWidget();
+    videoWidgets_.append(newVideoWidget);
+    emit videoWidgetCountChanged(videoWidgets_.size());
+    if (videoWidgets_.size() == kMaximumVideoWidgetCount) {
+        emit maximumVideoWidgetCountReached();
+    }
+
+    relayoutVideoWidgets();
+    newVideoWidget->show();
+    gridLayout_->activate();
+
+    const QRect newWidgetTargetGeometry = newVideoWidget->geometry();
+    canAnimate = canAnimate && !newWidgetTargetGeometry.isEmpty();
+    for (const CapturedWidget &capturedWidget : std::as_const(capturedWidgets)) {
+        if (capturedWidget.widget == nullptr || capturedWidget.widget->geometry().isEmpty() ||
+            capturedWidget.pixmap.isNull()) {
+            canAnimate = false;
+            break;
+        }
+    }
+
+    if (!canAnimate) {
+        for (auto *videoWidget : std::as_const(videoWidgets_)) {
+            videoWidget->show();
+        }
+        setInteractionState(GridInteractionState::Idle);
+        emit videoWidgetAdded(newVideoWidget);
+        return newVideoWidget;
+    }
+
+    QVector<WidgetAnimationItem> animationItems;
+    animationItems.reserve(videoWidgets_.size());
+    for (const CapturedWidget &capturedWidget : std::as_const(capturedWidgets)) {
+        auto *snapshot = createSnapshotOverlay(capturedWidget.pixmap,
+                                               capturedWidget.geometry);
+        animationItems.append({capturedWidget.widget,
+                               capturedWidget.geometry,
+                               capturedWidget.widget->geometry(),
+                               snapshot});
+    }
+
+    const QPixmap newWidgetPixmap = newVideoWidget->grab();
+    const QRect newWidgetStartGeometry =
+        centeredScaledRect(newWidgetTargetGeometry, kNewWidgetInitialScale);
+    auto *newWidgetSnapshot = createSnapshotOverlay(newWidgetPixmap,
+                                                    newWidgetStartGeometry);
+    animationItems.append({newVideoWidget,
+                           newWidgetStartGeometry,
+                           newWidgetTargetGeometry,
+                           newWidgetSnapshot});
+
+    for (auto *videoWidget : std::as_const(videoWidgets_)) {
+        videoWidget->hide();
+    }
+
+    auto *animationGroup = new QParallelAnimationGroup(this);
+    interactionAnimation_ = animationGroup;
+
+    for (const WidgetAnimationItem &item : std::as_const(animationItems)) {
+        auto *geometryAnimation =
+            new QPropertyAnimation(item.snapshot, "geometry", animationGroup);
+        geometryAnimation->setDuration(kLayoutAnimationDurationMs);
+        geometryAnimation->setStartValue(item.startGeometry);
+        geometryAnimation->setEndValue(item.endGeometry);
+        geometryAnimation->setEasingCurve(QEasingCurve::OutCubic);
+    }
+
+    auto *opacityEffect = new QGraphicsOpacityEffect(newWidgetSnapshot);
+    opacityEffect->setOpacity(0.0);
+    newWidgetSnapshot->setGraphicsEffect(opacityEffect);
+    auto *opacityAnimation =
+        new QPropertyAnimation(opacityEffect, "opacity", animationGroup);
+    opacityAnimation->setDuration(kLayoutAnimationDurationMs);
+    opacityAnimation->setStartValue(0.0);
+    opacityAnimation->setEndValue(1.0);
+    opacityAnimation->setEasingCurve(QEasingCurve::OutCubic);
+
+    QPointer<VideoWidget> guardedNewWidget = newVideoWidget;
+    connect(animationGroup, &QParallelAnimationGroup::finished, this,
+            [this, animationGroup, animationItems, guardedNewWidget] {
+                if (interactionAnimation_ != animationGroup) {
+                    return;
+                }
+
+                for (const WidgetAnimationItem &item : animationItems) {
+                    if (item.snapshot != nullptr) {
+                        item.snapshot->deleteLater();
+                    }
+                    if (item.widget != nullptr) {
+                        item.widget->show();
+                    }
+                }
+
+                gridLayout_->activate();
+                interactionAnimation_ = nullptr;
+                setInteractionState(GridInteractionState::Idle);
+                if (guardedNewWidget != nullptr) {
+                    emit videoWidgetAdded(guardedNewWidget);
+                }
+            });
+
+    animationGroup->start(QAbstractAnimation::DeleteWhenStopped);
+    return newVideoWidget;
 }
 
 bool VideoGridWidget::isSwapAnimationInProgress() const noexcept
 {
-    return swapAnimationInProgress_;
+    return interactionState_ == GridInteractionState::SwappingWidgets;
 }
 
 bool VideoGridWidget::swapVideoWidgets(int firstIndex, int secondIndex)
 {
-    if (swapAnimationInProgress_ || firstIndex < 0 || secondIndex < 0 ||
-        firstIndex >= kVideoWidgetCount || secondIndex >= kVideoWidgetCount ||
-        firstIndex == secondIndex) {
+    if (interactionState_ != GridInteractionState::Idle || firstIndex < 0 ||
+        secondIndex < 0 || firstIndex >= videoWidgets_.size() ||
+        secondIndex >= videoWidgets_.size() || firstIndex == secondIndex) {
         return false;
     }
 
-    auto *firstWidget = videoWidgets_[static_cast<std::size_t>(firstIndex)];
-    auto *secondWidget = videoWidgets_[static_cast<std::size_t>(secondIndex)];
+    auto *firstWidget = videoWidgets_.at(firstIndex);
+    auto *secondWidget = videoWidgets_.at(secondIndex);
     const QRect firstGeometry = firstWidget->geometry();
     const QRect secondGeometry = secondWidget->geometry();
     if (firstGeometry.isEmpty() || secondGeometry.isEmpty()) {
         return false;
     }
 
-    // 快照先于布局调整创建，确保动画展示的是交换前的完整控件内容和视觉状态。
-    auto *firstOverlay = createSnapshotOverlay(firstWidget);
-    auto *secondOverlay = createSnapshotOverlay(secondWidget);
+    auto *firstOverlay = createSnapshotOverlay(firstWidget->grab(), firstGeometry);
+    auto *secondOverlay = createSnapshotOverlay(secondWidget->grab(), secondGeometry);
 
-    setDragEnabledForAll(false);
+    setInteractionState(GridInteractionState::SwappingWidgets);
     firstWidget->hide();
     secondWidget->hide();
 
-    gridLayout_->removeWidget(firstWidget);
-    gridLayout_->removeWidget(secondWidget);
-    std::swap(videoWidgets_[static_cast<std::size_t>(firstIndex)],
-              videoWidgets_[static_cast<std::size_t>(secondIndex)]);
-    gridLayout_->addWidget(secondWidget, firstIndex / kColumnCount, firstIndex % kColumnCount);
-    gridLayout_->addWidget(firstWidget, secondIndex / kColumnCount, secondIndex % kColumnCount);
-    gridLayout_->activate();
+    std::swap(videoWidgets_[firstIndex], videoWidgets_[secondIndex]);
+    relayoutVideoWidgets();
 
-    swapAnimationInProgress_ = true;
-    swapAnimation_ = new QParallelAnimationGroup(this);
+    auto *animationGroup = new QParallelAnimationGroup(this);
+    interactionAnimation_ = animationGroup;
 
-    auto *firstAnimation = new QPropertyAnimation(firstOverlay, "geometry", swapAnimation_);
-    firstAnimation->setDuration(kSwapAnimationDurationMs);
+    auto *firstAnimation = new QPropertyAnimation(firstOverlay, "geometry", animationGroup);
+    firstAnimation->setDuration(kLayoutAnimationDurationMs);
     firstAnimation->setStartValue(firstGeometry);
     firstAnimation->setEndValue(secondGeometry);
     firstAnimation->setEasingCurve(QEasingCurve::OutCubic);
 
-    auto *secondAnimation = new QPropertyAnimation(secondOverlay, "geometry", swapAnimation_);
-    secondAnimation->setDuration(kSwapAnimationDurationMs);
+    auto *secondAnimation = new QPropertyAnimation(secondOverlay, "geometry", animationGroup);
+    secondAnimation->setDuration(kLayoutAnimationDurationMs);
     secondAnimation->setStartValue(secondGeometry);
     secondAnimation->setEndValue(firstGeometry);
     secondAnimation->setEasingCurve(QEasingCurve::OutCubic);
 
-    auto *animation = swapAnimation_;
-    connect(animation, &QParallelAnimationGroup::finished, this,
-            [this, animation, firstWidget, secondWidget, firstOverlay, secondOverlay,
-             firstIndex, secondIndex] {
-                if (swapAnimation_ != animation) {
+    QPointer<VideoWidget> guardedFirstWidget = firstWidget;
+    QPointer<VideoWidget> guardedSecondWidget = secondWidget;
+    QPointer<QLabel> guardedFirstOverlay = firstOverlay;
+    QPointer<QLabel> guardedSecondOverlay = secondOverlay;
+    connect(animationGroup, &QParallelAnimationGroup::finished, this,
+            [this, animationGroup, guardedFirstWidget, guardedSecondWidget,
+             guardedFirstOverlay, guardedSecondOverlay, firstIndex, secondIndex] {
+                if (interactionAnimation_ != animationGroup) {
                     return;
                 }
 
-                firstOverlay->deleteLater();
-                secondOverlay->deleteLater();
-                firstWidget->show();
-                secondWidget->show();
-                gridLayout_->activate();
+                if (guardedFirstOverlay != nullptr) {
+                    guardedFirstOverlay->deleteLater();
+                }
+                if (guardedSecondOverlay != nullptr) {
+                    guardedSecondOverlay->deleteLater();
+                }
+                if (guardedFirstWidget != nullptr) {
+                    guardedFirstWidget->show();
+                }
+                if (guardedSecondWidget != nullptr) {
+                    guardedSecondWidget->show();
+                }
 
-                swapAnimationInProgress_ = false;
-                swapAnimation_ = nullptr;
-                setDragEnabledForAll(true);
+                gridLayout_->activate();
+                interactionAnimation_ = nullptr;
+                setInteractionState(GridInteractionState::Idle);
                 emit videoWidgetsSwapped(firstIndex, secondIndex);
             });
 
-    animation->start(QAbstractAnimation::DeleteWhenStopped);
+    animationGroup->start(QAbstractAnimation::DeleteWhenStopped);
     return true;
+}
+
+void VideoGridWidget::notifyFullscreenEntryResult(VideoWidget *videoWidget, bool entered)
+{
+    if (interactionState_ != GridInteractionState::EnteringFullscreen ||
+        fullscreenVideoWidget_ != videoWidget) {
+        return;
+    }
+
+    if (entered) {
+        setInteractionState(GridInteractionState::Fullscreen);
+        return;
+    }
+
+    fullscreenVideoWidget_ = nullptr;
+    setInteractionState(GridInteractionState::Idle);
+}
+
+void VideoGridWidget::notifyFullscreenExitStarted(VideoWidget *videoWidget)
+{
+    if (interactionState_ == GridInteractionState::Fullscreen &&
+        fullscreenVideoWidget_ == videoWidget) {
+        setInteractionState(GridInteractionState::ExitingFullscreen);
+    }
+}
+
+void VideoGridWidget::notifyFullscreenExited(VideoWidget *videoWidget)
+{
+    if (interactionState_ != GridInteractionState::Fullscreen &&
+        interactionState_ != GridInteractionState::ExitingFullscreen) {
+        return;
+    }
+
+    if (fullscreenVideoWidget_ != nullptr && videoWidget != nullptr &&
+        fullscreenVideoWidget_ != videoWidget) {
+        return;
+    }
+
+    fullscreenVideoWidget_ = nullptr;
+    setInteractionState(GridInteractionState::Idle);
+}
+
+VideoWidget *VideoGridWidget::createVideoWidget()
+{
+    auto *videoWidget = new VideoWidget(this);
+    const int cameraNumber = nextCameraNumber_++;
+    videoWidget->setObjectName(
+        QStringLiteral("videoWidget%1").arg(cameraNumber, 2, 10, QLatin1Char('0'))
+    );
+    videoWidget->setDeviceName(
+        QStringLiteral("Camera %1").arg(cameraNumber, 2, 10, QLatin1Char('0'))
+    );
+    videoWidget->setStatusText(tr("未连接"));
+    videoWidget->setDragEnabled(interactionState_ == GridInteractionState::Idle);
+    connectVideoWidgetSignals(videoWidget);
+    return videoWidget;
+}
+
+void VideoGridWidget::connectVideoWidgetSignals(VideoWidget *videoWidget)
+{
+    connect(videoWidget, &VideoWidget::swapRequested,
+            this, &VideoGridWidget::handleSwapRequested, Qt::UniqueConnection);
+    connect(videoWidget, &VideoWidget::fullscreenRequested,
+            this, &VideoGridWidget::handleFullscreenRequested, Qt::UniqueConnection);
 }
 
 void VideoGridWidget::handleSwapRequested(VideoWidget *source, VideoWidget *target)
@@ -153,29 +383,76 @@ void VideoGridWidget::handleSwapRequested(VideoWidget *source, VideoWidget *targ
     }
 }
 
-int VideoGridWidget::indexOf(const VideoWidget *videoWidget) const noexcept
+void VideoGridWidget::handleFullscreenRequested(VideoWidget *videoWidget)
 {
-    for (int index = 0; index < kVideoWidgetCount; ++index) {
-        if (videoWidgets_[static_cast<std::size_t>(index)] == videoWidget) {
-            return index;
-        }
+    if (interactionState_ != GridInteractionState::Idle || indexOf(videoWidget) < 0) {
+        return;
     }
 
-    return -1;
+    fullscreenVideoWidget_ = videoWidget;
+    setInteractionState(GridInteractionState::EnteringFullscreen);
+    emit fullscreenRequested(videoWidget);
+}
+
+int VideoGridWidget::indexOf(const VideoWidget *videoWidget) const noexcept
+{
+    return videoWidgets_.indexOf(const_cast<VideoWidget *>(videoWidget));
+}
+
+void VideoGridWidget::relayoutVideoWidgets()
+{
+    for (auto *videoWidget : std::as_const(videoWidgets_)) {
+        gridLayout_->removeWidget(videoWidget);
+    }
+
+    for (int index = 0; index < kMaximumGridDimension; ++index) {
+        gridLayout_->setRowStretch(index, 0);
+        gridLayout_->setColumnStretch(index, 0);
+    }
+
+    const GridDimensions dimensions = gridDimensions();
+    for (int index = 0; index < videoWidgets_.size(); ++index) {
+        gridLayout_->addWidget(videoWidgets_.at(index),
+                               index / dimensions.columns,
+                               index % dimensions.columns);
+    }
+
+    for (int row = 0; row < dimensions.rows; ++row) {
+        gridLayout_->setRowStretch(row, 1);
+    }
+    for (int column = 0; column < dimensions.columns; ++column) {
+        gridLayout_->setColumnStretch(column, 1);
+    }
+
+    gridLayout_->invalidate();
+    gridLayout_->activate();
+}
+
+void VideoGridWidget::setInteractionState(GridInteractionState state)
+{
+    if (interactionState_ == state) {
+        return;
+    }
+
+    interactionState_ = state;
+    setDragEnabledForAll(interactionState_ == GridInteractionState::Idle);
+    emit gridInteractionStateChanged(interactionState_);
 }
 
 void VideoGridWidget::setDragEnabledForAll(bool enabled)
 {
-    for (auto *videoWidget : videoWidgets_) {
+    for (auto *videoWidget : std::as_const(videoWidgets_)) {
         videoWidget->setDragEnabled(enabled);
     }
 }
 
-QLabel *VideoGridWidget::createSnapshotOverlay(VideoWidget *videoWidget)
+QLabel *VideoGridWidget::createSnapshotOverlay(const QPixmap &pixmap,
+                                               const QRect &geometry)
 {
     auto *overlay = new QLabel(this);
-    overlay->setPixmap(videoWidget->grab());
-    overlay->setGeometry(videoWidget->geometry());
+    overlay->setPixmap(pixmap);
+    overlay->setScaledContents(true);
+    overlay->setGeometry(geometry);
     overlay->setAttribute(Qt::WA_TransparentForMouseEvents);
     overlay->show();
     overlay->raise();

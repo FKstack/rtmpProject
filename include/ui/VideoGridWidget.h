@@ -1,19 +1,30 @@
 #pragma once
 
-#include <array>
-
+#include <QPointer>
+#include <QRect>
+#include <QVector>
 #include <QWidget>
 
 class QLabel;
 class QGridLayout;
 class QParallelAnimationGroup;
+class QPixmap;
 class VideoWidget;
 
 /**
- * @brief 固定 2x2 布局的多路视频容器。
+ * @brief 动态视频网格的行列数量。
+ */
+struct GridDimensions
+{
+    int rows {};
+    int columns {};
+};
+
+/**
+ * @brief 管理 1～16 个视频格的动态网格容器。
  *
- * 当前版本创建四个 VideoWidget，分别对应 camera001 到 camera004。该类拥有
- * 所有视频格，调用方只能借用 videoWidgetAt() 返回的指针，不能释放它们。
+ * 该类拥有全部 VideoWidget，并以 videoWidgets_ 的顺序作为设备与视觉槽位的唯一
+ * 映射。添加、交换和全屏切换通过统一状态互斥，避免多个布局事务并发修改控件树。
  *
  * @thread 仅允许在 Qt UI 线程中创建和访问。
  */
@@ -22,11 +33,24 @@ class VideoGridWidget final : public QWidget
     Q_OBJECT
 
 public:
-    /** @brief 当前固定布局中的视频格数量。 */
-    static constexpr int kVideoWidgetCount = 4;
+    /**
+     * @brief 网格当前允许执行的交互状态。
+     */
+    enum class GridInteractionState {
+        Idle,
+        AddingWidget,
+        SwappingWidgets,
+        EnteringFullscreen,
+        Fullscreen,
+        ExitingFullscreen,
+    };
+    Q_ENUM(GridInteractionState)
+
+    /** @brief 网格允许同时管理的视频格上限。 */
+    static constexpr int kMaximumVideoWidgetCount = 16;
 
     /**
-     * @brief 创建固定的 2x2 视频网格。
+     * @brief 创建默认包含一个视频格的动态网格。
      *
      * @param parent Qt 父对象；创建的视频格由该网格及其布局管理。
      * @thread 必须在 Qt UI 线程中调用。
@@ -34,17 +58,36 @@ public:
     explicit VideoGridWidget(QWidget *parent = nullptr);
 
     /**
+     * @brief 计算指定视频数量对应的行列。
+     *
+     * 结果在 1～16 范围内尽量接近正方形，并优先减少空白槽位。输入不在有效
+     * 范围时返回 {0, 0}。
+     *
+     * @param widgetCount 要排列的视频格数量。
+     * @return 对应的网格行列。
+     */
+    [[nodiscard]] static GridDimensions calculateGridDimensions(int widgetCount) noexcept;
+
+    /**
+     * @brief 获取当前网格实际使用的行列。
+     *
+     * @return 当前视频数量对应的网格行列。
+     * @thread 必须在 Qt UI 线程中调用。
+     */
+    [[nodiscard]] GridDimensions gridDimensions() const noexcept;
+
+    /**
      * @brief 获取当前网格中的视频格数量。
      *
-     * @return 固定布局中的视频格数量。
+     * @return 已真实创建并由网格管理的视频格数量。
      * @thread 必须在 Qt UI 线程中调用。
      */
     [[nodiscard]] int videoWidgetCount() const noexcept;
 
     /**
-     * @brief 获取指定索引对应的视频显示槽位。
+     * @brief 获取指定逻辑索引对应的视频显示槽位。
      *
-     * @param index 从 0 开始的网格索引。
+     * @param index 从 0 开始的逻辑及视觉索引。
      * @return 对应的 VideoWidget；索引越界时返回 nullptr。
      * @note 返回的指针由 VideoGridWidget 管理，调用方不得释放。
      * @thread 必须在 Qt UI 线程中调用。
@@ -52,56 +95,129 @@ public:
     [[nodiscard]] VideoWidget *videoWidgetAt(int index) const noexcept;
 
     /**
+     * @brief 判断当前是否允许添加新的视频格。
+     *
+     * 只有空闲状态且当前数量小于 16 时允许添加。
+     *
+     * @return 可以立即添加时返回 true。
+     * @thread 必须在 Qt UI 线程中调用。
+     */
+    [[nodiscard]] bool canAddVideoWidget() const noexcept;
+
+    /**
+     * @brief 获取网格当前交互状态。
+     *
+     * @return 当前添加、交换或全屏协调状态。
+     * @thread 必须在 Qt UI 线程中调用。
+     */
+    [[nodiscard]] GridInteractionState interactionState() const noexcept;
+
+    /**
+     * @brief 创建并添加一个新的视频格。
+     *
+     * 新控件会获得唯一的 Camera 编号、完整的拖拽与全屏信号连接，并通过快照
+     * 动画加入动态布局。动画或全屏期间的重复请求会被忽略。
+     *
+     * @return 成功创建的视频格；达到上限或当前不可添加时返回 nullptr。
+     * @note 返回的指针由 VideoGridWidget 管理，调用方不得释放。
+     * @thread 必须在 Qt UI 线程中调用。
+     */
+    VideoWidget *addVideoWidget();
+
+    /**
      * @brief 判断是否正在执行视频格交换动画。
      *
-     * 全屏预览在交换动画完成前不得转移视频区域，否则布局快照与真实控件状态会冲突。
-     *
-     * @return 正在交换时返回 true。
+     * @return 当前状态为 SwappingWidgets 时返回 true。
      * @thread 必须在 Qt UI 线程中调用。
      */
     [[nodiscard]] bool isSwapAnimationInProgress() const noexcept;
 
     /**
-     * @brief 交换两个固定槽位中的实际 VideoWidget 对象。
+     * @brief 交换两个逻辑槽位中的实际 VideoWidget 对象。
      *
-     * 该方法先更新布局与槽位映射，再使用两个控件快照执行双向位移动画。因此设备名称、
-     * 状态、视频区域和后续播放器绑定会作为同一对象整体移动。
+     * 该方法先更新逻辑顺序和动态布局，再使用两个控件快照执行双向位移动画。
      *
      * @param firstIndex 第一个从 0 开始的槽位索引。
      * @param secondIndex 第二个从 0 开始的槽位索引。
-     * @return 成功启动交换动画时返回 true；索引无效、索引相同或已有动画时返回 false。
+     * @return 成功启动交换动画时返回 true；索引无效或网格非空闲时返回 false。
      * @thread 必须在 Qt UI 线程中调用。
      */
     bool swapVideoWidgets(int firstIndex, int secondIndex);
 
+    /**
+     * @brief 接收 MainWindow 对全屏进入请求的处理结果。
+     *
+     * @param videoWidget 此次请求对应的视频格。
+     * @param entered FullscreenVideoWindow 是否成功进入全屏。
+     * @thread 必须在 Qt UI 线程中调用。
+     */
+    void notifyFullscreenEntryResult(VideoWidget *videoWidget, bool entered);
+
+    /**
+     * @brief 通知网格全屏窗口已经开始退出。
+     *
+     * @param videoWidget 正在恢复的视频格。
+     * @thread 必须在 Qt UI 线程中调用。
+     */
+    void notifyFullscreenExitStarted(VideoWidget *videoWidget);
+
+    /**
+     * @brief 通知网格全屏视频区域已经完成恢复。
+     *
+     * @param videoWidget 已恢复的视频格；源控件提前销毁时可以为 nullptr。
+     * @thread 必须在 Qt UI 线程中调用。
+     */
+    void notifyFullscreenExited(VideoWidget *videoWidget);
+
 signals:
+    /** @brief 视频格逻辑数量发生变化。 */
+    void videoWidgetCountChanged(int count);
+
+    /** @brief 新视频格的添加动画完成，控件已经恢复交互。 */
+    void videoWidgetAdded(VideoWidget *videoWidget);
+
+    /** @brief 当前视频格数量已经达到上限。 */
+    void maximumVideoWidgetCountReached();
+
+    /** @brief 添加、交换或全屏协调状态发生变化。 */
+    void gridInteractionStateChanged(VideoGridWidget::GridInteractionState state);
+
     /**
      * @brief 在两个视频格的交换动画完成后发出。
      *
      * @param firstIndex 交换前的第一个槽位索引。
      * @param secondIndex 交换前的第二个槽位索引。
-     * @thread 在 Qt UI 线程中发出。
      */
     void videoWidgetsSwapped(int firstIndex, int secondIndex);
 
     /**
      * @brief 转发某个视频格的全屏预览请求。
      *
+     * 发出前网格已经进入 EnteringFullscreen，MainWindow 必须通过
+     * notifyFullscreenEntryResult() 回传结果。
+     *
      * @param videoWidget 请求全屏的视频格。
-     * @thread 在 Qt UI 线程中发出。
      */
     void fullscreenRequested(VideoWidget *videoWidget);
 
 private:
-    static constexpr int kColumnCount = 2;
+    static constexpr int kMaximumGridDimension = 4;
 
+    VideoWidget *createVideoWidget();
+    void connectVideoWidgetSignals(VideoWidget *videoWidget);
     void handleSwapRequested(VideoWidget *source, VideoWidget *target);
+    void handleFullscreenRequested(VideoWidget *videoWidget);
     [[nodiscard]] int indexOf(const VideoWidget *videoWidget) const noexcept;
+    void relayoutVideoWidgets();
+    void setInteractionState(GridInteractionState state);
     void setDragEnabledForAll(bool enabled);
-    [[nodiscard]] QLabel *createSnapshotOverlay(VideoWidget *videoWidget);
+    [[nodiscard]] QLabel *createSnapshotOverlay(const QPixmap &pixmap,
+                                                const QRect &geometry);
 
-    std::array<VideoWidget *, kVideoWidgetCount> videoWidgets_{};
+    QVector<VideoWidget *> videoWidgets_;
     QGridLayout *gridLayout_ = nullptr;
-    QParallelAnimationGroup *swapAnimation_ = nullptr;
-    bool swapAnimationInProgress_ = false;
+    QPointer<QParallelAnimationGroup> interactionAnimation_;
+    QPointer<VideoWidget> fullscreenVideoWidget_;
+    GridInteractionState interactionState_ = GridInteractionState::Idle;
+    int nextCameraNumber_ = 1;
 };

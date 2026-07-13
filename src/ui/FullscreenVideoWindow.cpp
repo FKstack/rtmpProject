@@ -150,6 +150,9 @@ void FullscreenVideoWindow::exitFullscreen()
     QPointer<VideoWidget> videoWidget = restoreState_.videoWidget;
     const VideoSurfaceRestoreState restoreState = restoreState_;
 
+    // 动态网格先进入退出互斥状态，避免恢复 parent 和布局时启动新的布局动画。
+    emit fullscreenExitStarted(videoWidget);
+
     autoHideTimer_->stop();
     controlBar_->hide();
     unsetCursor();

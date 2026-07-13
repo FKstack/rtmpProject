@@ -148,19 +148,50 @@ int main(int argc, char *argv[])
     grid.show();
     application.processEvents();
 
-    if (!expect(grid.videoWidgetCount() == 4, QStringLiteral("视频格子数量应为 4。"))) {
+    if (!expect(grid.videoWidgetCount() == 1, QStringLiteral("初始视频格子数量应为 1。")) ||
+        !expect(grid.gridDimensions().rows == 1 && grid.gridDimensions().columns == 1,
+                QStringLiteral("初始布局应为 1x1。")) ||
+        !expect(grid.videoWidgetAt(0)->deviceName() == QStringLiteral("Camera 01"),
+                QStringLiteral("初始设备名称应为 Camera 01。"))) {
         return EXIT_FAILURE;
     }
 
+    for (int expectedCount = 2; expectedCount <= 4; ++expectedCount) {
+        bool widgetAdded = false;
+        QEventLoop addLoop;
+        QTimer addTimeout;
+        addTimeout.setSingleShot(true);
+        const QMetaObject::Connection addedConnection =
+            QObject::connect(&grid, &VideoGridWidget::videoWidgetAdded, &addLoop,
+                             [&widgetAdded, &addLoop](VideoWidget *) {
+                                 widgetAdded = true;
+                                 addLoop.quit();
+                             });
+        QObject::connect(&addTimeout, &QTimer::timeout, &addLoop, &QEventLoop::quit);
+
+        if (!expect(grid.addVideoWidget() != nullptr,
+                    QStringLiteral("动态视频格应成功创建。"))) {
+            return EXIT_FAILURE;
+        }
+        addTimeout.start(1000);
+        addLoop.exec();
+        addTimeout.stop();
+        QObject::disconnect(addedConnection);
+        if (!expect(widgetAdded && grid.videoWidgetCount() == expectedCount,
+                    QStringLiteral("添加动画结束后数量应正确更新。"))) {
+            return EXIT_FAILURE;
+        }
+    }
+
     if (!expect(grid.layout() != nullptr && grid.layout()->count() == 4,
-                QStringLiteral("2x2 网格布局应包含 4 个控件。"))) {
+                QStringLiteral("动态 2x2 网格应包含 4 个控件。"))) {
         return EXIT_FAILURE;
     }
 
     for (int index = 0; index < grid.videoWidgetCount(); ++index) {
         const auto *videoWidget = grid.videoWidgetAt(index);
         const QString expectedDeviceName =
-            QStringLiteral("camera%1").arg(index + 1, 3, 10, QLatin1Char('0'));
+            QStringLiteral("Camera %1").arg(index + 1, 2, 10, QLatin1Char('0'));
 
         if (!expect(videoWidget != nullptr, QStringLiteral("视频格子不能为空。")) ||
             !expect(videoWidget->deviceName() == expectedDeviceName,

@@ -38,7 +38,8 @@ VideoWidget::VideoWidget(QWidget *parent)
 {
     setFrameShape(QFrame::StyledPanel);
     setFrameShadow(QFrame::Plain);
-    setMinimumSize(240, 160);
+    // 4x4 布局仍需允许主窗口合理缩放，最小尺寸只保证标题和状态文本可辨认。
+    setMinimumSize(160, 100);
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     setAcceptDrops(true);
     // 该属性是应用级 QSS 的稳定边界，避免视频格样式泄漏到后续其他 QFrame 控件。

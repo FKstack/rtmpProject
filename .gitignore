@@ -26,6 +26,13 @@ compile_commands.json
 # Local CMake user configuration
 CMakeUserPresets.json
 
+# Ninja generated files
+.ninja_deps
+.ninja_log
+build.ninja
+rules.ninja
+Testing/
+
 # =========================
 # MSVC generated files
 # =========================
@@ -52,6 +59,37 @@ CMakeUserPresets.json
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# =========================
+# Secrets and local configuration
+# =========================
+# API keys and credentials must only exist in local environment variables or
+# ignored local files. Commit .env.example only with placeholder values.
+.env
+.env.*
+!.env.example
+*.local.env
+config.local.*
+secrets/
+.secrets/
+credentials/
+credentials*.json
+service-account*.json
+*.secret
+*.secrets
+*.pem
+*.key
+*.p12
+*.pfx
+
+# =========================
+# Runtime diagnostics
+# =========================
+logs/
+*.log
+*.dmp
+*.tmp
+*.bak
 
 # Local test media
 # RTMP 验证脚本默认从 testdata/test.mp4 读取测试视频。

@@ -280,7 +280,7 @@ VideoPlayerController
 ### 5.2 新手优先实现的模块
 
 - `VideoWidget`：先用 QLabel 显示 QImage。
-- `VideoGridWidget`：先固定 2x2 四宫格。
+- `VideoGridWidget`：UI 原型已支持手动添加 1～16 路，并在 1x1 至 4x4 之间自动布局；真实解码仍建议先从一路开始。
 - `FFmpegPlayer`：先支持一路 RTMP 拉流解码。
 - `LogManager`：先输出到 Qt 控制台或 QTextEdit。
 - `ConfigManager`：初期可以先硬编码 RTMP URL，后续再读 JSON/INI。
@@ -458,7 +458,7 @@ ffplay -fflags nobuffer -flags low_delay rtmp://127.0.0.1/live/camera001
 | 周期 | 阶段目标 | 主要产出 | 新手优先级 |
 | --- | --- | --- | --- |
 | 第 1 周 | 跑通 RTMP 推流链路 | SRS/nginx-rtmp 可用，ffplay 能播放 RTMP 流。 | 必做 |
-| 第 2 周 | Qt 空界面和多宫格布局 | Qt Widgets 空项目，2x2 视频网格。 | 必做 |
+| 第 2 周 | Qt 空界面和多宫格布局 | Qt Widgets 项目，1～16 路动态视频网格。 | 必做 |
 | 第 3 周 | FFmpeg 拉流并显示一路视频 | 一路 RTMP 在 QLabel/QImage 中显示。 | 必做 |
 | 第 4 周 | 多路视频显示 | 4 路 RTMP 同时显示。 | 必做 |
 | 第 5 周 | 设备状态、日志、断线重连 | 状态栏、日志、自动重连。 | 推荐 |
@@ -492,13 +492,13 @@ ffmpeg -re -stream_loop -1 -i test.mp4 -c:v libx264 -preset veryfast -tune zerol
 | 项目 | 内容 |
 | --- | --- |
 | 学习目标 | 熟悉 Qt Widgets、CMake、QMainWindow、QGridLayout、QLabel、自定义 QWidget。 |
-| 开发任务 | 创建 Qt Widgets + CMake 项目；实现主窗口；实现 2x2 多宫格；每个格子显示设备名称、连接状态、占位黑屏。 |
-| 产出物 | 可运行的 Qt 空界面；`VideoWidget`；`VideoGridWidget`。 |
-| AI 编程提示词 | “请生成一个基于 Qt 6 Widgets 和 CMake 的 C++ 项目，包含 MainWindow、VideoWidget、VideoGridWidget。VideoGridWidget 使用 QGridLayout 创建 2x2 四宫格，每个 VideoWidget 显示设备名称、状态文本和黑色背景。” |
-| 验收标准 | 程序能启动；窗口中显示 4 个视频格子；调整窗口大小时布局自适应；没有视频时显示黑屏和状态文字。 |
+| 开发任务 | 创建 Qt Widgets + CMake 项目；实现主窗口；实现可手动添加的 1～16 路动态多宫格；每个格子显示设备名称、连接状态和占位黑屏。 |
+| 产出物 | 可运行的 Qt 界面；`VideoWidget`；动态 `VideoGridWidget`；拖拽与全屏交互。 |
+| AI 编程提示词 | “请为现有 Qt 6 Widgets 项目实现动态 VideoGridWidget。启动时创建一路，用户可逐个添加到 16 路；布局按数量在 1x1 至 4x4 间自动调整，并保留拖拽交换和全屏功能。” |
+| 验收标准 | 程序能启动；默认显示一路；可添加至 16 路且自动布局；调整窗口大小时均匀扩展；没有视频时显示黑屏和状态文字。 |
 | 可能遇到的问题 | Qt Kit 选择错误；CMake 找不到 Qt；布局拉伸不正确；控件大小变化导致文字遮挡。 |
 
-建议 UI 初版：
+早期 2x2 原型示意如下；当前实现已进一步扩展为动态 1～16 路：
 
 ```text
 +---------------------+---------------------+
@@ -517,11 +517,11 @@ ffmpeg -re -stream_loop -1 -i test.mp4 -c:v libx264 -preset veryfast -tune zerol
 - QLabel 显示占位图。
 - 简单状态文本。
 
-后期再做：
+第二周已进一步完成：
 
-- 拖拽换位置。
-- 1/4/9/16 宫格切换。
-- 全屏预览。
+- 拖拽交换实际视频格。
+- 1～16 路自动布局和添加动画。
+- 单路全屏预览与悬浮控制栏。
 
 ### 8.4 第 3 周：FFmpeg 拉流并显示一路视频
 
@@ -559,8 +559,8 @@ open(url)
 | --- | --- |
 | 学习目标 | 理解多路视频的线程模型、资源占用、帧率控制和 UI 刷新压力。 |
 | 开发任务 | 支持 4 个 RTMP URL；每个 URL 独立播放器；每路绑定一个 `VideoWidget`；支持启动、停止、重启单路；显示每路连接状态。 |
-| 产出物 | 2x2 四宫格多路实时播放版本。 |
-| AI 编程提示词 | “请将当前单路 FFmpegPlayer 播放逻辑扩展为 4 路播放。每一路拥有独立的 QThread 和 FFmpegPlayer 实例，VideoGridWidget 中的 4 个 VideoWidget 分别绑定 camera001 到 camera004 的 RTMP URL。要求支持单路播放失败不影响其他路，并在每个格子显示连接中、播放中、错误、已断开状态。” |
+| 产出物 | 动态网格中前 4 路具备真实 RTMP 播放能力的版本。UI 槽位仍可扩展到 16 路。 |
+| AI 编程提示词 | “请将当前单路 FFmpegPlayer 播放逻辑扩展为首批 4 路播放。每一路拥有独立的 QThread 和 FFmpegPlayer 实例，将 camera001 到 camera004 绑定到动态 VideoGridWidget 的前 4 个 VideoWidget。要求支持单路失败不影响其他路，并保留 1～16 路 UI 布局能力。” |
 | 验收标准 | 同时推送 4 路测试流时，Qt 程序能同时显示；停止其中一路时其他路继续播放；关闭程序时所有线程正常退出。 |
 | 可能遇到的问题 | CPU 占用过高；多个线程同时退出崩溃；画面延迟增加；QImage 拷贝过多；推流源不足。 |
 
@@ -575,14 +575,14 @@ rtmp://127.0.0.1/live/camera004
 
 本周适合新手先做：
 
-- 固定 4 路。
+- 先验证前 4 路真实解码和线程模型，避免一次把解码压力扩展到 16 路。
 - 每路一个线程。
 - 每个格子显示状态。
 
 后期再做：
 
-- 动态添加设备。
-- 9 路、16 路自适应布局。
+- 设备配置驱动的自动添加和删除。
+- 9 路、16 路真实解码性能验证；UI 布局已经支持该数量。
 - 线程池和统一调度。
 
 ### 8.6 第 5 周：设备状态、日志、断线重连
@@ -821,11 +821,11 @@ UI 线程只接收已经准备好的图像，并尽快刷新。
 | --- | --- | --- |
 | 1 | 生成 Qt 空项目 | “请检查当前仓库结构，然后创建一个 Qt 6 Widgets + CMake 的最小可运行项目。要求使用 MSVC、C++17，包含 MainWindow，程序启动后显示一个空窗口。不要接入 FFmpeg。” |
 | 2 | 生成 VideoWidget | “请实现一个 VideoWidget 类，继承 QWidget 或 QFrame，内部使用 QLabel 显示画面。它需要支持 `setTitle(QString)`、`setStatus(QString)`、`setFrame(QImage)`，无画面时显示黑色背景和状态文字。” |
-| 3 | 生成多宫格布局 | “请实现 VideoGridWidget，使用 QGridLayout 管理 4 个 VideoWidget，固定 2x2 布局。MainWindow 中显示该 VideoGridWidget，并为四个格子设置 camera001 到 camera004 的标题。” |
+| 3 | 生成多宫格布局 | “请实现 VideoGridWidget，启动时创建一个 VideoWidget，并允许用户逐个添加到 16 路。根据数量自动计算 1x1 至 4x4 布局，维护稳定逻辑顺序。” |
 | 4 | 接入 FFmpeg 库 | “请为当前 CMake 项目增加 FFmpeg 依赖配置，假设 FFmpeg 位于 `third_party/ffmpeg`，包含 include、lib、bin 目录。链接 avformat、avcodec、avutil、swscale，并在 README 中说明 DLL 复制要求。” |
 | 5 | 实现单路 FFmpegPlayer | “请封装 FFmpegPlayer，运行在 QThread 中，打开一个 RTMP URL，解码视频帧，转换为 QImage，并通过 `frameReady(QImage)` 信号发送给 UI。要求提供 start、stop、errorOccurred、statusChanged。” |
 | 6 | 接入一路显示 | “请把 FFmpegPlayer 接入 MainWindow 的第一个 VideoWidget。程序启动后拉取 `rtmp://127.0.0.1/live/camera001` 并显示画面。关闭窗口时安全停止线程。” |
-| 7 | 扩展 4 路视频 | “请将单路播放扩展为 4 路。每一路有独立播放器和线程，分别绑定到 2x2 的 VideoWidget。单路失败不能影响其他路。” |
+| 7 | 扩展 4 路视频 | “请将单路播放扩展为首批 4 路。每一路有独立播放器和线程，分别绑定到动态 VideoGridWidget 的前 4 个 VideoWidget；保留 UI 添加至 16 路的能力，单路失败不能影响其他路。” |
 | 8 | 添加日志和状态管理 | “请增加 LogManager 和设备状态显示。每路播放器连接、播放、错误、重连时都输出日志，并更新对应 VideoWidget 状态。” |
 | 9 | 添加断线重连 | “请为 FFmpegPlayer 增加断线自动重连。连接失败后等待 3 秒重试，停止播放时必须能取消重连。请避免 UI 线程阻塞。” |
 | 10 | 添加配置文件 | “请增加 JSON 配置文件读取，配置设备名称和 RTMP URL。程序启动时从 `configs/devices.json` 加载最多 4 个设备并显示。” |

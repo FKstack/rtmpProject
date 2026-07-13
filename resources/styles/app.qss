@@ -3,6 +3,33 @@ QFrame[styleRole="videoWidget"] {
     border: 2px solid #4a4a4a;
 }
 
+QToolBar#videoToolBar {
+    background-color: #252525;
+    border: none;
+    border-bottom: 1px solid #444444;
+    spacing: 6px;
+    padding: 4px 8px;
+}
+
+QToolBar#videoToolBar QToolButton {
+    background-color: #353535;
+    border: 1px solid #555555;
+    border-radius: 4px;
+    color: #f0f0f0;
+    padding: 6px 12px;
+}
+
+QToolBar#videoToolBar QToolButton:hover {
+    background-color: #3f5968;
+    border-color: #72caff;
+}
+
+QToolBar#videoToolBar QToolButton:disabled {
+    background-color: #2b2b2b;
+    border-color: #3d3d3d;
+    color: #777777;
+}
+
 QFrame[styleRole="videoWidget"] QLabel#deviceNameLabel {
     color: #f0f0f0;
     font-weight: 600;

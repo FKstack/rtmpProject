@@ -4,7 +4,7 @@
 
 本文专门讲解第二周新增的两个交互功能：
 
-1. 在 2x2 视频网格中拖拽两个 `VideoWidget`，交换它们的实际位置。
+1. 在 1～16 路动态视频网格中拖拽两个 `VideoWidget`，交换它们的实际位置。
 2. 双击某一路视频进入全屏，并通过双击、`Esc` 或悬浮控制栏退出。
 
 当前项目尚未接入 FFmpeg。这里的黑色 `videoSurface` 是未来视频帧或 OpenGL 纹理的唯一渲染目标。两个功能都围绕“移动真实控件，不复制播放对象”设计，后续接入播放器时不需要推翻现有 UI 架构。
@@ -13,14 +13,15 @@
 
 ```text
 MainWindow
-├── VideoGridWidget                         负责 2x2 槽位和交换动画
-│   ├── VideoWidget(camera001)
+├── 顶部工具栏                              添加视频窗口，动画或全屏期间禁用
+├── VideoGridWidget                         负责动态槽位、添加和交换动画
+│   ├── VideoWidget(Camera 01)
 │   │   ├── titleLabel_
 │   │   ├── videoSurface_                  未来的真实视频渲染目标
 │   │   └── statusLabel_
-│   ├── VideoWidget(camera002)
-│   ├── VideoWidget(camera003)
-│   └── VideoWidget(camera004)
+│   ├── VideoWidget(Camera 02)
+│   ├── ...
+│   └── VideoWidget(Camera 16)              按需创建，不预创建或隐藏
 └── FullscreenVideoWindow                  独立顶层全屏窗口
     ├── videoLayout_                       全屏期间临时承载 videoSurface_
     └── FullscreenControlBar               覆盖在视频上方的悬浮控制栏
@@ -40,7 +41,7 @@ MainWindow
 
 ### 3.1 为什么交换真实 `VideoWidget`
 
-拖拽结束后，代码交换的是两个 `VideoWidget*` 在 `videoWidgets_` 数组和 `QGridLayout` 中的位置，而不是只交换设备名称或状态字符串。因此以下内容会整体移动：
+拖拽结束后，代码交换的是两个 `VideoWidget*` 在 `videoWidgets_` 动态列表和 `QGridLayout` 中的位置，而不是只交换设备名称或状态字符串。因此以下内容会整体移动：
 
 - `titleLabel_` 中的设备名称；
 - `videoSurface_` 及未来绑定的渲染器；
@@ -95,12 +96,12 @@ VideoWidget::dropEvent()
 1. 在交换前调用两个 `VideoWidget::grab()` 获取画面快照。
 2. 创建两个鼠标穿透的 `QLabel` 覆盖层，分别显示快照。
 3. 暂时隐藏两个真实控件。
-4. 交换 `videoWidgets_` 数组，并把真实控件放入对方的 `QGridLayout` 槽位。
+4. 交换 `videoWidgets_` 动态列表中的两个指针，并按当前列数重排真实控件。
 5. 使用 `QParallelAnimationGroup` 同时移动两张快照。
 6. 动画时长为 220ms，缓动曲线为 `OutCubic`。
 7. 动画结束后删除快照、显示真实控件并恢复拖拽。
 
-因此动画只是视觉覆盖层在移动，真实控件已由布局稳定管理。动画期间禁用四个视频格的拖拽，避免两个交换事务并发修改同一组槽位。
+因此动画只是视觉覆盖层在移动，真实控件已由布局稳定管理。动画期间禁用全部视频格的拖拽，避免两个交换事务并发修改同一组槽位。
 
 ## 4. 单路全屏功能
 
@@ -221,35 +222,41 @@ Debug 构建还会输出事件时间戳、接收对象、事件类型和全屏�
 | 场景 | 处理方式 |
 |---|---|
 | 交换动画期间双击 | `VideoGridWidget` 拒绝转发全屏请求 |
+| 添加动画期间拖拽或双击 | 统一状态保持 `AddingWidget`，请求被拒绝 |
 | 全屏期间拖拽 | 主窗口隐藏，普通视频格无法接收拖拽 |
+| 全屏期间添加 | 工具栏随主窗口隐藏，网格状态同时禁止添加 |
 | 拖拽后进入全屏 | 使用交换后的真实 `VideoWidget`，设备和渲染目标保持一致 |
 | 全屏退出 | `VideoWidget` 从未离开网格，因此恢复到进入前的槽位 |
 | 未来绑定 FFmpeg 播放器 | 播放器继续绑定同一个 `VideoWidget`/`videoSurface_`，无需重建解码线程 |
 
-核心不变量是：拖拽移动整个 `VideoWidget`，全屏只临时移动其中唯一的 `videoSurface_`。两者修改的层级不同，所以可以安全组合。
+核心不变量是：添加只创建一个新对象，拖拽移动整个 `VideoWidget`，全屏只临时移动其中唯一的 `videoSurface_`。三者修改的层级不同，并通过 `GridInteractionState` 串行执行。
 
 ## 6. 主要信号与槽
 
 | 发送方 | 信号 | 接收方/用途 |
 |---|---|---|
 | `VideoWidget` | `swapRequested(source, target)` | `VideoGridWidget` 执行槽位交换 |
+| `VideoGridWidget` | `videoWidgetAdded(widget)` | 添加动画完成并恢复交互 |
+| `VideoGridWidget` | `gridInteractionStateChanged(state)` | `MainWindow` 更新添加动作 |
 | `VideoGridWidget` | `videoWidgetsSwapped(first, second)` | 通知未来的布局持久化模块 |
 | `VideoWidget` | `fullscreenRequested(widget)` | `VideoGridWidget` 检查后转发 |
 | `VideoGridWidget` | 全屏请求转发信号 | `MainWindow` 进入全屏 |
 | `FullscreenControlBar` | `exitRequested()` | `FullscreenVideoWindow` 退出全屏 |
 | `FullscreenControlBar` | `muteRequested()` | 预留给播放器音频控制 |
 | `FullscreenControlBar` | `screenshotRequested()` | 预留给截图服务 |
+| `FullscreenVideoWindow` | `fullscreenExitStarted(widget)` | 网格进入 `ExitingFullscreen` |
 | `FullscreenVideoWindow` | `fullscreenExited(widget)` | `MainWindow` 恢复主窗口 |
 
 ## 7. 建议的代码阅读顺序
 
 1. `include/ui/VideoWidget.h` 与 `src/ui/VideoWidget.cpp`：理解单个格子的结构、拖拽状态和双击入口。
-2. `include/ui/VideoGridWidget.h` 与 `src/ui/VideoGridWidget.cpp`：理解槽位数组、快照动画和请求门控。
+2. `include/ui/VideoGridWidget.h` 与 `src/ui/VideoGridWidget.cpp`：理解动态列表、布局算法、快照动画和统一状态。
 3. `include/ui/FullscreenControlBar.h` 与 `src/ui/FullscreenControlBar.cpp`：理解 Overlay 的按钮接口。
 4. `include/ui/FullscreenVideoWindow.h` 与 `src/ui/FullscreenVideoWindow.cpp`：重点阅读状态保存、父对象切换和恢复顺序。
 5. `src/ui/MainWindow.cpp`：理解普通窗口和全屏顶层窗口的协调。
 6. `resources/styles/app.qss`：查看拖拽状态、视频区域和控制栏的样式边界。
 7. `tests/VideoGridSmokeTest.cpp`：查看对象身份、布局恢复和事件门控的自动验证方法。
+8. `tests/VideoGridDynamicTest.cpp`：查看 1～16 路布局和交互互斥的数据驱动验证。
 
 ## 8. 自动测试覆盖
 
@@ -258,7 +265,9 @@ Debug 构建还会输出事件时间戳、接收对象、事件类型和全屏�
 - 交换后两个槽位中的 `VideoWidget*` 地址真正互换；
 - 设备名、状态和 `videoSurface_` 子控件随对象移动；
 - 相同索引、越界索引和动画期间的重复交换会被拒绝；
-- 动画结束后四个视频格可见且重新允许拖拽；
+- 动画结束后参与交换的视频格可见且全部视频格重新允许拖拽；
+- 1～16 路的动态行列和逻辑索引位置正确；
+- 新创建的视频格具备与已有控件相同的拖拽和全屏连接；
 - 全屏使用原来的同一个 `videoSurface_`；
 - 退出后父对象、布局索引、尺寸策略和可见状态完整恢复；
 - 全屏控制栏位于窗口底部中央；
@@ -270,9 +279,9 @@ Debug 构建还会输出事件时间戳、接收对象、事件类型和全屏�
 
 ### 9.1 拖拽换位
 
-1. 启动程序，确认显示 `camera001` 至 `camera004` 四个视频格。
-2. 按下 `camera001`，确认边框出现按下高亮。
-3. 拖动到 `camera004`，确认来源弱化、目标出现拖放提示。
+1. 启动程序并添加到至少四路，确认显示 `Camera 01` 至 `Camera 04`。
+2. 按下 `Camera 01`，确认边框出现按下高亮。
+3. 拖动到 `Camera 04`，确认来源弱化、目标出现拖放提示。
 4. 松开鼠标，确认两张快照同时向对方位置移动。
 5. 动画结束后确认两个完整视频格互换，另外两个格子不变。
 6. 立即执行第二次交换，确认拖拽已恢复可用。
@@ -286,7 +295,7 @@ Debug 构建还会输出事件时间戳、接收对象、事件类型和全屏�
 5. 移动到屏幕底部，确认控制栏与光标恢复。
 6. 把鼠标停在控制栏内，确认控制栏不会自动消失。
 7. 分别使用全屏双击、`Esc` 和退出按钮退出。
-8. 每次退出后确认原四宫格只恢复一次，没有闪白、跳变或再次进入全屏。
+8. 每次退出后确认当前动态网格只恢复一次，没有闪白、跳变或再次进入全屏。
 9. 先拖拽交换两个格子，再进入并退出其中一路，确认交换后的顺序保持不变。
 
 ## 10. 后续接入 FFmpeg 时的注意事项
@@ -300,12 +309,12 @@ Debug 构建还会输出事件时间戳、接收对象、事件类型和全屏�
 
 ## 11. 本阶段边界
 
-本阶段已经完成拖拽交换、双向动画、单路全屏、Overlay 控制栏、自动隐藏、稳定黑色背景和布局恢复。以下内容仍属于后续阶段：
+本阶段已经完成 1～16 路动态布局、添加动画、拖拽交换、单路全屏、Overlay 控制栏、自动隐藏、稳定黑色背景和布局恢复。以下内容仍属于后续阶段：
 
 - FFmpeg 拉流和 H.264 解码；
 - 真实视频帧渲染；
 - 静音和截图业务逻辑；
 - OpenGL 和硬件解码；
-- 1/4/9/16 宫格动态布局；
+- 删除视频窗口和布局顺序持久化；
 - 布局顺序持久化；
 - 多屏全屏记忆和运行时主题切换。

@@ -83,6 +83,17 @@ signals:
     void fullscreenEntered(VideoWidget *videoWidget);
 
     /**
+     * @brief 真实视频区域开始从全屏窗口恢复到原视频格时发出。
+     *
+     * 该信号用于让动态网格在父子关系恢复期间禁止添加和拖拽，避免布局事务与
+     * 全屏恢复并发执行。
+     *
+     * @param videoWidget 正在退出全屏的视频格。
+     * @thread 在 Qt UI 线程中发出。
+     */
+    void fullscreenExitStarted(VideoWidget *videoWidget);
+
+    /**
      * @brief 真实视频区域恢复到原视频格后发出。
      *
      * @param videoWidget 已恢复的视频格；恢复目标失效时可能为 nullptr。

@@ -72,6 +72,8 @@ set(RTMP_MONITOR_UI_SOURCES
     src/ui/VideoWidget.cpp
     include/ui/VideoGridWidget.h
     src/ui/VideoGridWidget.cpp
+    include/ui/MainWindow.h
+    src/ui/MainWindow.cpp
 )
 
 qt_add_library(rtmp_monitor_ui STATIC
@@ -97,8 +99,6 @@ target_compile_options(rtmp_monitor_ui
 qt_add_executable(rtmp_monitor
     WIN32
     src/main.cpp
-    include/ui/MainWindow.h
-    src/ui/MainWindow.cpp
     ${RTMP_MONITOR_STYLE_RESOURCE}
 )
 
@@ -117,6 +117,8 @@ target_compile_options(rtmp_monitor
 include(CTest)
 
 if(BUILD_TESTING)
+    find_package(Qt6 REQUIRED COMPONENTS Test)
+
     # 冒烟测试只链接 UI 库，避免测试目标意外依赖后续播放器或网络模块。
     qt_add_executable(rtmp_monitor_ui_smoke_test
         tests/VideoGridSmokeTest.cpp
@@ -139,6 +141,27 @@ if(BUILD_TESTING)
     )
 
     add_test(NAME rtmp_monitor_ui_smoke_test COMMAND rtmp_monitor_ui_smoke_test)
+
+    qt_add_executable(rtmp_monitor_dynamic_grid_test
+        tests/VideoGridDynamicTest.cpp
+        ${RTMP_MONITOR_STYLE_RESOURCE}
+    )
+
+    set_target_properties(rtmp_monitor_dynamic_grid_test PROPERTIES WIN32_EXECUTABLE FALSE)
+
+    target_link_libraries(rtmp_monitor_dynamic_grid_test
+        PRIVATE
+            rtmp_monitor_ui
+            Qt6::Test
+    )
+
+    target_compile_options(rtmp_monitor_dynamic_grid_test
+        PRIVATE
+            /Zc:__cplusplus
+            /utf-8
+    )
+
+    add_test(NAME rtmp_monitor_dynamic_grid_test COMMAND rtmp_monitor_dynamic_grid_test)
 endif()
 
 include(GNUInstallDirs)
