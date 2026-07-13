@@ -58,3 +58,6 @@ Desktop.ini
 testdata/
 test_data/
 *.mp4
+
+# Local debugging and recording analysis output
+recording_analysis/

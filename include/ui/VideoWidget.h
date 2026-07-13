@@ -10,6 +10,7 @@ class QDragMoveEvent;
 class QDropEvent;
 class QLabel;
 class QMouseEvent;
+class FullscreenVideoWindow;
 class VideoGridWidget;
 
 /**
@@ -90,10 +91,22 @@ signals:
      */
     void swapRequested(VideoWidget *source, VideoWidget *target);
 
+    /**
+     * @brief 请求将当前视频格切换为单路全屏预览。
+     *
+     * 实际全屏窗口和真实视频区域转移由上层容器统一管理，VideoWidget 不自行修改
+     * 父子关系或布局。
+     *
+     * @param videoWidget 发起请求的视频格，即当前对象。
+     * @thread 在 Qt UI 线程中发出。
+     */
+    void fullscreenRequested(VideoWidget *videoWidget);
+
 protected:
     void mousePressEvent(QMouseEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
+    void mouseDoubleClickEvent(QMouseEvent *event) override;
     void dragEnterEvent(QDragEnterEvent *event) override;
     void dragMoveEvent(QDragMoveEvent *event) override;
     void dragLeaveEvent(QDragLeaveEvent *event) override;
@@ -111,8 +124,12 @@ private:
     void setDragEnabled(bool enabled);
     void setDragState(DragState state);
     void refreshStyle();
+    [[nodiscard]] QFrame *videoSurfaceForFullscreen() const noexcept;
+    [[nodiscard]] bool isStatusLabelVisible() const noexcept;
+    void setFullscreenSurfaceMode(bool active, bool restoreStatusLabelVisible = true);
 
     friend class VideoGridWidget;
+    friend class FullscreenVideoWindow;
 
     QLabel *titleLabel_ = nullptr;
     QFrame *videoSurface_ = nullptr;

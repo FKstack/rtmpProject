@@ -8,12 +8,12 @@ QFrame[styleRole="videoWidget"] QLabel#deviceNameLabel {
     font-weight: 600;
 }
 
-QFrame[styleRole="videoWidget"] QFrame#videoSurface {
+QFrame[styleRole="videoSurface"] {
     background-color: #000000;
     border: none;
 }
 
-QFrame[styleRole="videoWidget"] QLabel#statusLabel {
+QFrame[styleRole="videoSurface"] QLabel#statusLabel {
     color: #bdbdbd;
 }
 
@@ -30,4 +30,36 @@ QFrame[styleRole="videoWidget"][dragState="dragSource"] {
 QFrame[styleRole="videoWidget"][dragState="dragTarget"] {
     background-color: #1f3a4b;
     border: 2px dashed #72caff;
+}
+
+QFrame[styleRole="fullscreenControlBar"] {
+    background-color: rgba(20, 20, 20, 220);
+    border: 1px solid rgba(255, 255, 255, 80);
+    border-radius: 8px;
+}
+
+QFrame[styleRole="fullscreenControlBar"] QLabel#fullscreenDeviceNameLabel {
+    color: #ffffff;
+    font-weight: 600;
+}
+
+QFrame[styleRole="fullscreenControlBar"] QLabel#fullscreenStreamInfoLabel {
+    color: #c4c4c4;
+}
+
+QFrame[styleRole="fullscreenControlBar"] QPushButton {
+    background-color: rgba(255, 255, 255, 30);
+    border: 1px solid rgba(255, 255, 255, 70);
+    border-radius: 4px;
+    color: #f4f4f4;
+    padding: 5px 10px;
+}
+
+QFrame[styleRole="fullscreenControlBar"] QPushButton:hover {
+    background-color: rgba(77, 184, 255, 100);
+    border-color: #72caff;
+}
+
+QFrame[styleRole="fullscreenControlBar"] QPushButton#exitFullscreenButton {
+    background-color: rgba(194, 68, 68, 175);
 }

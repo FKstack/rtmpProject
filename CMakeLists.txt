@@ -64,6 +64,10 @@ target_compile_options(rtmp_monitor_app
 
 # 将可复用的 UI 组合为独立静态库，使图形程序和冒烟测试共享同一份实现。
 set(RTMP_MONITOR_UI_SOURCES
+    include/ui/FullscreenControlBar.h
+    src/ui/FullscreenControlBar.cpp
+    include/ui/FullscreenVideoWindow.h
+    src/ui/FullscreenVideoWindow.cpp
     include/ui/VideoWidget.h
     src/ui/VideoWidget.cpp
     include/ui/VideoGridWidget.h
@@ -118,6 +122,9 @@ if(BUILD_TESTING)
         tests/VideoGridSmokeTest.cpp
         ${RTMP_MONITOR_STYLE_RESOURCE}
     )
+
+    # 测试目标使用 Console 子系统，使 CTest 能捕获 qCritical() 的失败诊断。
+    set_target_properties(rtmp_monitor_ui_smoke_test PROPERTIES WIN32_EXECUTABLE FALSE)
 
     target_link_libraries(rtmp_monitor_ui_smoke_test
         PRIVATE

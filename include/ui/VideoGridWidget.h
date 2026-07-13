@@ -52,6 +52,16 @@ public:
     [[nodiscard]] VideoWidget *videoWidgetAt(int index) const noexcept;
 
     /**
+     * @brief 判断是否正在执行视频格交换动画。
+     *
+     * 全屏预览在交换动画完成前不得转移视频区域，否则布局快照与真实控件状态会冲突。
+     *
+     * @return 正在交换时返回 true。
+     * @thread 必须在 Qt UI 线程中调用。
+     */
+    [[nodiscard]] bool isSwapAnimationInProgress() const noexcept;
+
+    /**
      * @brief 交换两个固定槽位中的实际 VideoWidget 对象。
      *
      * 该方法先更新布局与槽位映射，再使用两个控件快照执行双向位移动画。因此设备名称、
@@ -73,6 +83,14 @@ signals:
      * @thread 在 Qt UI 线程中发出。
      */
     void videoWidgetsSwapped(int firstIndex, int secondIndex);
+
+    /**
+     * @brief 转发某个视频格的全屏预览请求。
+     *
+     * @param videoWidget 请求全屏的视频格。
+     * @thread 在 Qt UI 线程中发出。
+     */
+    void fullscreenRequested(VideoWidget *videoWidget);
 
 private:
     static constexpr int kColumnCount = 2;

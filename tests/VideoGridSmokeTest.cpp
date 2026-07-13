@@ -1,19 +1,31 @@
 #include <cstdlib>
+#include <cstdio>
 #include <type_traits>
 
 #include <QApplication>
+#include <QColor>
 #include <QDebug>
 #include <QDir>
 #include <QEventLoop>
 #include <QFile>
 #include <QFrame>
 #include <QGridLayout>
+#include <QImage>
+#include <QLabel>
+#include <QMouseEvent>
 #include <QObject>
+#include <QPalette>
+#include <QPixmap>
+#include <QSizePolicy>
 #include <QTemporaryDir>
 #include <QTimer>
+#include <QVBoxLayout>
+#include <QtGlobal>
 
 #include "app/StyleLoader.h"
 #include "core/Singleton.h"
+#include "ui/FullscreenControlBar.h"
+#include "ui/FullscreenVideoWindow.h"
 #include "ui/VideoGridWidget.h"
 #include "ui/VideoWidget.h"
 
@@ -38,6 +50,10 @@ bool expect(bool condition, const QString &message)
 {
     if (!condition) {
         qCritical().noquote() << message;
+        // Windows Debug 版 Qt 可能只写调试输出；stderr 确保 CTest 能捕获失败原因。
+        const QByteArray utf8Message = message.toUtf8();
+        std::fprintf(stderr, "%s\n", utf8Message.constData());
+        std::fflush(stderr);
     }
 
     return condition;
@@ -219,6 +235,162 @@ int main(int argc, char *argv[])
                 QStringLiteral("动画结束后视频格应恢复可见且允许再次拖拽。")) ||
         !expect(grid.layout()->count() == 4,
                 QStringLiteral("交换后网格布局仍应包含四个视频格。"))) {
+        return EXIT_FAILURE;
+    }
+
+    auto *fullscreenSource = grid.videoWidgetAt(0);
+    auto *fullscreenSurface =
+        fullscreenSource->findChild<QFrame *>(QStringLiteral("videoSurface"));
+    auto *sourceLayout = qobject_cast<QVBoxLayout *>(fullscreenSource->layout());
+    if (!expect(fullscreenSurface != nullptr && sourceLayout != nullptr,
+                QStringLiteral("全屏测试需要存在视频区域及其原始垂直布局。"))) {
+        return EXIT_FAILURE;
+    }
+
+    const int originalSurfaceIndex = sourceLayout->indexOf(fullscreenSurface);
+    const QSizePolicy originalSurfaceSizePolicy = fullscreenSurface->sizePolicy();
+    const bool originalSurfaceVisibility = fullscreenSurface->isVisible();
+    auto *fullscreenStatusLabel =
+        fullscreenSurface->findChild<QLabel *>(QStringLiteral("statusLabel"));
+    const bool originalStatusVisibility =
+        fullscreenStatusLabel != nullptr && fullscreenStatusLabel->isVisible();
+    const QString originalDeviceName = fullscreenSource->deviceName();
+    const QString originalStatus = fullscreenSource->statusText();
+
+    FullscreenVideoWindow fullscreenWindow;
+    bool fullscreenExited = false;
+    bool exitSignalWhileWindowVisible = false;
+    bool surfaceRestoredBeforeExitSignal = false;
+    int fullscreenExitSignalCount = 0;
+    int reentryRequestCount = 0;
+    QObject::connect(&fullscreenWindow, &FullscreenVideoWindow::fullscreenExited,
+                     &fullscreenWindow,
+                     [&](VideoWidget *videoWidget) {
+                         fullscreenExited = videoWidget != nullptr;
+                         ++fullscreenExitSignalCount;
+                         exitSignalWhileWindowVisible = fullscreenWindow.isVisible();
+                         surfaceRestoredBeforeExitSignal =
+                             fullscreenSurface->parentWidget() == fullscreenSource &&
+                             sourceLayout->indexOf(fullscreenSurface) == originalSurfaceIndex;
+                     });
+    QObject::connect(fullscreenSource, &VideoWidget::fullscreenRequested,
+                     &fullscreenWindow, [&reentryRequestCount](VideoWidget *) {
+                         ++reentryRequestCount;
+                     });
+
+    if (!expect(fullscreenWindow.enterFullscreen(fullscreenSource),
+                QStringLiteral("可见视频格应能进入全屏预览。")) ||
+        !expect(!fullscreenWindow.enterFullscreen(fullscreenSource),
+                QStringLiteral("已有全屏预览时必须拒绝重复进入请求。"))) {
+        return EXIT_FAILURE;
+    }
+
+    application.processEvents();
+    auto *controlBar = fullscreenWindow.findChild<FullscreenControlBar *>(
+        QStringLiteral("fullscreenControlBar")
+    );
+    auto *fullscreenLayout = qobject_cast<QVBoxLayout *>(fullscreenWindow.layout());
+    const QImage fullscreenSnapshot = fullscreenWindow.grab().toImage();
+    if (!expect(fullscreenWindow.isFullscreenActive(),
+                QStringLiteral("进入后全屏窗口应处于活动状态。")) ||
+        !expect(fullscreenWindow.autoFillBackground() &&
+                    fullscreenWindow.testAttribute(Qt::WA_OpaquePaintEvent) &&
+                    fullscreenWindow.palette().color(QPalette::Window) == Qt::black,
+                QStringLiteral("全屏窗口必须使用不透明的纯黑背景。")) ||
+        !expect(fullscreenLayout != nullptr && fullscreenLayout->contentsMargins().isNull() &&
+                    fullscreenLayout->spacing() == 0,
+                QStringLiteral("全屏视频布局的 margin 和 spacing 必须为 0。")) ||
+        !expect(fullscreenSurface->parentWidget() == &fullscreenWindow &&
+                    sourceLayout->indexOf(fullscreenSurface) == -1 &&
+                    fullscreenSurface->isVisible() &&
+                    fullscreenSurface->geometry() == fullscreenWindow.rect() &&
+                    fullscreenSurface->property("styleRole") == QStringLiteral("videoSurface"),
+                QStringLiteral("全屏时必须转移同一个视频区域，而不是复制渲染对象。")) ||
+        !expect(!fullscreenSnapshot.isNull() &&
+                    fullscreenSnapshot.pixelColor(0, 0) == QColor(Qt::black),
+                QStringLiteral("全屏窗口客户区左上角必须稳定绘制为纯黑色。")) ||
+        !expect(fullscreenStatusLabel != nullptr && !fullscreenStatusLabel->isVisible(),
+                QStringLiteral("全屏时状态标签不应覆盖真实视频画面。")) ||
+        !expect(controlBar != nullptr && controlBar->isVisible() &&
+                    controlBar->geometry().bottom() <= fullscreenWindow.height() - 20 &&
+                    qAbs(controlBar->geometry().center().x() - fullscreenWindow.width() / 2) <= 1,
+                QStringLiteral("控制栏应作为位于底部中央的可见覆盖层。"))) {
+        return EXIT_FAILURE;
+    }
+
+    QMouseEvent exitDoubleClickEvent(
+        QEvent::MouseButtonDblClick, QPointF(20, 20), QPointF(20, 20),
+        QPointF(20, 20), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier
+    );
+    QApplication::sendEvent(&fullscreenWindow, &exitDoubleClickEvent);
+    application.processEvents();
+
+    if (!expect(fullscreenExited && !fullscreenWindow.isFullscreenActive(),
+                QStringLiteral("退出全屏后应发送恢复完成信号。")) ||
+        !expect(fullscreenExitSignalCount == 1 && exitSignalWhileWindowVisible &&
+                    surfaceRestoredBeforeExitSignal && !fullscreenWindow.isVisible(),
+                QStringLiteral("退出时应先恢复网格并发出一次信号，最后再隐藏黑色全屏窗口。")) ||
+        !expect(reentryRequestCount == 0,
+                QStringLiteral("退出全屏的同一次双击不得重新触发 VideoWidget 全屏请求。")) ||
+        !expect(fullscreenSurface->parentWidget() == fullscreenSource &&
+                    sourceLayout->indexOf(fullscreenSurface) == originalSurfaceIndex &&
+                    fullscreenSurface->sizePolicy() == originalSurfaceSizePolicy &&
+                    fullscreenSurface->isVisible() == originalSurfaceVisibility &&
+                    fullscreenStatusLabel->isVisible() == originalStatusVisibility,
+                QStringLiteral("退出全屏后必须恢复视频区域的父对象、布局、尺寸策略和可见状态。")) ||
+        !expect(grid.videoWidgetAt(0) == fullscreenSource &&
+                    fullscreenSource->deviceName() == originalDeviceName &&
+                    fullscreenSource->statusText() == originalStatus,
+                QStringLiteral("全屏切换不得改变网格槽位、设备名称或状态文本。"))) {
+        return EXIT_FAILURE;
+    }
+
+    fullscreenWindow.exitFullscreen();
+    if (!expect(fullscreenExitSignalCount == 1,
+                QStringLiteral("重复退出请求不得再次发出 fullscreenExited 信号。"))) {
+        return EXIT_FAILURE;
+    }
+
+    bool fullscreenRequestForwarded = false;
+    QObject::connect(&grid, &VideoGridWidget::fullscreenRequested, &grid,
+                     [&fullscreenRequestForwarded](VideoWidget *) {
+                         fullscreenRequestForwarded = true;
+                     });
+
+    if (!expect(grid.swapVideoWidgets(0, 1),
+                QStringLiteral("全屏互斥测试需要成功启动交换动画。"))) {
+        return EXIT_FAILURE;
+    }
+
+    QMouseEvent doubleClickEvent(
+        QEvent::MouseButtonDblClick, QPointF(10, 10), QPointF(10, 10),
+        QPointF(10, 10), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier
+    );
+    QApplication::sendEvent(grid.videoWidgetAt(0), &doubleClickEvent);
+    if (!expect(!fullscreenRequestForwarded,
+                QStringLiteral("交换动画期间不得转发全屏预览请求。"))) {
+        return EXIT_FAILURE;
+    }
+
+    bool fullscreenMutexAnimationFinished = false;
+    QEventLoop fullscreenMutexAnimationLoop;
+    QTimer fullscreenMutexAnimationTimeout;
+    fullscreenMutexAnimationTimeout.setSingleShot(true);
+    QObject::connect(&grid, &VideoGridWidget::videoWidgetsSwapped,
+                     &fullscreenMutexAnimationLoop,
+                     [&fullscreenMutexAnimationFinished, &fullscreenMutexAnimationLoop](
+                         int firstIndex, int secondIndex
+                     ) {
+                         fullscreenMutexAnimationFinished = firstIndex == 0 && secondIndex == 1;
+                         fullscreenMutexAnimationLoop.quit();
+                     });
+    QObject::connect(&fullscreenMutexAnimationTimeout, &QTimer::timeout,
+                     &fullscreenMutexAnimationLoop, &QEventLoop::quit);
+    fullscreenMutexAnimationTimeout.start(1000);
+    fullscreenMutexAnimationLoop.exec();
+    fullscreenMutexAnimationTimeout.stop();
+    if (!expect(fullscreenMutexAnimationFinished,
+                QStringLiteral("全屏互斥测试中的交换动画未在预期时间内完成。"))) {
         return EXIT_FAILURE;
     }
 

@@ -22,4 +22,19 @@ public:
      * @thread 必须在 Qt UI 线程中调用。
      */
     explicit MainWindow(QWidget *parent = nullptr);
+
+    /**
+     * @brief 析构前恢复可能处于全屏窗口中的真实视频区域。
+     *
+     * @thread 必须在 Qt UI 线程中调用。
+     */
+    ~MainWindow() override;
+
+private:
+    void handleFullscreenRequest(class VideoWidget *videoWidget);
+    void restoreAfterFullscreen();
+
+    class VideoGridWidget *videoGrid_ = nullptr;
+    class FullscreenVideoWindow *fullscreenVideoWindow_ = nullptr;
+    bool wasVisibleBeforeFullscreen_ = false;
 };

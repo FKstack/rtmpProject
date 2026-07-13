@@ -1,6 +1,8 @@
 #include "ui/VideoWidget.h"
 
 #include <QApplication>
+#include <QDateTime>
+#include <QDebug>
 #include <QDrag>
 #include <QDragEnterEvent>
 #include <QDragLeaveEvent>
@@ -8,6 +10,7 @@
 #include <QLabel>
 #include <QMimeData>
 #include <QMouseEvent>
+#include <QPalette>
 #include <QSizePolicy>
 #include <QStyle>
 #include <QTimer>
@@ -53,9 +56,17 @@ VideoWidget::VideoWidget(QWidget *parent)
     // 将视频区域与标题、状态文本分离，后续可替换为 QImage 或 OpenGL 渲染而不改变外层布局。
     videoSurface_ = new QFrame(this);
     videoSurface_->setObjectName(QStringLiteral("videoSurface"));
+    videoSurface_->setProperty("styleRole", "videoSurface");
     videoSurface_->setFrameShape(QFrame::NoFrame);
     videoSurface_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     videoSurface_->setAttribute(Qt::WA_TransparentForMouseEvents);
+    videoSurface_->setAttribute(Qt::WA_StyledBackground);
+    videoSurface_->setAutoFillBackground(true);
+
+    // 视频区域换 parent 后仍需独立保持黑色，不能依赖 VideoWidget 后代选择器。
+    QPalette videoSurfacePalette = videoSurface_->palette();
+    videoSurfacePalette.setColor(QPalette::Window, Qt::black);
+    videoSurface_->setPalette(videoSurfacePalette);
 
     auto *surfaceLayout = new QVBoxLayout(videoSurface_);
     surfaceLayout->setContentsMargins(12, 12, 12, 12);
@@ -139,6 +150,26 @@ void VideoWidget::mouseReleaseEvent(QMouseEvent *event)
     }
 
     QFrame::mouseReleaseEvent(event);
+}
+
+void VideoWidget::mouseDoubleClickEvent(QMouseEvent *event)
+{
+#ifndef NDEBUG
+    qDebug() << "fullscreen event"
+             << QDateTime::currentMSecsSinceEpoch()
+             << this
+             << event->type()
+             << (dragEnabled_ ? "windowed-request" : "interaction-disabled");
+#endif
+    if (dragEnabled_ && event->button() == Qt::LeftButton) {
+        mousePressed_ = false;
+        setDragState(DragState::Idle);
+        emit fullscreenRequested(this);
+        event->accept();
+        return;
+    }
+
+    QFrame::mouseDoubleClickEvent(event);
 }
 
 void VideoWidget::dragEnterEvent(QDragEnterEvent *event)
@@ -245,4 +276,20 @@ void VideoWidget::refreshStyle()
     style()->unpolish(this);
     style()->polish(this);
     update();
+}
+
+QFrame *VideoWidget::videoSurfaceForFullscreen() const noexcept
+{
+    return videoSurface_;
+}
+
+bool VideoWidget::isStatusLabelVisible() const noexcept
+{
+    return statusLabel_->isVisible();
+}
+
+void VideoWidget::setFullscreenSurfaceMode(bool active, bool restoreStatusLabelVisible)
+{
+    // 状态标签位于真实视频区域内；全屏时隐藏它，避免占用未来实际画面。
+    statusLabel_->setVisible(active ? false : restoreStatusLabelVisible);
 }

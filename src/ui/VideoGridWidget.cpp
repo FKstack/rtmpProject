@@ -40,6 +40,12 @@ VideoGridWidget::VideoGridWidget(QWidget *parent)
 
         connect(videoWidget, &VideoWidget::swapRequested,
                 this, &VideoGridWidget::handleSwapRequested);
+        connect(videoWidget, &VideoWidget::fullscreenRequested, this,
+                [this](VideoWidget *requestedVideoWidget) {
+                    if (!swapAnimationInProgress_) {
+                        emit fullscreenRequested(requestedVideoWidget);
+                    }
+                });
     }
 
     gridLayout_->setColumnStretch(0, 1);
@@ -60,6 +66,11 @@ VideoWidget *VideoGridWidget::videoWidgetAt(int index) const noexcept
     }
 
     return videoWidgets_[static_cast<std::size_t>(index)];
+}
+
+bool VideoGridWidget::isSwapAnimationInProgress() const noexcept
+{
+    return swapAnimationInProgress_;
 }
 
 bool VideoGridWidget::swapVideoWidgets(int firstIndex, int secondIndex)
