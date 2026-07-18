@@ -12,6 +12,29 @@
           "checksum": "wVa86FgEkvdCTVp1/nxvrkaemJc="
         }
       }
+    },
+    {
+      "name": "Linux-ARM64-Debug",
+      "displayName": "Linux ARM64 Debug (WSL2 cross compile)",
+      "description": "Use the Ubuntu 22.04 ARM64 sysroot and x86_64 Qt host tools installed by scripts/setup_arm64_build_env.sh.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/out/build-linux-arm64/debug",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/aarch64-linux.cmake",
+      "cacheVariables": {
+        "ARM64_SYSROOT": "/opt/rtmp-monitor/sysroots/jammy-arm64",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BUILD_TESTING": "ON",
+        "Qt6_DIR": "/opt/rtmp-monitor/sysroots/jammy-arm64/usr/lib/aarch64-linux-gnu/cmake/Qt6",
+        "QT_HOST_PATH": "/usr",
+        "QT_HOST_PATH_CMAKE_DIR": "/usr/lib/x86_64-linux-gnu/cmake"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "Linux-ARM64-Debug",
+      "displayName": "Build Linux ARM64 Debug",
+      "configurePreset": "Linux-ARM64-Debug"
     }
   ],
   "vendor": {

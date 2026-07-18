@@ -220,14 +220,20 @@ void VideoWidget::dropEvent(QDropEvent *event)
 void VideoWidget::startDrag()
 {
     auto *drag = new QDrag(this);
+    // 创建 MIME 数据，用于标识本次拖拽携带的数据类型。
     auto *mimeData = new QMimeData;
+    // 添加自定义 MIME 数据，说明这是一个视频格拖拽。
     mimeData->setData(kVideoWidgetMimeType, QByteArrayLiteral("video-widget"));
 
     drag->setMimeData(mimeData);
     drag->setPixmap(grab());
+    // 设置鼠标在拖拽图片中的位置。
+    // 保证开始拖拽后，图片不会突然跳动。
     drag->setHotSpot(dragStartPosition_);
 
     setDragState(DragState::DragSource);
+    // 启动拖放流程，只允许执行 MoveAction。
+    // exec() 会一直等待，直到拖拽成功、取消或失败。
     const Qt::DropAction action = drag->exec(Qt::MoveAction);
     if (action != Qt::MoveAction && dragState_ == DragState::DragSource) {
         setDragState(DragState::Idle);

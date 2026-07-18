@@ -99,3 +99,12 @@ test_data/
 
 # Local debugging and recording analysis output
 recording_analysis/
+
+# =========================
+# Local-only documentation
+# =========================
+# Project plans, build guides, coding standards, and feature documentation in
+# docs/ are version-controlled. Conversation handoffs and machine-specific
+# working notes stay local and must not be uploaded.
+docs/project_handoff.md
+docs/local/

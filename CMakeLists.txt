@@ -2,40 +2,71 @@ cmake_minimum_required(VERSION 3.21)
 
 project(RtmpMonitor
     VERSION 0.1.0
-    DESCRIPTION "PC multi-stream RTMP monitor"
+    DESCRIPTION "Cross-platform multi-stream RTMP monitor"
     LANGUAGES CXX
 )
-
-if(NOT MSVC)
-    message(FATAL_ERROR "RtmpMonitor must be configured with an MSVC compiler.")
-endif()
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+if(WIN32)
+    if(NOT MSVC)
+        message(FATAL_ERROR
+            "Windows x86_64 builds require MSVC and a matching Qt 6 MSVC kit."
+        )
+    endif()
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" RTMP_MONITOR_SYSTEM_PROCESSOR)
+    if(NOT RTMP_MONITOR_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
+        message(FATAL_ERROR
+            "Linux builds currently target ARM64 only. "
+            "Detected processor: ${CMAKE_SYSTEM_PROCESSOR}"
+        )
+    endif()
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang)$")
+        message(FATAL_ERROR
+            "Linux ARM64 builds require GCC or Clang. "
+            "Detected compiler: ${CMAKE_CXX_COMPILER_ID}"
+        )
+    endif()
+else()
+    message(FATAL_ERROR
+        "Unsupported target platform: ${CMAKE_SYSTEM_NAME}/${CMAKE_SYSTEM_PROCESSOR}. "
+        "Supported targets are Windows x86_64 with MSVC and Linux ARM64 with GCC/Clang."
+    )
+endif()
+
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+include(ProjectOptions)
+
 find_package(Qt6 REQUIRED COMPONENTS Widgets)
 
-get_target_property(QT_QMAKE_EXECUTABLE Qt6::qmake IMPORTED_LOCATION)
-
-if(QT_QMAKE_EXECUTABLE MATCHES "[/\\\\]mingw")
-    message(FATAL_ERROR
-        "Detected a MinGW Qt kit at: ${QT_QMAKE_EXECUTABLE}\n"
-        "RtmpMonitor requires an MSVC Qt 6 kit. Configure with CMAKE_PREFIX_PATH "
-        "pointing to a kit such as D:/Qt/6.x.x/msvc2022_64."
-    )
+if(WIN32)
+    get_target_property(QT_QMAKE_EXECUTABLE Qt6::qmake IMPORTED_LOCATION)
+    if(QT_QMAKE_EXECUTABLE MATCHES "[/\\\\]mingw")
+        message(FATAL_ERROR
+            "Detected a MinGW Qt kit at: ${QT_QMAKE_EXECUTABLE}\n"
+            "Windows builds require an MSVC Qt 6 kit. Configure CMAKE_PREFIX_PATH "
+            "with a kit such as E:/QT6/6.x.x/msvc2022_64."
+        )
+    endif()
 endif()
 
-qt_standard_project_setup()
+# Qt 6.2 尚未提供该便利函数；上方已显式启用 AUTOMOC、AUTOUIC 和 AUTORCC，
+# 因此旧版 Qt 可以安全跳过，较新版 Qt 继续采用其标准工程默认值。
+if(COMMAND qt_standard_project_setup)
+    qt_standard_project_setup()
+endif()
 
 set(RTMP_MONITOR_APP_SOURCES
-    include/core/Singleton.h
-    include/app/StyleLoader.h
-    src/app/StyleLoader.cpp
+    include/common/core/Singleton.h
+    include/common/app/StyleLoader.h
+    src/common/app/StyleLoader.cpp
 )
 
 set(RTMP_MONITOR_STYLE_RESOURCE
@@ -48,7 +79,7 @@ qt_add_library(rtmp_monitor_app STATIC
 
 target_include_directories(rtmp_monitor_app
     PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/common
 )
 
 target_link_libraries(rtmp_monitor_app
@@ -56,24 +87,20 @@ target_link_libraries(rtmp_monitor_app
         Qt6::Widgets
 )
 
-target_compile_options(rtmp_monitor_app
-    PRIVATE
-        /Zc:__cplusplus
-        /utf-8
-)
+rtmp_monitor_apply_project_options(rtmp_monitor_app)
 
-# 将可复用的 UI 组合为独立静态库，使图形程序和冒烟测试共享同一份实现。
+# UI 作为独立静态库供主程序和测试复用，避免重复编译相同实现。
 set(RTMP_MONITOR_UI_SOURCES
-    include/ui/FullscreenControlBar.h
-    src/ui/FullscreenControlBar.cpp
-    include/ui/FullscreenVideoWindow.h
-    src/ui/FullscreenVideoWindow.cpp
-    include/ui/VideoWidget.h
-    src/ui/VideoWidget.cpp
-    include/ui/VideoGridWidget.h
-    src/ui/VideoGridWidget.cpp
-    include/ui/MainWindow.h
-    src/ui/MainWindow.cpp
+    include/common/ui/FullscreenControlBar.h
+    src/common/ui/FullscreenControlBar.cpp
+    include/common/ui/FullscreenVideoWindow.h
+    src/common/ui/FullscreenVideoWindow.cpp
+    include/common/ui/VideoWidget.h
+    src/common/ui/VideoWidget.cpp
+    include/common/ui/VideoGridWidget.h
+    src/common/ui/VideoGridWidget.cpp
+    include/common/ui/MainWindow.h
+    src/common/ui/MainWindow.cpp
 )
 
 qt_add_library(rtmp_monitor_ui STATIC
@@ -82,7 +109,7 @@ qt_add_library(rtmp_monitor_ui STATIC
 
 target_include_directories(rtmp_monitor_ui
     PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/common
 )
 
 target_link_libraries(rtmp_monitor_ui
@@ -90,17 +117,16 @@ target_link_libraries(rtmp_monitor_ui
         Qt6::Widgets
 )
 
-target_compile_options(rtmp_monitor_ui
-    PRIVATE
-        /Zc:__cplusplus
-        /utf-8
-)
+rtmp_monitor_apply_project_options(rtmp_monitor_ui)
 
 qt_add_executable(rtmp_monitor
-    WIN32
     src/main.cpp
     ${RTMP_MONITOR_STYLE_RESOURCE}
 )
+
+if(WIN32)
+    set_target_properties(rtmp_monitor PROPERTIES WIN32_EXECUTABLE TRUE)
+endif()
 
 target_link_libraries(rtmp_monitor
     PRIVATE
@@ -108,25 +134,23 @@ target_link_libraries(rtmp_monitor
         rtmp_monitor_ui
 )
 
-target_compile_options(rtmp_monitor
-    PRIVATE
-        /Zc:__cplusplus
-        /utf-8
-)
+rtmp_monitor_apply_project_options(rtmp_monitor)
 
 include(CTest)
 
 if(BUILD_TESTING)
     find_package(Qt6 REQUIRED COMPONENTS Test)
 
-    # 冒烟测试只链接 UI 库，避免测试目标意外依赖后续播放器或网络模块。
+    # 冒烟测试只链接 UI 库，避免意外依赖后续播放器或网络模块。
     qt_add_executable(rtmp_monitor_ui_smoke_test
         tests/VideoGridSmokeTest.cpp
         ${RTMP_MONITOR_STYLE_RESOURCE}
     )
 
-    # 测试目标使用 Console 子系统，使 CTest 能捕获 qCritical() 的失败诊断。
-    set_target_properties(rtmp_monitor_ui_smoke_test PROPERTIES WIN32_EXECUTABLE FALSE)
+    if(WIN32)
+        # 测试使用控制台子系统，便于 CTest 捕获失败诊断。
+        set_target_properties(rtmp_monitor_ui_smoke_test PROPERTIES WIN32_EXECUTABLE FALSE)
+    endif()
 
     target_link_libraries(rtmp_monitor_ui_smoke_test
         PRIVATE
@@ -134,11 +158,7 @@ if(BUILD_TESTING)
             rtmp_monitor_ui
     )
 
-    target_compile_options(rtmp_monitor_ui_smoke_test
-        PRIVATE
-            /Zc:__cplusplus
-            /utf-8
-    )
+    rtmp_monitor_apply_project_options(rtmp_monitor_ui_smoke_test)
 
     add_test(NAME rtmp_monitor_ui_smoke_test COMMAND rtmp_monitor_ui_smoke_test)
 
@@ -147,7 +167,9 @@ if(BUILD_TESTING)
         ${RTMP_MONITOR_STYLE_RESOURCE}
     )
 
-    set_target_properties(rtmp_monitor_dynamic_grid_test PROPERTIES WIN32_EXECUTABLE FALSE)
+    if(WIN32)
+        set_target_properties(rtmp_monitor_dynamic_grid_test PROPERTIES WIN32_EXECUTABLE FALSE)
+    endif()
 
     target_link_libraries(rtmp_monitor_dynamic_grid_test
         PRIVATE
@@ -155,11 +177,7 @@ if(BUILD_TESTING)
             Qt6::Test
     )
 
-    target_compile_options(rtmp_monitor_dynamic_grid_test
-        PRIVATE
-            /Zc:__cplusplus
-            /utf-8
-    )
+    rtmp_monitor_apply_project_options(rtmp_monitor_dynamic_grid_test)
 
     add_test(NAME rtmp_monitor_dynamic_grid_test COMMAND rtmp_monitor_dynamic_grid_test)
 endif()

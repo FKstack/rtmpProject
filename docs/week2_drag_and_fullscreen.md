@@ -249,11 +249,11 @@ Debug 构建还会输出事件时间戳、接收对象、事件类型和全屏�
 
 ## 7. 建议的代码阅读顺序
 
-1. `include/ui/VideoWidget.h` 与 `src/ui/VideoWidget.cpp`：理解单个格子的结构、拖拽状态和双击入口。
-2. `include/ui/VideoGridWidget.h` 与 `src/ui/VideoGridWidget.cpp`：理解动态列表、布局算法、快照动画和统一状态。
-3. `include/ui/FullscreenControlBar.h` 与 `src/ui/FullscreenControlBar.cpp`：理解 Overlay 的按钮接口。
-4. `include/ui/FullscreenVideoWindow.h` 与 `src/ui/FullscreenVideoWindow.cpp`：重点阅读状态保存、父对象切换和恢复顺序。
-5. `src/ui/MainWindow.cpp`：理解普通窗口和全屏顶层窗口的协调。
+1. `include/common/ui/VideoWidget.h` 与 `src/common/ui/VideoWidget.cpp`：理解单个格子的结构、拖拽状态和双击入口。
+2. `include/common/ui/VideoGridWidget.h` 与 `src/common/ui/VideoGridWidget.cpp`：理解动态列表、布局算法、快照动画和统一状态。
+3. `include/common/ui/FullscreenControlBar.h` 与 `src/common/ui/FullscreenControlBar.cpp`：理解 Overlay 的按钮接口。
+4. `include/common/ui/FullscreenVideoWindow.h` 与 `src/common/ui/FullscreenVideoWindow.cpp`：重点阅读状态保存、父对象切换和恢复顺序。
+5. `src/common/ui/MainWindow.cpp`：理解普通窗口和全屏顶层窗口的协调。
 6. `resources/styles/app.qss`：查看拖拽状态、视频区域和控制栏的样式边界。
 7. `tests/VideoGridSmokeTest.cpp`：查看对象身份、布局恢复和事件门控的自动验证方法。
 8. `tests/VideoGridDynamicTest.cpp`：查看 1～16 路布局和交互互斥的数据驱动验证。

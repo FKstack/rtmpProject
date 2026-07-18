@@ -6,6 +6,7 @@
 
 #include "ui/FullscreenVideoWindow.h"
 #include "ui/VideoGridWidget.h"
+#include "ui/VideoWidget.h"
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)

@@ -19,7 +19,7 @@ exe 同级 styles/app.qss
 ## 2. 目录结构
 
 ```text
-include/
+include/common/
 ├── app/
 │   └── StyleLoader.h              # 应用级 QSS 服务
 └── core/
@@ -30,7 +30,7 @@ resources/
 │   └── app.qss                    # 默认应用样式源文件
 └── styles.qrc                     # 编译内置资源的映射
 
-src/app/
+src/common/app/
 └── StyleLoader.cpp
 ```
 

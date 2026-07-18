@@ -1,6 +1,6 @@
 # RtmpMonitor
 
-RtmpMonitor 是一个面向 Windows PC 的多路嵌入式摄像头监控客户端。目标链路是：嵌入式设备主动推送 H.264/RTMP，PC 端使用 FFmpeg 拉流解码，并通过 Qt Widgets 在一个窗口中显示多路实时画面。
+RtmpMonitor 是一个面向 Windows x86_64 PC 与 Linux ARM64 嵌入式硬件盒子的多路摄像头监控客户端。目标链路是：嵌入式设备主动推送 H.264/RTMP，客户端使用 FFmpeg 拉流解码，并通过 Qt Widgets 在一个窗口中显示多路实时画面。
 
 项目采用渐进式实现：先用 nginx-rtmp 或 SRS 验证推流链路，再完成可维护的多路 UI 框架，随后接入一路 FFmpeg 播放并扩展多路解码。完整路线见 [项目规划](docs/project_plan.md)。
 
@@ -57,7 +57,8 @@ RtmpMonitor 是一个面向 Windows PC 的多路嵌入式摄像头监控客户�
 - C++17
 - Qt 6 Widgets
 - CMake 3.21+
-- MSVC / Visual Studio 2022
+- Windows x86_64：MSVC / Visual Studio 2022
+- Linux ARM64：AArch64 GCC/Clang 交叉工具链
 - Qt Test / CTest
 - FFmpeg 命令行工具：当前用于 RTMP 链路验证
 - FFmpeg 开发库：计划在第三周接入
@@ -69,9 +70,13 @@ RtmpMonitor 是一个面向 Windows PC 的多路嵌入式摄像头监控客户�
 rtmpProject/
 ├── CMakeLists.txt
 ├── CMakePresets.json
+├── cmake/
+│   ├── ProjectOptions.cmake
+│   └── toolchains/aarch64-linux.cmake
 ├── README.md
 ├── docs/
 │   ├── project_plan.md
+│   ├── cross_platform_build.md
 │   ├── rtmp_chain_verification.md
 │   ├── week2_ui_layout.md
 │   ├── week2_dynamic_grid.md
@@ -80,18 +85,24 @@ rtmpProject/
 │   ├── code_style_guide.md
 │   └── comment_style_guide.md
 ├── include/
-│   ├── app/                         # 应用级服务接口
-│   ├── core/                        # 通用基础设施
-│   └── ui/                          # Qt Widgets 接口
+│   └── common/                      # 两个目标平台共享的接口
+│       ├── app/                     # 应用级服务接口
+│       ├── core/                    # 通用基础设施
+│       └── ui/                      # Qt Widgets 接口
 ├── resources/
 │   ├── styles/app.qss
 │   └── styles.qrc
 ├── scripts/
+│   ├── setup_arm64_build_env.sh
 │   └── verify_rtmp_chain.ps1
 ├── src/
-│   ├── app/
-│   ├── ui/
-│   └── main.cpp
+│   ├── main.cpp                     # 跨平台程序入口
+│   ├── common/                      # 两个平台共享的实现
+│   │   ├── app/
+│   │   └── ui/
+│   └── platform/                    # 有真实需求时加入平台实现
+│       ├── windows/
+│       └── linux/
 └── tests/
     ├── VideoGridSmokeTest.cpp
     └── VideoGridDynamicTest.cpp
@@ -99,7 +110,7 @@ rtmpProject/
 
 ## 环境要求
 
-### Qt 桌面程序
+### Windows x86_64
 
 - Windows 10/11 x64。
 - Visual Studio 2022，并安装“使用 C++ 的桌面开发”工作负载。
@@ -107,6 +118,14 @@ rtmpProject/
 - Qt 6 MSVC x64 Kit。当前验证环境为 Qt 6.6.1 `msvc2019_64`。
 
 工程会拒绝 MinGW 编译器或 MinGW Qt Kit，不能把 MinGW Qt 库与 MSVC 混用。
+
+### Linux ARM64
+
+- 在 WSL2 或 Linux 主机中使用 `aarch64-linux-gnu-g++`，也可替换为硬件厂商 SDK 提供的 GCC/Clang。
+- 仓库提供 `cmake/toolchains/aarch64-linux.cmake` 和 `Linux-ARM64-Debug` 预设。
+- 当前验证环境使用 WSL2 Ubuntu 22.04、AArch64 GCC 11、x86_64 Qt 6.2.4 host tools，以及 `/opt/rtmp-monitor/sysroots/jammy-arm64` 中的 ARM64 Qt 6.2.4。
+- 主程序和两个测试程序已经完成 ARM64 编译、链接和 ELF 架构检查；尚未在真实 ARM64 图形环境中运行。
+- 第三周接入 FFmpeg 后，还需要增加与目标系统 ABI 匹配的 ARM64 FFmpeg 开发库。
 
 ### RTMP 验证工具
 
@@ -123,28 +142,38 @@ rtmpProject/
 
 ```powershell
 cmake --preset Qt-Debug
-cmake --build out/build/debug
-ctest --test-dir out/build/debug --output-on-failure
+cmake --build out/build-windows-x64/debug
+ctest --test-dir out/build-windows-x64/debug --output-on-failure
 ```
 
 运行程序：
 
 ```powershell
-./out/build/debug/rtmp_monitor.exe
+./out/build-windows-x64/debug/rtmp_monitor.exe
 ```
 
 新环境没有 `Qt-Debug` 用户预设时，可使用通用 Visual Studio Generator：
 
 ```powershell
 $env:QTDIR = "E:\QT6\6.6.1\msvc2019_64"
-cmake -S . -B out/build/vs2022 `
+cmake -S . -B out/build-windows-x64/debug-vs2022 `
     -G "Visual Studio 17 2022" `
     -A x64 `
     -DCMAKE_PREFIX_PATH="$env:QTDIR" `
     -DBUILD_TESTING=ON
-cmake --build out/build/vs2022 --config Debug
-ctest --test-dir out/build/vs2022 -C Debug --output-on-failure
+cmake --build out/build-windows-x64/debug-vs2022 --config Debug
+ctest --test-dir out/build-windows-x64/debug-vs2022 -C Debug --output-on-failure
 ```
+
+首次准备 WSL2 环境时，以 root 运行幂等配置脚本。下载和 sysroot 位于 WSL 的 G 盘 VHDX，构建产物位于 E 盘仓库：
+
+```bash
+sudo bash scripts/setup_arm64_build_env.sh
+cmake --preset Linux-ARM64-Debug
+cmake --build --preset Linux-ARM64-Debug
+```
+
+ARM64 Debug 构建目录为 `out/build-linux-arm64/debug`。当前只要求两个测试目标完成 ARM64 编译和链接，不在 WSL2 中运行 Qt GUI 测试；全屏、QPA、OpenGL 和真实交互必须在硬件盒子上验收。完整环境、产物检查和故障排查见 [跨平台构建说明](docs/cross_platform_build.md)。
 
 当前自动化测试包括：
 
@@ -213,6 +242,7 @@ rtmp://127.0.0.1:1935/live/camera001
 ## 文档索引
 
 - [项目规划](docs/project_plan.md)
+- [Windows x64 与 Linux ARM64 跨平台构建说明](docs/cross_platform_build.md)
 - [第二周 UI 布局说明](docs/week2_ui_layout.md)
 - [动态视频网格详解](docs/week2_dynamic_grid.md)
 - [拖拽换位与单路全屏详解](docs/week2_drag_and_fullscreen.md)

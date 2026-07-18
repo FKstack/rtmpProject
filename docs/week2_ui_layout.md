@@ -4,7 +4,7 @@
 
 第二周 UI 已从最初的固定 2x2 原型扩展为可交互的动态多路监控框架：
 
-- Qt 6 Widgets、CMake、MSVC 和 C++17 工程保持不变。
+- Qt 6 Widgets、CMake 和 C++17 工程保持不变；Windows 使用 MSVC，目录边界同时为 Linux ARM64 预留。
 - 启动时创建一个 `Camera 01` 视频格。
 - 用户可从主窗口工具栏逐个添加到 16 路。
 - 根据数量自动使用 1x1 至 4x4 网格。
@@ -21,14 +21,14 @@
 ## 2. 当前文件结构
 
 ```text
-include/ui/
+include/common/ui/
 ├── FullscreenControlBar.h
 ├── FullscreenVideoWindow.h
 ├── MainWindow.h
 ├── VideoGridWidget.h
 └── VideoWidget.h
 
-src/ui/
+src/common/ui/
 ├── FullscreenControlBar.cpp
 ├── FullscreenVideoWindow.cpp
 ├── MainWindow.cpp
@@ -139,8 +139,8 @@ stretch、尺寸策略和可见状态。动态网格在全屏期间禁止重排�
 
 ```powershell
 cmake --preset Qt-Debug
-cmake --build out/build/debug
-ctest --test-dir out/build/debug --output-on-failure
+cmake --build out/build-windows-x64/debug
+ctest --test-dir out/build-windows-x64/debug --output-on-failure
 ```
 
 本次 Debug 构建成功，CTest 结果：

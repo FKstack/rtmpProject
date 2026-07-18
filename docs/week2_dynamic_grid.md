@@ -199,8 +199,8 @@ VideoWidget 双击
 
 ```powershell
 cmake --preset Qt-Debug
-cmake --build out/build/debug
-ctest --test-dir out/build/debug --output-on-failure
+cmake --build out/build-windows-x64/debug
+ctest --test-dir out/build-windows-x64/debug --output-on-failure
 ```
 
 本次结果：
