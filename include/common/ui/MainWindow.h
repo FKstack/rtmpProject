@@ -11,7 +11,7 @@ class VideoWidget;
  * @brief 应用程序的主窗口。
  *
  * 当前负责承载动态视频网格、添加视频窗口工具栏，并协调普通网格与单路全屏窗口。
- * 音视频拉流和解码逻辑仍应由后续专用控制器管理。
+ * 音视频拉流和解码由应用组合层持有的播放器管理。
  *
  * @thread 仅允许在 Qt UI 线程中创建和访问。
  */
@@ -34,6 +34,9 @@ public:
      * @thread 必须在 Qt UI 线程中调用。
      */
     ~MainWindow() override;
+
+    /** @brief 返回当前网格中的 Camera 01，供应用组合层绑定一路播放器。 */
+    [[nodiscard]] VideoWidget *primaryVideoWidget() const noexcept;
 
 private:
     void addVideoWidget();

@@ -123,7 +123,7 @@ Qt 负责“窗口、布局、显示和交互”
 | MVP | FFmpeg 命令推流 + SRS + Qt 拉一路 | 强烈推荐 | 最短路径验证可行性。 |
 | 原型版 | 多个 RTMP URL + Qt 4 宫格显示 | 推荐 | 验证多路线程、布局、基础性能。 |
 | 工程版 | 状态管理、断线重连、日志、配置文件 | 推荐 | 具备可演示和可调试能力。 |
-| ARM64 构建版 | WSL2 交叉编译 + ARM64 Qt/FFmpeg + sysroot | 基础 UI 已完成 | 当前 Qt Widgets 主程序与测试已生成 AArch64 ELF；FFmpeg 目标库在第三周接入。 |
+| ARM64 构建版 | WSL2 交叉编译 + ARM64 Qt/FFmpeg + sysroot | 一路播放器已接入 | Qt Widgets 主程序、播放器和测试均链接 sysroot 中的 ARM64 FFmpeg；仍需真实设备播放验收。 |
 | ARM64 实机版 | 硬件盒子部署 + QPA/渲染/稳定性验证 | 发布前必做 | 交叉编译成功不能代替真实设备运行验证。 |
 | 优化版 | OpenGL 渲染、硬件解码、低延迟调优 | 后期 | 解决多路性能和延迟问题。 |
 | 高级版 | 内置 RTMP Server | 谨慎后置 | 协议复杂，先不要作为第一目标。 |
@@ -473,7 +473,7 @@ Windows 11 主机
 - 宿主工具：x86_64 Qt 6.2.4 的 `moc`、`rcc`、`uic`。
 - 目标依赖：`/opt/rtmp-monitor/sysroots/jammy-arm64` 中的 ARM64 Qt 6.2.4 与 OpenGL 开发库。
 - 构建产物：E 盘仓库的 `out/build-linux-arm64/debug`。
-- 已验证范围：Qt Widgets 主程序和两个测试目标完成 ARM64 编译、链接及 ELF 检查；QEMU 可运行最小 ARM64 C++17 程序。
+- 已验证范围：Qt Widgets 主程序和三个测试目标完成 ARM64 编译、链接及 ELF 检查；QEMU 可运行最小 ARM64 C++17 程序。
 - 未验证范围：真实盒子上的 QPA、窗口、全屏、OpenGL、输入交互和性能；当前也尚未接入 ARM64 FFmpeg。
 
 环境配置命令及存储约束见 `scripts/setup_arm64_build_env.sh` 和 [跨平台构建说明](cross_platform_build.md)。
@@ -636,7 +636,7 @@ ffplay -fflags nobuffer -flags low_delay rtmp://127.0.0.1/live/camera001
 | --- | --- | --- | --- |
 | 第 1 周 | 跑通 RTMP 推流链路 | SRS/nginx-rtmp 可用，ffplay 能播放 RTMP 流。 | 必做 |
 | 第 2 周 | Qt 空界面和多宫格布局 | Qt Widgets 项目，1～16 路动态视频网格。 | 必做 |
-| 第 3 周 | FFmpeg 拉流并显示一路视频 | 一路 RTMP 在 QLabel/QImage 中显示。 | 必做 |
+| 第 3 周 | FFmpeg 拉流并显示一路视频 | 已完成：Camera 01 使用 QImage 显示，并支持可中断退出和自动重连。 | 已完成 |
 | 第 4 周 | 多路视频显示 | 4 路 RTMP 同时显示。 | 必做 |
 | 第 5 周 | 设备状态、日志、断线重连 | 状态栏、日志、自动重连。 | 推荐 |
 | 第 6 周 | 性能优化、OpenGL 渲染、项目整理 | 基础性能优化，文档和脚本完善。 | 部分后期 |
@@ -702,6 +702,8 @@ ffmpeg -re -stream_loop -1 -i test.mp4 -c:v libx264 -preset veryfast -tune zerol
 - 单路全屏预览与悬浮控制栏。
 
 ### 8.4 第 3 周：FFmpeg 拉流并显示一路视频
+
+当前实现状态：已完成。`FFmpegPlayer` 使用专用 `QThread`，通过 FFmpeg 8.1.2 解码 H.264 并使用 `sws_scale` 转为 `QImage::Format_RGB888`；UI 只消费最新帧。断流后画面清黑并按 1、2、4、5 秒退避重连，关闭时使用 `AVIOInterruptCB` 中断网络读取并等待线程退出。
 
 | 项目 | 内容 |
 | --- | --- |
@@ -817,7 +819,7 @@ Disconnected
 
 ### 8.8 六周原型后的跨平台专项：Linux ARM64
 
-六周方案仍优先完成可工作的 Windows 原型。当前已经提前完成 Linux ARM64 的 Qt UI 交叉编译基础设施和 AArch64 ELF 检查；播放器稳定后仍需安排约 1～2 周接入 ARM64 FFmpeg、替换或复验厂商 sysroot，并在真实盒子完成图形与视频验收。
+六周方案仍优先完成可工作的 Windows 原型。当前已经完成 Linux ARM64 的 Qt UI 交叉编译基础设施、ARM64 FFmpeg 8.1.2 接入和 AArch64 ELF 检查；仍需替换或复验厂商 sysroot，并在真实盒子完成图形与视频验收。
 
 | 项目 | 内容 |
 | --- | --- |

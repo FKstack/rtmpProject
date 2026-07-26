@@ -27,6 +27,10 @@
         "Qt6_DIR": "/opt/rtmp-monitor/sysroots/jammy-arm64/usr/lib/aarch64-linux-gnu/cmake/Qt6",
         "QT_HOST_PATH": "/usr",
         "QT_HOST_PATH_CMAKE_DIR": "/usr/lib/x86_64-linux-gnu/cmake"
+      },
+      "environment": {
+        "PKG_CONFIG_SYSROOT_DIR": "/opt/rtmp-monitor/sysroots/jammy-arm64",
+        "PKG_CONFIG_LIBDIR": "/opt/rtmp-monitor/sysroots/jammy-arm64/usr/local/lib/aarch64-linux-gnu/pkgconfig:/opt/rtmp-monitor/sysroots/jammy-arm64/usr/local/share/pkgconfig"
       }
     }
   ],
@@ -39,7 +43,7 @@
   ],
   "vendor": {
     "qt-project.org/Presets": {
-      "checksum": "67SmY24ZeVbebyKD0fGfIzb/bGI="
+      "checksum": "uosWnVwjfnEg6jD1pGyADkXORIw="
     }
   }
 }

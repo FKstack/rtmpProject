@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QFrame>
+#include <QImage>
 #include <QPoint>
 #include <QString>
 
@@ -16,8 +17,8 @@ class VideoGridWidget;
 /**
  * @brief 单路设备视频的显示槽位。
  *
- * 该类只管理设备名称、状态文本和黑色视频占位区域，不负责拉流、解码或跨线程
- * 帧传递。后续解码模块应通过 UI 线程的信号槽更新该控件。
+ * 该类管理设备名称、状态文本和视频帧绘制，不负责拉流、解码或跨线程帧传递。
+ * 播放器通过 UI 线程的信号槽更新该控件。
  *
  * @thread 仅允许在 Qt UI 线程中创建和更新。
  */
@@ -78,6 +79,13 @@ public:
      * @thread 必须在 Qt UI 线程中调用。
      */
     [[nodiscard]] bool isDragEnabled() const noexcept;
+
+public slots:
+    /** @brief 显示一帧视频；图像数据通过 QImage 隐式共享安全持有。 */
+    void displayFrame(const QImage &image);
+
+    /** @brief 清除旧画面并恢复黑色视频区域。 */
+    void clearFrame();
 
 signals:
     /**

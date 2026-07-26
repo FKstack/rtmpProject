@@ -46,6 +46,27 @@ include(ProjectOptions)
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets)
 
+add_library(rtmp_monitor_ffmpeg INTERFACE)
+
+if(WIN32)
+    find_package(FFmpeg REQUIRED COMPONENTS AVCODEC AVFORMAT AVUTIL SWSCALE)
+    target_link_libraries(rtmp_monitor_ffmpeg INTERFACE
+        FFmpeg::avformat
+        FFmpeg::avcodec
+        FFmpeg::avutil
+        FFmpeg::swscale
+    )
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(RTMP_MONITOR_FFMPEG REQUIRED IMPORTED_TARGET
+        libavformat
+        libavcodec
+        libavutil
+        libswscale
+    )
+    target_link_libraries(rtmp_monitor_ffmpeg INTERFACE PkgConfig::RTMP_MONITOR_FFMPEG)
+endif()
+
 if(WIN32)
     get_target_property(QT_QMAKE_EXECUTABLE Qt6::qmake IMPORTED_LOCATION)
     if(QT_QMAKE_EXECUTABLE MATCHES "[/\\\\]mingw")
@@ -89,6 +110,29 @@ target_link_libraries(rtmp_monitor_app
 
 rtmp_monitor_apply_project_options(rtmp_monitor_app)
 
+set(RTMP_MONITOR_MEDIA_SOURCES
+    include/common/media/FFmpegPlayer.h
+    src/common/media/FFmpegPlayer.cpp
+)
+
+qt_add_library(rtmp_monitor_media STATIC
+    ${RTMP_MONITOR_MEDIA_SOURCES}
+)
+
+target_include_directories(rtmp_monitor_media
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/common
+)
+
+target_link_libraries(rtmp_monitor_media
+    PUBLIC
+        Qt6::Gui
+    PRIVATE
+        rtmp_monitor_ffmpeg
+)
+
+rtmp_monitor_apply_project_options(rtmp_monitor_media)
+
 # UI 作为独立静态库供主程序和测试复用，避免重复编译相同实现。
 set(RTMP_MONITOR_UI_SOURCES
     include/common/ui/FullscreenControlBar.h
@@ -131,10 +175,45 @@ endif()
 target_link_libraries(rtmp_monitor
     PRIVATE
         rtmp_monitor_app
+        rtmp_monitor_media
         rtmp_monitor_ui
 )
 
 rtmp_monitor_apply_project_options(rtmp_monitor)
+
+function(rtmp_monitor_copy_ffmpeg_runtime target_name)
+    if(NOT WIN32)
+        return()
+    endif()
+    if(NOT DEFINED VCPKG_INSTALLED_DIR OR VCPKG_INSTALLED_DIR STREQUAL "" OR
+       NOT DEFINED VCPKG_TARGET_TRIPLET OR VCPKG_TARGET_TRIPLET STREQUAL "")
+        message(FATAL_ERROR
+            "Windows FFmpeg runtime deployment requires VCPKG_INSTALLED_DIR "
+            "and VCPKG_TARGET_TRIPLET. Configure with the vcpkg toolchain."
+        )
+    endif()
+
+    set(ffmpeg_release_bin
+        "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin")
+    set(ffmpeg_debug_bin
+        "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/debug/bin")
+
+    foreach(ffmpeg_dll IN ITEMS
+        avformat-62.dll
+        avcodec-62.dll
+        avutil-60.dll
+        swscale-9.dll
+    )
+        add_custom_command(TARGET ${target_name} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<IF:$<CONFIG:Debug>,${ffmpeg_debug_bin}/${ffmpeg_dll},${ffmpeg_release_bin}/${ffmpeg_dll}>"
+                "$<TARGET_FILE_DIR:${target_name}>/${ffmpeg_dll}"
+            VERBATIM
+        )
+    endforeach()
+endfunction()
+
+rtmp_monitor_copy_ffmpeg_runtime(rtmp_monitor)
 
 include(CTest)
 
@@ -180,6 +259,26 @@ if(BUILD_TESTING)
     rtmp_monitor_apply_project_options(rtmp_monitor_dynamic_grid_test)
 
     add_test(NAME rtmp_monitor_dynamic_grid_test COMMAND rtmp_monitor_dynamic_grid_test)
+
+    qt_add_executable(rtmp_monitor_ffmpeg_player_test
+        tests/FFmpegPlayerLifecycleTest.cpp
+    )
+
+    if(WIN32)
+        set_target_properties(rtmp_monitor_ffmpeg_player_test
+            PROPERTIES WIN32_EXECUTABLE FALSE)
+    endif()
+
+    target_link_libraries(rtmp_monitor_ffmpeg_player_test
+        PRIVATE
+            rtmp_monitor_media
+            Qt6::Test
+    )
+
+    rtmp_monitor_apply_project_options(rtmp_monitor_ffmpeg_player_test)
+    add_test(NAME rtmp_monitor_ffmpeg_player_test
+        COMMAND rtmp_monitor_ffmpeg_player_test)
+    rtmp_monitor_copy_ffmpeg_runtime(rtmp_monitor_ffmpeg_player_test)
 endif()
 
 include(GNUInstallDirs)

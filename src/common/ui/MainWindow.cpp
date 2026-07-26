@@ -64,6 +64,11 @@ MainWindow::~MainWindow()
     fullscreenVideoWindow_->exitFullscreen();
 }
 
+VideoWidget *MainWindow::primaryVideoWidget() const noexcept
+{
+    return videoGrid_ != nullptr ? videoGrid_->videoWidgetAt(0) : nullptr;
+}
+
 void MainWindow::addVideoWidget()
 {
     videoGrid_->addVideoWidget();

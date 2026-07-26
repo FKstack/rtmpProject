@@ -156,6 +156,35 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
+    QImage testFrame(64, 48, QImage::Format_RGB888);
+    const QColor expectedFrameColor(12, 96, 180);
+    testFrame.fill(expectedFrameColor);
+    grid.videoWidgetAt(0)->displayFrame(testFrame);
+    application.processEvents();
+    auto *initialVideoSurface =
+        grid.videoWidgetAt(0)->findChild<QFrame *>(QStringLiteral("videoSurface"));
+    auto *initialStatusLabel =
+        grid.videoWidgetAt(0)->findChild<QLabel *>(QStringLiteral("statusLabel"));
+    if (!expect(initialVideoSurface != nullptr && initialStatusLabel != nullptr,
+                QStringLiteral("视频格应包含渲染表面和状态标签。"))) {
+        return EXIT_FAILURE;
+    }
+    const QImage renderedFrame = initialVideoSurface->grab().toImage();
+    if (!expect(!initialStatusLabel->isVisible(),
+                QStringLiteral("显示视频帧后状态标签应隐藏。")) ||
+        !expect(!renderedFrame.isNull() &&
+                    renderedFrame.pixelColor(renderedFrame.rect().center()) == expectedFrameColor,
+                QStringLiteral("RGB888 测试帧应按原始颜色绘制在视频区域中央。"))) {
+        return EXIT_FAILURE;
+    }
+    grid.videoWidgetAt(0)->clearFrame();
+    grid.videoWidgetAt(0)->setStatusText(QStringLiteral("未连接"));
+    application.processEvents();
+    if (!expect(initialStatusLabel->isVisible(),
+                QStringLiteral("清除视频帧后状态标签应恢复显示。"))) {
+        return EXIT_FAILURE;
+    }
+
     for (int expectedCount = 2; expectedCount <= 4; ++expectedCount) {
         bool widgetAdded = false;
         QEventLoop addLoop;

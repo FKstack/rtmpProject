@@ -11,9 +11,15 @@ RtmpMonitor 是一个面向 Windows x86_64 PC 与 Linux ARM64 嵌入式硬件盒
 | 第 1 周：RTMP 链路验证 | 已完成 | nginx-rtmp、FFmpeg、ffplay 验证脚本和排查文档 |
 | 第 2 周：Qt 多路 UI | 已完成 | 1～16 路动态网格、添加动画、拖拽交换、单路全屏 |
 | QSS 与工程规范 | 已完成 | 外部 QSS 优先、QRC 回退、代码和注释规范 |
-| 第 3 周：一路 FFmpeg 播放 | 待开始 | RTMP 拉流、H.264 解码、QImage 显示 |
+| 第 3 周：一路 FFmpeg 播放 | 已完成 | Camera 01 拉流、H.264 解码、RGB888 显示、断线重连 |
+| 第 3 周：桌面实况延迟基线 | 已完成 | 本地回环中位数 117.5 ms，P95 156 ms |
 
-当前版本没有接入 FFmpeg 开发库，也不会播放真实 RTMP 画面。每个视频格中的黑色区域是后续唯一的视频渲染承载区。
+当前版本会把一路真实 RTMP/H.264 视频绑定到 `Camera 01`。其余视频格仍是 UI 占位，四路播放留到下一阶段。
+
+当前 Windows 本地回环测试已经覆盖“桌面采集 → H.264 编码 → nginx-rtmp →
+FFmpegPlayer 解码 → Qt 绘制”的完整链路。10 个有效样本的典型延迟约为
+0.12 秒，详细测试条件、误差边界和复现步骤见
+[桌面实况端到端延迟测试](docs/week3_desktop_latency_test.md)。
 
 ## 已实现功能
 
@@ -26,6 +32,10 @@ RtmpMonitor 是一个面向 Windows x86_64 PC 与 Linux ARM64 嵌入式硬件盒
 - 全屏底部提供自动隐藏的 Overlay 控制栏，静音和截图暂为接口占位。
 - 添加、拖拽和全屏通过统一状态互斥，避免动画重入。
 - 使用 `StyleLoader` 统一加载外部或 QRC 内置 QSS。
+- `FFmpegPlayer` 在专用 `QThread` 中完成 RTMP 拉流、解封装、H.264 软件解码和 RGB888 转换。
+- UI 线程只绘制最新一帧；旧帧会被覆盖，避免网络流较快时 Qt 事件队列持续增长。
+- 断流后立即清黑画面，并按 1、2、4、5 秒退避自动重连；恢复推流后继续显示。
+- 关闭程序时通过 FFmpeg 中断回调停止阻塞读取，并等待解码线程释放资源。
 
 ## 动态布局
 
@@ -60,8 +70,8 @@ RtmpMonitor 是一个面向 Windows x86_64 PC 与 Linux ARM64 嵌入式硬件盒
 - Windows x86_64：MSVC / Visual Studio 2022
 - Linux ARM64：AArch64 GCC/Clang 交叉工具链
 - Qt Test / CTest
-- FFmpeg 命令行工具：当前用于 RTMP 链路验证
-- FFmpeg 开发库：计划在第三周接入
+- FFmpeg 8.1.2 命令行工具：用于 RTMP 链路验证
+- FFmpeg 8.1.2 LGPL 动态开发库：Windows x64 与 Linux ARM64 环境及一路播放器均已接入
 - nginx-rtmp 或 SRS：外部 RTMP Server
 
 ## 项目结构
@@ -78,6 +88,8 @@ rtmpProject/
 │   ├── project_plan.md
 │   ├── cross_platform_build.md
 │   ├── rtmp_chain_verification.md
+│   ├── week3_ffmpeg_player.md
+│   ├── week3_desktop_latency_test.md
 │   ├── week2_ui_layout.md
 │   ├── week2_dynamic_grid.md
 │   ├── week2_drag_and_fullscreen.md
@@ -88,22 +100,29 @@ rtmpProject/
 │   └── common/                      # 两个目标平台共享的接口
 │       ├── app/                     # 应用级服务接口
 │       ├── core/                    # 通用基础设施
+│       ├── media/                   # FFmpegPlayer 接口
 │       └── ui/                      # Qt Widgets 接口
 ├── resources/
 │   ├── styles/app.qss
 │   └── styles.qrc
 ├── scripts/
+│   ├── setup_ffmpeg_windows_dev.ps1
 │   ├── setup_arm64_build_env.sh
+│   ├── verify_ffmpeg_arm64_env.sh
+│   ├── ffmpeg_smoke/
+│   ├── test_desktop_latency.ps1
 │   └── verify_rtmp_chain.ps1
 ├── src/
 │   ├── main.cpp                     # 跨平台程序入口
 │   ├── common/                      # 两个平台共享的实现
 │   │   ├── app/
+│   │   ├── media/
 │   │   └── ui/
 │   └── platform/                    # 有真实需求时加入平台实现
 │       ├── windows/
 │       └── linux/
 └── tests/
+    ├── FFmpegPlayerLifecycleTest.cpp
     ├── VideoGridSmokeTest.cpp
     └── VideoGridDynamicTest.cpp
 ```
@@ -116,16 +135,28 @@ rtmpProject/
 - Visual Studio 2022，并安装“使用 C++ 的桌面开发”工作负载。
 - CMake 3.21 或更高版本。
 - Qt 6 MSVC x64 Kit。当前验证环境为 Qt 6.6.1 `msvc2019_64`。
+- FFmpeg 8.1.2 LGPL 动态开发库由 vcpkg 安装到 `F:\DevTools\vcpkg\installed\x64-windows`。
 
 工程会拒绝 MinGW 编译器或 MinGW Qt Kit，不能把 MinGW Qt 库与 MSVC 混用。
+
+首次准备 Windows FFmpeg 开发库时，在 PowerShell 中执行：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass `
+    -File scripts/setup_ffmpeg_windows_dev.ps1
+```
+
+脚本把 vcpkg、下载和二进制缓存放在 F 盘，设置用户级 `VCPKG_ROOT`、
+`VCPKG_DOWNLOADS`、`VCPKG_DEFAULT_BINARY_CACHE` 和 PATH。FFmpeg DLL 不永久
+加入 PATH；CMake 会按 Debug/Release 把四个运行库复制到应用和播放器测试目录。
 
 ### Linux ARM64
 
 - 在 WSL2 或 Linux 主机中使用 `aarch64-linux-gnu-g++`，也可替换为硬件厂商 SDK 提供的 GCC/Clang。
 - 仓库提供 `cmake/toolchains/aarch64-linux.cmake` 和 `Linux-ARM64-Debug` 预设。
 - 当前验证环境使用 WSL2 Ubuntu 22.04、AArch64 GCC 11、x86_64 Qt 6.2.4 host tools，以及 `/opt/rtmp-monitor/sysroots/jammy-arm64` 中的 ARM64 Qt 6.2.4。
-- 主程序和两个测试程序已经完成 ARM64 编译、链接和 ELF 架构检查；尚未在真实 ARM64 图形环境中运行。
-- 第三周接入 FFmpeg 后，还需要增加与目标系统 ABI 匹配的 ARM64 FFmpeg 开发库。
+- 主程序和三个测试程序已经完成 ARM64 编译、链接和 ELF 架构检查；尚未在真实 ARM64 图形环境中运行。
+- ARM64 sysroot 的 `/usr/local` 中使用 FFmpeg 8.1.2 LGPL 最小动态构建，与 Windows 开发库保持版本一致。
 
 ### RTMP 验证工具
 
@@ -152,6 +183,15 @@ ctest --test-dir out/build-windows-x64/debug --output-on-failure
 ./out/build-windows-x64/debug/rtmp_monitor.exe
 ```
 
+默认拉取 `rtmp://127.0.0.1:1935/live/camera001`。也可以显式指定一路地址：
+
+```powershell
+./out/build-windows-x64/debug/rtmp_monitor.exe `
+    --url rtmp://127.0.0.1:1935/live/camera001
+```
+
+当前仅接受 `rtmp://` URL，并仅解码 H.264 视频；不处理音频、RTMPS、录像或硬件解码。连接失败或推流停止时，`Camera 01` 会清黑并显示重连状态。URL 可能包含凭据，因此错误信息不会回显完整地址。
+
 新环境没有 `Qt-Debug` 用户预设时，可使用通用 Visual Studio Generator：
 
 ```powershell
@@ -165,15 +205,17 @@ cmake --build out/build-windows-x64/debug-vs2022 --config Debug
 ctest --test-dir out/build-windows-x64/debug-vs2022 -C Debug --output-on-failure
 ```
 
-首次准备 WSL2 环境时，以 root 运行幂等配置脚本。下载和 sysroot 位于 WSL 的 G 盘 VHDX，构建产物位于 E 盘仓库：
+首次准备 WSL2 环境时，以 root 运行幂等配置脚本。Qt/FFmpeg 源码、下载和
+sysroot 位于 WSL 的 G 盘 VHDX，项目构建产物位于 E 盘仓库：
 
 ```bash
 sudo bash scripts/setup_arm64_build_env.sh
+bash scripts/verify_ffmpeg_arm64_env.sh
 cmake --preset Linux-ARM64-Debug
 cmake --build --preset Linux-ARM64-Debug
 ```
 
-ARM64 Debug 构建目录为 `out/build-linux-arm64/debug`。当前只要求两个测试目标完成 ARM64 编译和链接，不在 WSL2 中运行 Qt GUI 测试；全屏、QPA、OpenGL 和真实交互必须在硬件盒子上验收。完整环境、产物检查和故障排查见 [跨平台构建说明](docs/cross_platform_build.md)。
+ARM64 Debug 构建目录为 `out/build-linux-arm64/debug`。当前只要求三个测试目标完成 ARM64 编译和链接，不在 WSL2 中运行 Qt GUI 测试；全屏、QPA、OpenGL、真实 RTMP 播放和交互必须在硬件盒子上验收。完整环境、产物检查和故障排查见 [跨平台构建说明](docs/cross_platform_build.md)。
 
 当前自动化测试包括：
 
@@ -181,6 +223,15 @@ ARM64 Debug 构建目录为 `out/build-linux-arm64/debug`。当前只要求两�
 |---|---|
 | `rtmp_monitor_ui_smoke_test` | QSS、拖拽对象交换、全屏转移和恢复 |
 | `rtmp_monitor_dynamic_grid_test` | 1～16 路布局、数量上限、状态互斥和工具栏状态 |
+| `rtmp_monitor_ffmpeg_player_test` | URL 校验、重复停止、连接失败重连和可中断退出 |
+
+播放器测试默认不要求本机存在 RTMP 服务。要额外执行真实 H.264 拉流、解码和 RGB888 输出检查，可先启动推流，再设置：
+
+```powershell
+$env:RTMP_MONITOR_TEST_URL = "rtmp://127.0.0.1:1935/live/camera001"
+ctest --test-dir out/build-windows-x64/debug `
+    -R rtmp_monitor_ffmpeg_player_test --output-on-failure
+```
 
 ## QSS 样式加载
 
@@ -221,6 +272,68 @@ rtmp://127.0.0.1:1935/live/camera001
 
 详细参数和问题排查见 [RTMP 推流链路验证说明](docs/rtmp_chain_verification.md)。
 
+## 桌面实况延迟测试
+
+仓库提供双屏“同屏双时钟”测试工具。副屏显示并采集蓝色 SOURCE 毫秒时钟，
+主屏同时显示绿色 REFERENCE 时钟和 Camera 01；同一张截图中两者的时间差就是
+包含采集、编码、RTMP、解码、RGB 转换和 UI 绘制在内的端到端延迟。
+
+```powershell
+# 检查双屏、FFmpeg、nginx-rtmp、Qt 和 Debug 程序
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+    -File .\scripts\test_desktop_latency.ps1 -Action Check
+
+# 启动副屏实况推流和 Qt 播放器
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+    -File .\scripts\test_desktop_latency.ps1 -Action Start
+
+# 采集 10 个样本
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+    -File .\scripts\test_desktop_latency.ps1 `
+    -Action Capture -SampleCount 10 -SampleIntervalMs 1000
+
+# 停止脚本启动的临时进程
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+    -File .\scripts\test_desktop_latency.ps1 -Action Stop
+```
+
+截图、FFmpeg 日志和状态清单写入被 Git 忽略的 `out/desktop-latency/`，不得上传。
+本次 10 个样本的最小值为 92 ms、平均值为 117.4 ms、中位数为 117.5 ms、
+P95 和最大值均为 156 ms。该结果是本机回环基线，不包含真实摄像头、远端网络
+或 ARM64 硬件盒子的额外延迟。
+
+## 仓库上传边界
+
+提交和推送前应按下面的边界检查。仓库只保存能够复现项目的源码、配置、脚本和
+正式文档，不保存个人机器状态、密钥、构建产物或测试素材。
+
+可以上传：
+
+- `include/`、`src/`、`resources/` 和 `tests/` 中的源码与测试；
+- `CMakeLists.txt`、共享 `CMakePresets.json`、`cmake/` 和 `.gitattributes`；
+- `scripts/` 中不包含凭据、可重复执行的环境和测试脚本；
+- `docs/` 中的项目规划、构建说明、代码规范及 week2/week3 正式教程；
+- 只含占位符、不含真实值的 `.env.example`。
+
+不可以上传：
+
+- `.env`、凭据、私钥、token、带认证信息的 RTMP URL；
+- `.vs/`、`out/`、`build/`、`CMakeUserPresets.json` 和编辑器本地配置；
+- `testdata/`、MP4/FLV/MKV、H.264/H.265 裸码流、YUV、HLS 分片和播放列表；
+- 日志、转储、PID、抓包、桌面截图、延迟样本和录像分析产物；
+- `docs/project_handoff.md`、`docs/local/`、`.agents/` 和 `.codex/` 等个人工作记录。
+
+检查命令：
+
+```powershell
+git status --short
+git status --short --ignored
+git diff --check
+```
+
+`.gitignore` 已覆盖上述本地文件。若新增文件不确定是否适合上传，应先检查其是否
+包含机器绝对路径、账号、凭据、个人桌面信息或不可再分发的二进制数据。
+
 ## 敏感配置
 
 当前项目不需要 OpenAI 或其他 AI 服务 API Key。开发过程中使用的 GPT/API 凭据不得写入源码、README、CMake、脚本或提交记录。
@@ -235,14 +348,22 @@ rtmp://127.0.0.1:1935/live/camera001
 
 `.gitignore` 已排除 `.env`、本地凭据目录、私钥文件、日志、转储、构建目录和测试媒体。
 
+## FFmpeg 分发边界
+
+项目以动态方式链接 LGPL 配置的 FFmpeg 8.1.2。发布程序时应一并提供对应许可证声明、FFmpeg 源码获取方式和实际构建参数，并允许用户替换动态库。不得在没有重新评估许可证的情况下启用 `--enable-gpl`、`--enable-nonfree`、x264 或 x265。
+
+Windows 发布目录需要 `avformat-62.dll`、`avcodec-62.dll`、`avutil-60.dll` 和 `swscale-9.dll`；ARM64 设备需要部署与 sysroot ABI 一致的 `.so`。Debug/Release DLL 不能混用，ARM64 运行时也不能混入 WSL 宿主的 x86_64 库。
+
 ## 下一步
 
-第三周计划实现一路 `FFmpegPlayer`：在工作线程打开 RTMP、解析并解码 H.264、转换为 `QImage`，通过 Qt 信号槽更新指定 `VideoWidget`。UI 线程不得执行网络读取或解码。
+把当前单路播放扩展为相互隔离的四路播放器，并在真实 ARM64 设备上验证 QPA、持续拉流、断线恢复、关闭耗时和资源占用。
 
 ## 文档索引
 
 - [项目规划](docs/project_plan.md)
 - [Windows x64 与 Linux ARM64 跨平台构建说明](docs/cross_platform_build.md)
+- [第三周 FFmpegPlayer 初学者教程](docs/week3_ffmpeg_player.md)
+- [第三周桌面实况端到端延迟测试](docs/week3_desktop_latency_test.md)
 - [第二周 UI 布局说明](docs/week2_ui_layout.md)
 - [动态视频网格详解](docs/week2_dynamic_grid.md)
 - [拖拽换位与单路全屏详解](docs/week2_drag_and_fullscreen.md)

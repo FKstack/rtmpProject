@@ -7,6 +7,10 @@
 *.userosscache
 *.sln.docstates
 
+# Local AI/agent workspace metadata
+.agents/
+.codex/
+
 # =========================
 # CMake build directories
 # =========================
@@ -87,18 +91,33 @@ service-account*.json
 # =========================
 logs/
 *.log
+*.pid
 *.dmp
 *.tmp
 *.bak
+*.pcap
+*.pcapng
 
 # Local test media
 # RTMP 验证脚本默认从 testdata/test.mp4 读取测试视频。
 testdata/
 test_data/
 *.mp4
+*.flv
+*.mkv
+*.mov
+*.ts
+*.m3u8
+*.h264
+*.h265
+*.hevc
+*.yuv
 
 # Local debugging and recording analysis output
 recording_analysis/
+captures/
+latency_samples/
+desktop_latency/
 
 # =========================
 # Local-only documentation

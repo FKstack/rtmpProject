@@ -6,6 +6,16 @@ readonly proxy_url="http://127.0.0.1:7890"
 readonly arm64_source_file="/etc/apt/sources.list.d/rtmp-monitor-arm64.list"
 readonly arm64_sysroot="/opt/rtmp-monitor/sysroots/jammy-arm64"
 readonly apt_backup_directory="/etc/apt/rtmp-monitor-backups"
+readonly ffmpeg_version="8.1.2"
+readonly ffmpeg_root="/opt/rtmp-monitor/ffmpeg-arm64"
+readonly ffmpeg_archive="${ffmpeg_root}/sources/ffmpeg-${ffmpeg_version}.tar.xz"
+readonly ffmpeg_signature="${ffmpeg_archive}.asc"
+readonly ffmpeg_source_directory="${ffmpeg_root}/sources/ffmpeg-${ffmpeg_version}"
+readonly ffmpeg_build_directory="${ffmpeg_root}/build/ffmpeg-${ffmpeg_version}"
+readonly ffmpeg_gnupg_directory="${ffmpeg_root}/gnupg"
+readonly ffmpeg_marker="${ffmpeg_root}/ffmpeg-${ffmpeg_version}-ready"
+readonly ffmpeg_signing_fingerprint="FCF986EA15E6E293A5644F10B4322F04D67658D8"
+readonly ffmpeg_profile="minimal-shared-avformat-avcodec-avutil-swscale-v2"
 
 if [[ ${EUID} -ne 0 ]]; then
     echo "请使用 root 运行该脚本。" >&2
@@ -154,7 +164,12 @@ install_common_dependencies()
         patchelf \
         qemu-user-static \
         binfmt-support \
-        debootstrap
+        debootstrap \
+        ca-certificates \
+        curl \
+        gnupg \
+        make \
+        xz-utils
 }
 
 install_multiarch_qt()
@@ -275,11 +290,171 @@ install_dependencies()
     rm -rf /var/lib/apt/lists/*
 }
 
-configure_network
-configure_sources
-install_dependencies
+download_ffmpeg_source()
+{
+    local imported_fingerprint
+    local key_file="${ffmpeg_root}/sources/ffmpeg-devel.asc"
 
-echo "ARM64 Qt 6 交叉编译环境安装完成。"
+    install -d -m 0755 "${ffmpeg_root}/sources" "${ffmpeg_root}/build"
+    install -d -m 0700 "${ffmpeg_gnupg_directory}"
+
+    if [[ ! -f ${ffmpeg_archive} ]]; then
+        curl --fail --location --retry 3 \
+            --output "${ffmpeg_archive}" \
+            "https://ffmpeg.org/releases/ffmpeg-${ffmpeg_version}.tar.xz"
+    fi
+    if [[ ! -f ${ffmpeg_signature} ]]; then
+        curl --fail --location --retry 3 \
+            --output "${ffmpeg_signature}" \
+            "https://ffmpeg.org/releases/ffmpeg-${ffmpeg_version}.tar.xz.asc"
+    fi
+    if [[ ! -f ${key_file} ]]; then
+        curl --fail --location --retry 3 \
+            --output "${key_file}" \
+            "https://ffmpeg.org/ffmpeg-devel.asc"
+    fi
+
+    gpg --homedir "${ffmpeg_gnupg_directory}" --batch --import "${key_file}"
+    imported_fingerprint=$(gpg --homedir "${ffmpeg_gnupg_directory}" --batch \
+        --with-colons --fingerprint | awk -F: '/^fpr:/ { print $10; exit }')
+    if [[ ${imported_fingerprint} != "${ffmpeg_signing_fingerprint}" ]]; then
+        echo "FFmpeg 签名密钥指纹不匹配：${imported_fingerprint}" >&2
+        exit 1
+    fi
+    gpg --homedir "${ffmpeg_gnupg_directory}" --batch \
+        --verify "${ffmpeg_signature}" "${ffmpeg_archive}"
+
+    if [[ ! -x ${ffmpeg_source_directory}/configure ]]; then
+        tar -xJf "${ffmpeg_archive}" -C "${ffmpeg_root}/sources"
+    fi
+}
+
+build_arm64_ffmpeg()
+{
+    local ffmpeg_header="${arm64_sysroot}/usr/local/include/libavformat/avformat.h"
+    local ffmpeg_library="${arm64_sysroot}/usr/local/lib/aarch64-linux-gnu/libavformat.so"
+    local ffmpeg_pkgconfig="${arm64_sysroot}/usr/local/lib/aarch64-linux-gnu/pkgconfig/libavformat.pc"
+    local configure_record="${ffmpeg_root}/ffmpeg-${ffmpeg_version}-configure.txt"
+    if [[ -f ${ffmpeg_marker} && -f ${ffmpeg_header} && \
+          -e ${ffmpeg_library} && -f ${ffmpeg_pkgconfig} && \
+          $(cat "${ffmpeg_marker}") == "${ffmpeg_profile}" && \
+          ! -e ${arm64_sysroot}/usr/local/lib/aarch64-linux-gnu/libavdevice.so && \
+          ! -e ${arm64_sysroot}/usr/local/lib/aarch64-linux-gnu/libavfilter.so && \
+          ! -e ${arm64_sysroot}/usr/local/lib/aarch64-linux-gnu/libswresample.so ]]; then
+        echo "ARM64 FFmpeg ${ffmpeg_version} 已就绪，跳过重复构建。"
+        return
+    fi
+
+    if [[ ! -d ${arm64_sysroot} ]]; then
+        echo "ARM64 sysroot 不存在：${arm64_sysroot}" >&2
+        exit 1
+    fi
+
+    download_ffmpeg_source
+    install -d -m 0755 "${ffmpeg_build_directory}"
+    cd "${ffmpeg_build_directory}"
+    if [[ -f Makefile ]]; then
+        make distclean
+    fi
+
+    local -a configure_options=(
+        "--prefix=/usr/local"
+        "--libdir=/usr/local/lib/aarch64-linux-gnu"
+        "--incdir=/usr/local/include"
+        "--arch=aarch64"
+        "--target-os=linux"
+        "--cross-prefix=aarch64-linux-gnu-"
+        "--sysroot=${arm64_sysroot}"
+        "--enable-cross-compile"
+        "--enable-shared"
+        "--disable-static"
+        "--disable-programs"
+        "--disable-doc"
+        "--disable-debug"
+        "--disable-autodetect"
+        "--disable-everything"
+        "--disable-avdevice"
+        "--disable-avfilter"
+        "--disable-swresample"
+        "--enable-avcodec"
+        "--enable-avformat"
+        "--enable-avutil"
+        "--enable-swscale"
+        "--enable-decoder=h264"
+        "--enable-parser=h264"
+        "--enable-demuxer=flv"
+        "--enable-protocol=file,tcp,rtmp"
+        "--enable-network"
+        "--enable-pthreads"
+    )
+
+    printf '%s\n' "${configure_options[@]}" >"${configure_record}"
+    "${ffmpeg_source_directory}/configure" "${configure_options[@]}"
+    make -j"$(nproc)"
+    make DESTDIR="${arm64_sysroot}" install
+
+    # These libraries may remain from an older profile because FFmpeg's install
+    # target does not uninstall outputs disabled by a later configure run.
+    rm -f "${arm64_sysroot}/usr/local/lib/aarch64-linux-gnu/libavdevice.so"*
+    rm -f "${arm64_sysroot}/usr/local/lib/aarch64-linux-gnu/libavfilter.so"*
+    rm -f "${arm64_sysroot}/usr/local/lib/aarch64-linux-gnu/libswresample.so"*
+    rm -f "${arm64_sysroot}/usr/local/lib/aarch64-linux-gnu/pkgconfig/libavdevice.pc"
+    rm -f "${arm64_sysroot}/usr/local/lib/aarch64-linux-gnu/pkgconfig/libavfilter.pc"
+    rm -f "${arm64_sysroot}/usr/local/lib/aarch64-linux-gnu/pkgconfig/libswresample.pc"
+    rm -rf "${arm64_sysroot}/usr/local/include/libavdevice"
+    rm -rf "${arm64_sysroot}/usr/local/include/libavfilter"
+    rm -rf "${arm64_sysroot}/usr/local/include/libswresample"
+
+    file -L "${arm64_sysroot}/usr/local/lib/aarch64-linux-gnu/libavcodec.so" |
+        grep -q 'ARM aarch64'
+    grep -q '^#define CONFIG_GPL 0$' config.h
+    grep -q '^#define CONFIG_NONFREE 0$' config.h
+
+    cat >"${ffmpeg_root}/ffmpeg-arm64.env" <<EOF
+export PKG_CONFIG_SYSROOT_DIR=${arm64_sysroot}
+export PKG_CONFIG_LIBDIR=${arm64_sysroot}/usr/local/lib/aarch64-linux-gnu/pkgconfig:${arm64_sysroot}/usr/local/share/pkgconfig
+EOF
+    printf '%s\n' "${ffmpeg_profile}" >"${ffmpeg_marker}"
+}
+
+environment_ready()
+{
+    local required_tool
+
+    for required_tool in aarch64-linux-gnu-g++ cmake ninja pkg-config \
+        qemu-aarch64-static curl gpg make; do
+        command -v "${required_tool}" >/dev/null || return 1
+    done
+
+    [[ -f ${arm64_sysroot}/.rtmp-monitor-ready ]] || return 1
+    [[ -f ${arm64_sysroot}/usr/include/GL/gl.h ]] || return 1
+    [[ -e ${arm64_sysroot}/usr/lib/aarch64-linux-gnu/libGL.so ]] || return 1
+    [[ -f ${arm64_sysroot}/usr/lib/aarch64-linux-gnu/cmake/Qt6/Qt6Config.cmake ]] || return 1
+    [[ -f ${ffmpeg_marker} ]] || return 1
+    grep -qxF "${ffmpeg_profile}" "${ffmpeg_marker}" || return 1
+
+    for ffmpeg_library in avformat avcodec avutil swscale; do
+        [[ -e ${arm64_sysroot}/usr/local/lib/aarch64-linux-gnu/lib${ffmpeg_library}.so ]] || return 1
+        [[ -f ${arm64_sysroot}/usr/local/lib/aarch64-linux-gnu/pkgconfig/lib${ffmpeg_library}.pc ]] || return 1
+    done
+
+    for disabled_library in avdevice avfilter swresample; do
+        [[ ! -e ${arm64_sysroot}/usr/local/lib/aarch64-linux-gnu/lib${disabled_library}.so ]] || return 1
+    done
+
+    return 0
+}
+
+if environment_ready; then
+    echo "ARM64 Qt 6 与 FFmpeg ${ffmpeg_version} 已验证，跳过网络、APT 和重复构建。"
+else
+    configure_network
+    configure_sources
+    install_dependencies
+    build_arm64_ffmpeg
+fi
+
+echo "ARM64 Qt 6 与 FFmpeg ${ffmpeg_version} 交叉编译环境安装完成。"
 dpkg-query -W -f='${Package} ${Architecture} ${Version}\n' \
     g++-aarch64-linux-gnu qt6-base-dev-tools:amd64
 
@@ -298,3 +473,7 @@ for qt_host_tool in moc rcc uic; do
 done
 
 file -L "${qt_target_library}" | grep -q 'ARM aarch64'
+
+PKG_CONFIG_SYSROOT_DIR="${arm64_sysroot}" \
+PKG_CONFIG_LIBDIR="${arm64_sysroot}/usr/local/lib/aarch64-linux-gnu/pkgconfig:${arm64_sysroot}/usr/local/share/pkgconfig" \
+pkg-config --modversion libavformat libavcodec libavutil libswscale

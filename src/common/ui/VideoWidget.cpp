@@ -11,6 +11,8 @@
 #include <QMimeData>
 #include <QMouseEvent>
 #include <QPalette>
+#include <QPainter>
+#include <QPaintEvent>
 #include <QSizePolicy>
 #include <QStyle>
 #include <QTimer>
@@ -20,6 +22,51 @@ namespace {
 
 constexpr char kVideoWidgetMimeType[] = "application/x-rtmp-monitor-video-widget";
 constexpr int kClickEffectDurationMs = 140;
+
+class VideoSurface final : public QFrame
+{
+public:
+    explicit VideoSurface(QWidget *parent)
+        : QFrame(parent)
+    {
+    }
+
+    void setFrame(const QImage &image)
+    {
+        frame_ = image;
+        update();
+    }
+
+    void clearFrame()
+    {
+        frame_ = QImage();
+        update();
+    }
+
+protected:
+    void paintEvent(QPaintEvent *event) override
+    {
+        QFrame::paintEvent(event);
+        if (frame_.isNull()) {
+            return;
+        }
+
+        QSize targetSize = frame_.size();
+        targetSize.scale(size(), Qt::KeepAspectRatio);
+        const QRect targetRect(
+            QPoint((width() - targetSize.width()) / 2,
+                   (height() - targetSize.height()) / 2),
+            targetSize
+        );
+
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+        painter.drawImage(targetRect, frame_);
+    }
+
+private:
+    QImage frame_;
+};
 
 /**
  * @brief 判断拖放事件是否来自同一进程中的另一个视频格。
@@ -55,7 +102,7 @@ VideoWidget::VideoWidget(QWidget *parent)
     titleLabel_->setAttribute(Qt::WA_TransparentForMouseEvents);
 
     // 将视频区域与标题、状态文本分离，后续可替换为 QImage 或 OpenGL 渲染而不改变外层布局。
-    videoSurface_ = new QFrame(this);
+    videoSurface_ = new VideoSurface(this);
     videoSurface_->setObjectName(QStringLiteral("videoSurface"));
     videoSurface_->setProperty("styleRole", "videoSurface");
     videoSurface_->setFrameShape(QFrame::NoFrame);
@@ -94,6 +141,7 @@ void VideoWidget::setDeviceName(const QString &deviceName)
 void VideoWidget::setStatusText(const QString &statusText)
 {
     statusLabel_->setText(statusText);
+    statusLabel_->setVisible(true);
 }
 
 QString VideoWidget::deviceName() const
@@ -109,6 +157,21 @@ QString VideoWidget::statusText() const
 bool VideoWidget::isDragEnabled() const noexcept
 {
     return dragEnabled_;
+}
+
+void VideoWidget::displayFrame(const QImage &image)
+{
+    if (image.isNull()) {
+        return;
+    }
+    static_cast<VideoSurface *>(videoSurface_)->setFrame(image);
+    statusLabel_->setVisible(false);
+}
+
+void VideoWidget::clearFrame()
+{
+    static_cast<VideoSurface *>(videoSurface_)->clearFrame();
+    statusLabel_->setVisible(true);
 }
 
 void VideoWidget::mousePressEvent(QMouseEvent *event)
