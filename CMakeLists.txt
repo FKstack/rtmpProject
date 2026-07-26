@@ -113,6 +113,8 @@ rtmp_monitor_apply_project_options(rtmp_monitor_app)
 set(RTMP_MONITOR_MEDIA_SOURCES
     include/common/media/FFmpegPlayer.h
     src/common/media/FFmpegPlayer.cpp
+    include/common/media/MultiStreamPlaybackManager.h
+    src/common/media/MultiStreamPlaybackManager.cpp
 )
 
 qt_add_library(rtmp_monitor_media STATIC
@@ -279,6 +281,26 @@ if(BUILD_TESTING)
     add_test(NAME rtmp_monitor_ffmpeg_player_test
         COMMAND rtmp_monitor_ffmpeg_player_test)
     rtmp_monitor_copy_ffmpeg_runtime(rtmp_monitor_ffmpeg_player_test)
+
+    qt_add_executable(rtmp_monitor_multi_stream_test
+        tests/MultiStreamPlaybackManagerTest.cpp
+    )
+
+    if(WIN32)
+        set_target_properties(rtmp_monitor_multi_stream_test
+            PROPERTIES WIN32_EXECUTABLE FALSE)
+    endif()
+
+    target_link_libraries(rtmp_monitor_multi_stream_test
+        PRIVATE
+            rtmp_monitor_media
+            Qt6::Test
+    )
+
+    rtmp_monitor_apply_project_options(rtmp_monitor_multi_stream_test)
+    add_test(NAME rtmp_monitor_multi_stream_test
+        COMMAND rtmp_monitor_multi_stream_test)
+    rtmp_monitor_copy_ffmpeg_runtime(rtmp_monitor_multi_stream_test)
 endif()
 
 include(GNUInstallDirs)

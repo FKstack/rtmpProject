@@ -473,8 +473,8 @@ Windows 11 主机
 - 宿主工具：x86_64 Qt 6.2.4 的 `moc`、`rcc`、`uic`。
 - 目标依赖：`/opt/rtmp-monitor/sysroots/jammy-arm64` 中的 ARM64 Qt 6.2.4 与 OpenGL 开发库。
 - 构建产物：E 盘仓库的 `out/build-linux-arm64/debug`。
-- 已验证范围：Qt Widgets 主程序和三个测试目标完成 ARM64 编译、链接及 ELF 检查；QEMU 可运行最小 ARM64 C++17 程序。
-- 未验证范围：真实盒子上的 QPA、窗口、全屏、OpenGL、输入交互和性能；当前也尚未接入 ARM64 FFmpeg。
+- 已验证范围：Qt Widgets 主程序和四个测试目标完成 ARM64 编译、链接及 ELF 检查；主程序及多路测试目标均为 ELF64/AArch64，并已链接 sysroot 中的 ARM64 FFmpeg 8.1.2；QEMU 可运行最小 ARM64 C++17 程序。
+- 未验证范围：真实盒子上的 QPA、窗口、全屏、OpenGL、输入交互、四路实况播放和性能。
 
 环境配置命令及存储约束见 `scripts/setup_arm64_build_env.sh` 和 [跨平台构建说明](cross_platform_build.md)。
 
@@ -519,7 +519,7 @@ set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
 3. MinGW Qt 检查只作用于 Windows 构建，不会误伤 Linux ARM64 Qt。
 4. `WIN32_EXECUTABLE` 只用于 Windows 主程序，Linux ARM64 生成普通 ELF。
 5. 共享 target 使用 `include/common` 和 `src/common`，平台实现后续按目标系统选择。
-6. Windows 与 Linux ARM64 使用独立构建目录。ARM64 Qt 6 与通用 Jammy sysroot 已齐备，后续仍需补齐 ARM64 FFmpeg，并在确定硬件后用厂商 sysroot 复验 ABI。
+6. Windows 与 Linux ARM64 使用独立构建目录。ARM64 Qt 6、FFmpeg 8.1.2 与通用 Jammy sysroot 已齐备；确定硬件后仍需用厂商 sysroot 复验 ABI。
 
 ### 7.5 在 Windows 开发机上验证 ARM64 构建
 
@@ -637,7 +637,7 @@ ffplay -fflags nobuffer -flags low_delay rtmp://127.0.0.1/live/camera001
 | 第 1 周 | 跑通 RTMP 推流链路 | SRS/nginx-rtmp 可用，ffplay 能播放 RTMP 流。 | 必做 |
 | 第 2 周 | Qt 空界面和多宫格布局 | Qt Widgets 项目，1～16 路动态视频网格。 | 必做 |
 | 第 3 周 | FFmpeg 拉流并显示一路视频 | 已完成：Camera 01 使用 QImage 显示，并支持可中断退出和自动重连。 | 已完成 |
-| 第 4 周 | 多路视频显示 | 4 路 RTMP 同时显示。 | 必做 |
+| 第 4 周 | 多路视频显示 | 已完成：4 路 RTMP 独立播放、故障隔离和安全批量退出。 | 已完成 |
 | 第 5 周 | 设备状态、日志、断线重连 | 状态栏、日志、自动重连。 | 推荐 |
 | 第 6 周 | 性能优化、OpenGL 渲染、项目整理 | 基础性能优化，文档和脚本完善。 | 部分后期 |
 | 六周后 1～2 周 | Linux ARM64 交叉构建与实机验证 | AArch64 ELF、toolchain、部署脚本和盒子验收记录。 | 工程化必做 |
@@ -735,13 +735,20 @@ open(url)
 
 ### 8.5 第 4 周：多路视频显示
 
+当前实现状态：已完成。程序启动时无动画创建 Camera 01～04，并将
+`camera001`～`camera004` 绑定到四个稳定的 `VideoWidget` 对象。
+`MultiStreamPlaybackManager` 为每路创建独立 `FFmpegPlayer`；每个播放器继续拥有
+专用 `QThread`、中断标志、退避重连状态和最新帧邮箱。带索引的帧、状态和错误信号
+只路由到对应格子，单路失败不影响其他路。关闭时先同时发布四路停止请求，再逐路
+等待，从而避免四个网络超时串行累加。
+
 | 项目 | 内容 |
 | --- | --- |
 | 学习目标 | 理解多路视频的线程模型、资源占用、帧率控制和 UI 刷新压力。 |
-| 开发任务 | 支持 4 个 RTMP URL；每个 URL 独立播放器；每路绑定一个 `VideoWidget`；支持启动、停止、重启单路；显示每路连接状态。 |
-| 产出物 | 动态网格中前 4 路具备真实 RTMP 播放能力的版本。UI 槽位仍可扩展到 16 路。 |
+| 开发任务 | 已完成：支持 4 个 RTMP URL；每个 URL 独立播放器；每路绑定一个 `VideoWidget`；支持启动、停止和重连单路；显示每路连接状态。 |
+| 产出物 | 已完成：动态网格中前 4 路具备真实 RTMP 播放能力；UI 槽位仍可扩展到 16 路；新增多路生命周期与实况集成测试。 |
 | AI 编程提示词 | “请将当前单路 FFmpegPlayer 播放逻辑扩展为首批 4 路播放。每一路拥有独立的 QThread 和 FFmpegPlayer 实例，将 camera001 到 camera004 绑定到动态 VideoGridWidget 的前 4 个 VideoWidget。要求支持单路失败不影响其他路，并保留 1～16 路 UI 布局能力。” |
-| 验收标准 | 同时推送 4 路测试流时，Qt 程序能同时显示；停止其中一路时其他路继续播放；关闭程序时所有线程正常退出。 |
+| 验收标准 | 已通过：同时推送 4 路测试流时 Qt 程序同时显示；停止 camera003 时其他三路继续播放；恢复后自动继续；关闭程序时所有线程正常退出。 |
 | 可能遇到的问题 | CPU 占用过高；多个线程同时退出崩溃；画面延迟增加；QImage 拷贝过多；推流源不足。 |
 
 测试推流地址建议：
@@ -755,9 +762,9 @@ rtmp://127.0.0.1/live/camera004
 
 本周适合新手先做：
 
-- 先验证前 4 路真实解码和线程模型，避免一次把解码压力扩展到 16 路。
-- 每路一个线程。
-- 每个格子显示状态。
+- 已验证前 4 路真实解码和线程模型，未一次把解码压力扩展到 16 路。
+- 每路一个线程，不使用通用线程池承载长生命周期阻塞式拉流。
+- 每个格子独立显示状态和错误。
 
 后期再做：
 

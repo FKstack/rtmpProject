@@ -23,6 +23,7 @@ private slots:
     void calculateGridDimensions_data();
     void calculateGridDimensions();
     void initialGridContainsOneWidget();
+    void mainWindowContainsFourPlaybackWidgets();
     void addWidgetsToMaximum();
     void interactionStatesRejectReentry();
     void dynamicallyCreatedWidgetKeepsConnections();
@@ -80,6 +81,29 @@ void VideoGridDynamicTest::initialGridContainsOneWidget()
     QVERIFY(grid.videoWidgetAt(0) != nullptr);
     QCOMPARE(grid.videoWidgetAt(0)->deviceName(), QStringLiteral("Camera 01"));
     verifyLogicalLayout(grid);
+}
+
+void VideoGridDynamicTest::mainWindowContainsFourPlaybackWidgets()
+{
+    MainWindow mainWindow;
+    auto *grid = mainWindow.findChild<VideoGridWidget *>();
+
+    QVERIFY(grid != nullptr);
+    QCOMPARE(grid->videoWidgetCount(), MainWindow::kInitialPlaybackWidgetCount);
+    QCOMPARE(grid->gridDimensions().rows, 2);
+    QCOMPARE(grid->gridDimensions().columns, 2);
+    QCOMPARE(mainWindow.primaryVideoWidget(), mainWindow.videoWidgetAt(0));
+    QVERIFY(mainWindow.videoWidgetAt(-1) == nullptr);
+    QVERIFY(mainWindow.videoWidgetAt(MainWindow::kInitialPlaybackWidgetCount) == nullptr);
+
+    for (int index = 0; index < MainWindow::kInitialPlaybackWidgetCount; ++index) {
+        VideoWidget *videoWidget = mainWindow.videoWidgetAt(index);
+        QVERIFY(videoWidget != nullptr);
+        QCOMPARE(
+            videoWidget->deviceName(),
+            QStringLiteral("Camera %1").arg(index + 1, 2, 10, QLatin1Char('0'))
+        );
+    }
 }
 
 void VideoGridDynamicTest::addWidgetsToMaximum()
@@ -207,8 +231,9 @@ void VideoGridDynamicTest::mainWindowDisablesAddActionAtMaximum()
     QVERIFY(grid != nullptr);
     QVERIFY(addAction != nullptr);
     QVERIFY(addAction->isEnabled());
+    QCOMPARE(grid->videoWidgetCount(), MainWindow::kInitialPlaybackWidgetCount);
 
-    for (int expectedCount = 2;
+    for (int expectedCount = MainWindow::kInitialPlaybackWidgetCount + 1;
          expectedCount <= VideoGridWidget::kMaximumVideoWidgetCount;
          ++expectedCount) {
         QSignalSpy addedSpy(grid, &VideoGridWidget::videoWidgetAdded);

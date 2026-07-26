@@ -20,6 +20,9 @@ class MainWindow final : public QMainWindow
     Q_OBJECT
 
 public:
+    /** @brief 应用启动时确定性创建的真实播放格数量。 */
+    static constexpr int kInitialPlaybackWidgetCount = 4;
+
     /**
      * @brief 创建主窗口、动态视频网格和添加操作。
      *
@@ -34,6 +37,16 @@ public:
      * @thread 必须在 Qt UI 线程中调用。
      */
     ~MainWindow() override;
+
+    /**
+     * @brief 返回当前网格中指定逻辑索引的视频格。
+     *
+     * @param index 从 0 开始的当前网格逻辑索引。
+     * @return 对应 VideoWidget；索引越界时返回 nullptr。
+     * @note 返回指针由 MainWindow 内部网格管理，调用方不得释放。
+     * @thread 必须在 Qt UI 线程中调用。
+     */
+    [[nodiscard]] VideoWidget *videoWidgetAt(int index) const noexcept;
 
     /** @brief 返回当前网格中的 Camera 01，供应用组合层绑定一路播放器。 */
     [[nodiscard]] VideoWidget *primaryVideoWidget() const noexcept;

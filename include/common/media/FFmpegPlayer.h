@@ -48,6 +48,16 @@ public:
     bool start(const QString &rtmpUrl);
 
     /**
+     * @brief 非阻塞地请求内部解码线程停止。
+     *
+     * 该函数只发布原子停止标志并唤醒重连等待，不等待线程退出。多路管理器可先向
+     * 全部播放器发布请求，再逐路调用 stop() 等待，从而并行中断网络读取。
+     *
+     * @thread 必须在 FFmpegPlayer 所在线程调用；可重复调用。
+     */
+    void requestStop();
+
+    /**
      * @brief 请求停止并等待内部线程释放所有 FFmpeg 资源。
      * @thread 必须在 FFmpegPlayer 所在线程调用；可重复调用。
      */

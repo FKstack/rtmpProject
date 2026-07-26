@@ -54,6 +54,11 @@ MainWindow::MainWindow(QWidget *parent)
                 restoreAfterFullscreen();
             });
 
+    // 主窗口尚不可见，复用动态添加路径同步创建四格且不会播放启动动画。
+    while (videoGrid_->videoWidgetCount() < kInitialPlaybackWidgetCount) {
+        Q_ASSERT(videoGrid_->addVideoWidget() != nullptr);
+    }
+
     updateAddVideoAction();
 }
 
@@ -64,9 +69,14 @@ MainWindow::~MainWindow()
     fullscreenVideoWindow_->exitFullscreen();
 }
 
+VideoWidget *MainWindow::videoWidgetAt(int index) const noexcept
+{
+    return videoGrid_ != nullptr ? videoGrid_->videoWidgetAt(index) : nullptr;
+}
+
 VideoWidget *MainWindow::primaryVideoWidget() const noexcept
 {
-    return videoGrid_ != nullptr ? videoGrid_->videoWidgetAt(0) : nullptr;
+    return videoWidgetAt(0);
 }
 
 void MainWindow::addVideoWidget()

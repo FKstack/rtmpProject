@@ -22,6 +22,42 @@ namespace {
 constexpr int kNetworkTimeoutMicroseconds = 3'000'000;
 constexpr std::array<int, 4> kReconnectDelaysMs {1'000, 2'000, 4'000, 5'000};
 
+/**
+ * @brief 管理进程级 FFmpeg 网络模块生命周期。
+ *
+ * FFmpeg 要求网络初始化发生在网络工作线程启动前。函数静态对象由首个
+ * FFmpegPlayer 在所属线程中创建，并在进程退出、全部播放器销毁后统一释放。
+ */
+class FFmpegNetworkRuntime final
+{
+public:
+    FFmpegNetworkRuntime()
+        : initialized_(avformat_network_init() >= 0)
+    {
+    }
+
+    ~FFmpegNetworkRuntime()
+    {
+        if (initialized_) {
+            avformat_network_deinit();
+        }
+    }
+
+    [[nodiscard]] bool isInitialized() const noexcept
+    {
+        return initialized_;
+    }
+
+private:
+    bool initialized_ = false;
+};
+
+FFmpegNetworkRuntime &ffmpegNetworkRuntime()
+{
+    static FFmpegNetworkRuntime runtime;
+    return runtime;
+}
+
 QString ffmpegError(int errorCode)
 {
     std::array<char, AV_ERROR_MAX_STRING_SIZE> buffer {};
@@ -103,6 +139,7 @@ FFmpegPlayer::FFmpegPlayer(QObject *parent)
     : QObject(parent)
 {
     qRegisterMetaType<FFmpegPlayer::PlaybackState>();
+    (void)ffmpegNetworkRuntime();
 }
 
 FFmpegPlayer::~FFmpegPlayer()
@@ -116,6 +153,12 @@ bool FFmpegPlayer::start(const QString &rtmpUrl)
 
     if (isRunning()) {
         emit errorOccurred(tr("播放器已经在运行。"));
+        return false;
+    }
+
+    if (!ffmpegNetworkRuntime().isInitialized()) {
+        emit errorOccurred(tr("FFmpeg 网络模块初始化失败。"));
+        setStateOnOwnerThread(PlaybackState::Stopped);
         return false;
     }
 
@@ -148,17 +191,28 @@ bool FFmpegPlayer::start(const QString &rtmpUrl)
             decodeLoop(rtmpUrl, newSessionId);
         }
     ));
-    decodeThread_->setObjectName(QStringLiteral("FFmpegDecodeThread"));
+    decodeThread_->setObjectName(
+        objectName().isEmpty()
+            ? QStringLiteral("FFmpegDecodeThread")
+            : objectName() + QStringLiteral("DecodeThread")
+    );
     decodeThread_->start();
     return true;
+}
+
+void FFmpegPlayer::requestStop()
+{
+    Q_ASSERT(QThread::currentThread() == thread());
+
+    stopRequested_.store(true, std::memory_order_release);
+    reconnectCondition_.notify_all();
 }
 
 void FFmpegPlayer::stop()
 {
     Q_ASSERT(QThread::currentThread() == thread());
 
-    stopRequested_.store(true, std::memory_order_release);
-    reconnectCondition_.notify_all();
+    requestStop();
 
     if (decodeThread_ != nullptr) {
         decodeThread_->wait();
@@ -182,12 +236,6 @@ bool FFmpegPlayer::isRunning() const noexcept
 
 void FFmpegPlayer::decodeLoop(QString rtmpUrl, std::uint64_t sessionId)
 {
-    if (avformat_network_init() < 0) {
-        postError(tr("FFmpeg 网络模块初始化失败。"), sessionId);
-        postState(PlaybackState::Stopped, sessionId);
-        return;
-    }
-
     const QByteArray encodedUrl = rtmpUrl.toUtf8();
     int reconnectDelayIndex = 0;
     bool firstAttempt = true;
@@ -429,7 +477,6 @@ void FFmpegPlayer::decodeLoop(QString rtmpUrl, std::uint64_t sessionId)
         }
     }
 
-    avformat_network_deinit();
     postState(PlaybackState::Stopped, sessionId);
 }
 
