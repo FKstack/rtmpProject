@@ -111,6 +111,9 @@ target_link_libraries(rtmp_monitor_app
 rtmp_monitor_apply_project_options(rtmp_monitor_app)
 
 set(RTMP_MONITOR_MEDIA_SOURCES
+    include/common/media/PlaybackTypes.h
+    include/common/media/DecodeWorkerPool.h
+    src/common/media/DecodeWorkerPool.cpp
     include/common/media/FFmpegPlayer.h
     src/common/media/FFmpegPlayer.cpp
     include/common/media/MultiStreamPlaybackManager.h
@@ -137,6 +140,8 @@ rtmp_monitor_apply_project_options(rtmp_monitor_media)
 
 # UI 作为独立静态库供主程序和测试复用，避免重复编译相同实现。
 set(RTMP_MONITOR_UI_SOURCES
+    include/common/ui/ConnectionDialog.h
+    src/common/ui/ConnectionDialog.cpp
     include/common/ui/FullscreenControlBar.h
     src/common/ui/FullscreenControlBar.cpp
     include/common/ui/FullscreenVideoWindow.h
@@ -167,6 +172,8 @@ rtmp_monitor_apply_project_options(rtmp_monitor_ui)
 
 qt_add_executable(rtmp_monitor
     src/main.cpp
+    include/common/app/StreamConnectionController.h
+    src/common/app/StreamConnectionController.cpp
     ${RTMP_MONITOR_STYLE_RESOURCE}
 )
 

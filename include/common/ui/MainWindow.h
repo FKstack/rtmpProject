@@ -4,6 +4,8 @@
 
 class QAction;
 class FullscreenVideoWindow;
+class QPushButton;
+class QStackedWidget;
 class VideoGridWidget;
 class VideoWidget;
 
@@ -20,9 +22,6 @@ class MainWindow final : public QMainWindow
     Q_OBJECT
 
 public:
-    /** @brief 应用启动时确定性创建的真实播放格数量。 */
-    static constexpr int kInitialPlaybackWidgetCount = 4;
-
     /**
      * @brief 创建主窗口、动态视频网格和添加操作。
      *
@@ -51,14 +50,29 @@ public:
     /** @brief 返回当前网格中的 Camera 01，供应用组合层绑定一路播放器。 */
     [[nodiscard]] VideoWidget *primaryVideoWidget() const noexcept;
 
+    /** @brief 为一个已经校验的连接创建显示格。 */
+    VideoWidget *addConnectionWidget(const QString &displayName);
+
+    /** @brief 从布局移除一个连接显示格。 */
+    bool removeConnectionWidget(VideoWidget *videoWidget);
+
+    [[nodiscard]] int videoWidgetCount() const noexcept;
+
+signals:
+    /** @brief 中央按钮或工具栏请求打开连接对话框。 */
+    void addConnectionRequested();
+
 private:
-    void addVideoWidget();
     void updateAddVideoAction();
+    void updateCentralPage();
     void handleFullscreenRequest(VideoWidget *videoWidget);
     void restoreAfterFullscreen();
 
     VideoGridWidget *videoGrid_ = nullptr;
     FullscreenVideoWindow *fullscreenVideoWindow_ = nullptr;
     QAction *addVideoAction_ = nullptr;
+    QStackedWidget *centralStack_ = nullptr;
+    QWidget *emptyPage_ = nullptr;
+    QPushButton *emptyAddButton_ = nullptr;
     bool wasVisibleBeforeFullscreen_ = false;
 };

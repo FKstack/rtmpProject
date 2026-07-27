@@ -55,7 +55,6 @@ VideoGridWidget::VideoGridWidget(QWidget *parent)
     gridLayout_->setContentsMargins(12, 12, 12, 12);
     gridLayout_->setSpacing(12);
 
-    videoWidgets_.append(createVideoWidget());
     relayoutVideoWidgets();
 }
 
@@ -105,6 +104,11 @@ VideoGridWidget::GridInteractionState VideoGridWidget::interactionState() const 
 
 VideoWidget *VideoGridWidget::addVideoWidget()
 {
+    return addVideoWidget({});
+}
+
+VideoWidget *VideoGridWidget::addVideoWidget(const QString &deviceName)
+{
     if (!canAddVideoWidget()) {
         if (videoWidgets_.size() >= kMaximumVideoWidgetCount) {
             emit maximumVideoWidgetCountReached();
@@ -125,7 +129,7 @@ VideoWidget *VideoGridWidget::addVideoWidget()
         capturedWidgets.append({videoWidget, oldGeometry, videoWidget->grab()});
     }
 
-    auto *newVideoWidget = createVideoWidget();
+    auto *newVideoWidget = createVideoWidget(deviceName);
     videoWidgets_.append(newVideoWidget);
     emit videoWidgetCountChanged(videoWidgets_.size());
     if (videoWidgets_.size() == kMaximumVideoWidgetCount) {
@@ -228,6 +232,28 @@ VideoWidget *VideoGridWidget::addVideoWidget()
 
     animationGroup->start(QAbstractAnimation::DeleteWhenStopped);
     return newVideoWidget;
+}
+
+bool VideoGridWidget::removeVideoWidget(VideoWidget *videoWidget)
+{
+    if (interactionState_ != GridInteractionState::Idle ||
+        videoWidget == nullptr || videoWidget == fullscreenVideoWidget_) {
+        return false;
+    }
+
+    const int index = indexOf(videoWidget);
+    if (index < 0) {
+        return false;
+    }
+
+    videoWidgets_.removeAt(index);
+    gridLayout_->removeWidget(videoWidget);
+    videoWidget->hide();
+    emit videoWidgetRemoved(videoWidget);
+    emit videoWidgetCountChanged(videoWidgets_.size());
+    relayoutVideoWidgets();
+    videoWidget->deleteLater();
+    return true;
 }
 
 bool VideoGridWidget::isSwapAnimationInProgress() const noexcept
@@ -350,7 +376,7 @@ void VideoGridWidget::notifyFullscreenExited(VideoWidget *videoWidget)
     setInteractionState(GridInteractionState::Idle);
 }
 
-VideoWidget *VideoGridWidget::createVideoWidget()
+VideoWidget *VideoGridWidget::createVideoWidget(const QString &deviceName)
 {
     auto *videoWidget = new VideoWidget(this);
     const int cameraNumber = nextCameraNumber_++;
@@ -358,7 +384,10 @@ VideoWidget *VideoGridWidget::createVideoWidget()
         QStringLiteral("videoWidget%1").arg(cameraNumber, 2, 10, QLatin1Char('0'))
     );
     videoWidget->setDeviceName(
-        QStringLiteral("Camera %1").arg(cameraNumber, 2, 10, QLatin1Char('0'))
+        deviceName.trimmed().isEmpty()
+            ? QStringLiteral("Camera %1")
+                  .arg(cameraNumber, 2, 10, QLatin1Char('0'))
+            : deviceName.trimmed()
     );
     videoWidget->setStatusText(tr("未连接"));
     videoWidget->setDragEnabled(interactionState_ == GridInteractionState::Idle);

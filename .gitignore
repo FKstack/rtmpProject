@@ -56,6 +56,9 @@ Testing/
 *.pro.user.*
 .qtc_clangd/
 .qtc_*/
+.idea/
+.vscode/
+*.code-workspace
 
 # =========================
 # Operating system files
@@ -97,6 +100,16 @@ logs/
 *.bak
 *.pcap
 *.pcapng
+*.etl
+*.trace
+*.profraw
+*.profdata
+*.gcda
+*.gcno
+coverage/
+.cache/
+__pycache__/
+.pytest_cache/
 
 # Local test media
 # RTMP 验证脚本默认从 testdata/test.mp4 读取测试视频。
@@ -112,6 +125,11 @@ test_data/
 *.h265
 *.hevc
 *.yuv
+*.rgb
+*.rgba
+*.raw
+*.avi
+*.webm
 
 # Local debugging and recording analysis output
 recording_analysis/

@@ -10,13 +10,16 @@
 #include <memory>
 #include <mutex>
 
+#include "media/DecodeWorkerPool.h"
+#include "media/PlaybackTypes.h"
+
 class QThread;
 
 /**
- * @brief 在专用线程中拉取并解码一路 RTMP/H.264 视频。
+ * @brief 一路 RTMP/H.264 的网络会话与共享解码池入口。
  *
- * FFmpeg 的网络、解复用、解码和像素转换均在内部 QThread 中运行。公开信号在
- * FFmpegPlayer 所在线程投递，接收方可以安全地在 Qt UI 线程更新控件。
+ * 每个实例拥有独立阻塞网络线程；压缩包通过有界队列交给外部 DecodeWorkerPool。
+ * 管理器模式关闭逐帧 Qt 投递并使用统一展示定时器轮询最新帧。
  */
 class FFmpegPlayer final : public QObject
 {
@@ -29,45 +32,41 @@ public:
         Playing,
         Reconnecting,
     };
-    //把 PlaybackState 注册到 Qt 元对象系统。
     Q_ENUM(PlaybackState)
 
+    /** @brief 创建带一个私有解码 worker 的兼容单路播放器。 */
     explicit FFmpegPlayer(QObject *parent = nullptr);
+
+    /** @brief 创建使用共享解码池的播放器。 */
+    FFmpegPlayer(
+        StreamId streamId,
+        QString displayName,
+        DecodeWorkerPool *decodeWorkerPool,
+        PlaybackPerformanceOptions options,
+        QObject *parent = nullptr
+    );
+
     ~FFmpegPlayer() override;
 
     FFmpegPlayer(const FFmpegPlayer &) = delete;
     FFmpegPlayer &operator=(const FFmpegPlayer &) = delete;
-    FFmpegPlayer(FFmpegPlayer &&) = delete;
-    FFmpegPlayer &operator=(FFmpegPlayer &&) = delete;
 
-    /**
-     * @brief 启动一路 RTMP 播放。
-     * @return URL 合法且线程成功启动时返回 true；已运行或 URL 非 RTMP 时返回 false。
-     * @thread 必须在 FFmpegPlayer 所在线程调用。
-     */
     bool start(const QString &rtmpUrl);
-
-    /**
-     * @brief 非阻塞地请求内部解码线程停止。
-     *
-     * 该函数只发布原子停止标志并唤醒重连等待，不等待线程退出。多路管理器可先向
-     * 全部播放器发布请求，再逐路调用 stop() 等待，从而并行中断网络读取。
-     *
-     * @thread 必须在 FFmpegPlayer 所在线程调用；可重复调用。
-     */
     void requestStop();
-
-    /**
-     * @brief 请求停止并等待内部线程释放所有 FFmpeg 资源。
-     * @thread 必须在 FFmpegPlayer 所在线程调用；可重复调用。
-     */
     void stop();
-
-    /**
-     * @brief 判断内部解码线程是否仍在运行。
-     * @thread 必须在 FFmpegPlayer 所在线程调用。
-     */
     [[nodiscard]] bool isRunning() const noexcept;
+
+    void setAutomaticFrameSignalsEnabled(bool enabled) noexcept;
+    void setPresentationTarget(const PresentationTarget &target);
+
+    /** @brief 复制最新帧；调用方用 sequence 判断是否已经展示。 */
+    [[nodiscard]] PresentableVideoFrame latestFrame() const;
+
+    /** @brief 在 UI 接收最新帧时更新展示与延迟统计。 */
+    void markFramePresented(const PresentableVideoFrame &frame);
+
+    /** @brief 生成当前累计计数和最近采样速率。 */
+    StreamMetrics metricsSnapshot();
 
 signals:
     void frameReady(const QImage &image);
@@ -75,27 +74,50 @@ signals:
     void errorOccurred(const QString &message);
 
 private:
-    void decodeLoop(QString rtmpUrl, std::uint64_t sessionId);
-    void enqueueFrame(QImage image, std::uint64_t sessionId);
+    struct SharedState;
+
+    static void drainDecodeState(const std::shared_ptr<SharedState> &state);
+    static int interruptCallback(void *opaque) noexcept;
+
+    void decodeNetworkLoop(QString rtmpUrl, std::uint64_t sessionId);
+    void enqueueDecoderConfiguration(
+        const std::shared_ptr<void> &codecConfiguration,
+        std::uint64_t sessionId
+    );
+    void enqueuePacket(
+        void *packet,
+        qint64 receivedMonotonicMs,
+        std::uint64_t sessionId
+    );
+    void scheduleDecodeLocked(const std::shared_ptr<SharedState> &state);
     void deliverLatestFrame(std::uint64_t sessionId);
     void postState(PlaybackState state, std::uint64_t sessionId);
     void postError(QString message, std::uint64_t sessionId);
     void setStateOnOwnerThread(PlaybackState state);
     [[nodiscard]] bool waitForReconnect(int delayMs);
-    static int interruptCallback(void *opaque) noexcept;
 
-    std::unique_ptr<QThread> decodeThread_;
+    std::unique_ptr<DecodeWorkerPool> ownedDecodeWorkerPool_;
+    DecodeWorkerPool *decodeWorkerPool_ = nullptr;
+    std::shared_ptr<SharedState> sharedState_;
+    std::unique_ptr<QThread> networkThread_;
+
+    StreamId streamId_ = 1;
+    QString displayName_ = QStringLiteral("Camera 01");
+    PlaybackPerformanceOptions options_;
     std::atomic_bool stopRequested_ {false};
+    std::atomic_bool restartRequested_ {false};
     std::atomic_uint64_t sessionId_ {0};
 
     std::mutex reconnectMutex_;
     std::condition_variable reconnectCondition_;
 
-    std::mutex frameMutex_;
-    QImage pendingFrame_;
-    bool frameDeliveryScheduled_ = false;
-
     PlaybackState state_ = PlaybackState::Stopped;
+    std::uint64_t lastAutomaticSequence_ = 0;
+    qint64 lastMetricsSampleMs_ = 0;
+    std::uint64_t lastDecodedSample_ = 0;
+    std::uint64_t lastPresentedSample_ = 0;
+    double decodeFps_ = 0.0;
+    double displayFps_ = 0.0;
 };
 
 Q_DECLARE_METATYPE(FFmpegPlayer::PlaybackState)

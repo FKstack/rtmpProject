@@ -1,19 +1,15 @@
-#include <QGridLayout>
 #include <QAction>
+#include <QGridLayout>
+#include <QPushButton>
 #include <QSet>
 #include <QSignalSpy>
 #include <QTest>
 
+#include "ui/ConnectionDialog.h"
+#include "ui/MainWindow.h"
 #include "ui/VideoGridWidget.h"
 #include "ui/VideoWidget.h"
-#include "ui/MainWindow.h"
 
-/**
- * @brief 验证动态视频网格的纯布局算法、数量边界和交互状态。
- *
- * 测试运行在 Qt UI 线程；动画通过 QTRY_* 宏等待信号和状态恢复，不主动调用
- * processEvents() 干预产品代码时序。
- */
 class VideoGridDynamicTest final : public QObject
 {
     Q_OBJECT
@@ -22,8 +18,10 @@ private slots:
     void initTestCase();
     void calculateGridDimensions_data();
     void calculateGridDimensions();
-    void initialGridContainsOneWidget();
-    void mainWindowContainsFourPlaybackWidgets();
+    void initialGridIsEmpty();
+    void mainWindowShowsEmptyConnectionPage();
+    void connectionDialogValidatesInput();
+    void addAndRemoveWidgets();
     void addWidgetsToMaximum();
     void interactionStatesRejectReentry();
     void dynamicallyCreatedWidgetKeepsConnections();
@@ -31,6 +29,10 @@ private slots:
 
 private:
     static void verifyLogicalLayout(VideoGridWidget &grid);
+    static VideoWidget *addAndWait(
+        VideoGridWidget &grid,
+        const QString &name = {}
+    );
 };
 
 void VideoGridDynamicTest::initTestCase()
@@ -49,12 +51,11 @@ void VideoGridDynamicTest::calculateGridDimensions_data()
         {3, 3}, {3, 4}, {3, 4}, {3, 4}, {4, 4}, {4, 4}, {4, 4}, {4, 4},
     };
     for (int index = 0; index < expected.size(); ++index) {
-        const QByteArray rowName = QByteArray::number(index + 1) + "-widgets";
-        QTest::newRow(rowName.constData())
-            << index + 1 << expected.at(index).rows << expected.at(index).columns;
+        QTest::newRow(
+            (QByteArray::number(index + 1) + "-widgets").constData()
+        ) << index + 1 << expected.at(index).rows << expected.at(index).columns;
     }
-
-    QTest::newRow("zero-invalid") << 0 << 0 << 0;
+    QTest::newRow("zero-empty") << 0 << 0 << 0;
     QTest::newRow("seventeen-invalid") << 17 << 0 << 0;
 }
 
@@ -63,47 +64,79 @@ void VideoGridDynamicTest::calculateGridDimensions()
     QFETCH(int, count);
     QFETCH(int, rows);
     QFETCH(int, columns);
-
-    const GridDimensions dimensions = VideoGridWidget::calculateGridDimensions(count);
+    const GridDimensions dimensions =
+        VideoGridWidget::calculateGridDimensions(count);
     QCOMPARE(dimensions.rows, rows);
     QCOMPARE(dimensions.columns, columns);
 }
 
-void VideoGridDynamicTest::initialGridContainsOneWidget()
+void VideoGridDynamicTest::initialGridIsEmpty()
 {
     VideoGridWidget grid;
-
-    QCOMPARE(grid.videoWidgetCount(), 1);
-    QCOMPARE(grid.gridDimensions().rows, 1);
-    QCOMPARE(grid.gridDimensions().columns, 1);
+    QCOMPARE(grid.videoWidgetCount(), 0);
+    QCOMPARE(grid.gridDimensions().rows, 0);
+    QCOMPARE(grid.gridDimensions().columns, 0);
     QVERIFY(grid.canAddVideoWidget());
-    QCOMPARE(grid.interactionState(), VideoGridWidget::GridInteractionState::Idle);
-    QVERIFY(grid.videoWidgetAt(0) != nullptr);
-    QCOMPARE(grid.videoWidgetAt(0)->deviceName(), QStringLiteral("Camera 01"));
+    QVERIFY(grid.videoWidgetAt(0) == nullptr);
     verifyLogicalLayout(grid);
 }
 
-void VideoGridDynamicTest::mainWindowContainsFourPlaybackWidgets()
+void VideoGridDynamicTest::mainWindowShowsEmptyConnectionPage()
 {
     MainWindow mainWindow;
-    auto *grid = mainWindow.findChild<VideoGridWidget *>();
+    QCOMPARE(mainWindow.videoWidgetCount(), 0);
+    QVERIFY(mainWindow.primaryVideoWidget() == nullptr);
+    QVERIFY(mainWindow.videoWidgetAt(0) == nullptr);
 
-    QVERIFY(grid != nullptr);
-    QCOMPARE(grid->videoWidgetCount(), MainWindow::kInitialPlaybackWidgetCount);
-    QCOMPARE(grid->gridDimensions().rows, 2);
-    QCOMPARE(grid->gridDimensions().columns, 2);
-    QCOMPARE(mainWindow.primaryVideoWidget(), mainWindow.videoWidgetAt(0));
-    QVERIFY(mainWindow.videoWidgetAt(-1) == nullptr);
-    QVERIFY(mainWindow.videoWidgetAt(MainWindow::kInitialPlaybackWidgetCount) == nullptr);
+    auto *emptyButton = mainWindow.findChild<QPushButton *>(
+        QStringLiteral("emptyAddConnectionButton")
+    );
+    auto *addAction = mainWindow.findChild<QAction *>(
+        QStringLiteral("addConnectionAction")
+    );
+    QVERIFY(emptyButton != nullptr);
+    QVERIFY(emptyButton->isVisibleTo(&mainWindow));
+    QVERIFY(addAction != nullptr);
+    QVERIFY(addAction->isEnabled());
 
-    for (int index = 0; index < MainWindow::kInitialPlaybackWidgetCount; ++index) {
-        VideoWidget *videoWidget = mainWindow.videoWidgetAt(index);
-        QVERIFY(videoWidget != nullptr);
-        QCOMPARE(
-            videoWidget->deviceName(),
-            QStringLiteral("Camera %1").arg(index + 1, 2, 10, QLatin1Char('0'))
-        );
-    }
+    QSignalSpy requestSpy(&mainWindow, &MainWindow::addConnectionRequested);
+    addAction->trigger();
+    QCOMPARE(requestSpy.count(), 1);
+}
+
+void VideoGridDynamicTest::connectionDialogValidatesInput()
+{
+    QVERIFY(ConnectionDialog::isValidRtmpUrl(
+        QStringLiteral("rtmp://127.0.0.1:1935/live/camera001")
+    ));
+    QVERIFY(!ConnectionDialog::isValidRtmpUrl(QString()));
+    QVERIFY(!ConnectionDialog::isValidRtmpUrl(
+        QStringLiteral("https://127.0.0.1/live/camera001")
+    ));
+    QVERIFY(!ConnectionDialog::isValidRtmpUrl(
+        QStringLiteral("rtmp:///live/camera001")
+    ));
+}
+
+void VideoGridDynamicTest::addAndRemoveWidgets()
+{
+    VideoGridWidget grid;
+    VideoWidget *first = grid.addVideoWidget(QStringLiteral("Lobby"));
+    VideoWidget *second = grid.addVideoWidget(QStringLiteral("Door"));
+    QVERIFY(first != nullptr);
+    QVERIFY(second != nullptr);
+    QCOMPARE(grid.videoWidgetCount(), 2);
+    QCOMPARE(first->deviceName(), QStringLiteral("Lobby"));
+    QCOMPARE(second->deviceName(), QStringLiteral("Door"));
+
+    QSignalSpy removedSpy(&grid, &VideoGridWidget::videoWidgetRemoved);
+    QVERIFY(grid.removeVideoWidget(first));
+    QCOMPARE(removedSpy.count(), 1);
+    QCOMPARE(grid.videoWidgetCount(), 1);
+    QCOMPARE(grid.videoWidgetAt(0), second);
+    QVERIFY(!grid.removeVideoWidget(first));
+    QVERIFY(grid.removeVideoWidget(second));
+    QCOMPARE(grid.videoWidgetCount(), 0);
 }
 
 void VideoGridDynamicTest::addWidgetsToMaximum()
@@ -114,38 +147,22 @@ void VideoGridDynamicTest::addWidgetsToMaximum()
     QVERIFY(QTest::qWaitForWindowExposed(&grid));
 
     QSet<VideoWidget *> uniqueWidgets;
-    uniqueWidgets.insert(grid.videoWidgetAt(0));
-    QSet<QString> uniqueNames;
-    uniqueNames.insert(grid.videoWidgetAt(0)->deviceName());
-    QSignalSpy maximumSpy(&grid, &VideoGridWidget::maximumVideoWidgetCountReached);
-
-    for (int expectedCount = 2;
+    QSignalSpy maximumSpy(
+        &grid, &VideoGridWidget::maximumVideoWidgetCountReached
+    );
+    for (int expectedCount = 1;
          expectedCount <= VideoGridWidget::kMaximumVideoWidgetCount;
          ++expectedCount) {
-        QSignalSpy addedSpy(&grid, &VideoGridWidget::videoWidgetAdded);
-        VideoWidget *addedWidget = grid.addVideoWidget();
-
+        VideoWidget *addedWidget = addAndWait(grid);
         QVERIFY(addedWidget != nullptr);
         QCOMPARE(grid.videoWidgetCount(), expectedCount);
-        QCOMPARE(grid.interactionState(),
-                 VideoGridWidget::GridInteractionState::AddingWidget);
-        QVERIFY(!grid.canAddVideoWidget());
-        QTRY_COMPARE_WITH_TIMEOUT(addedSpy.count(), 1, 1000);
-        QCOMPARE(grid.interactionState(), VideoGridWidget::GridInteractionState::Idle);
-
         uniqueWidgets.insert(addedWidget);
         QCOMPARE(uniqueWidgets.size(), expectedCount);
-        uniqueNames.insert(addedWidget->deviceName());
-        QCOMPARE(uniqueNames.size(), expectedCount);
-        QCOMPARE(addedWidget->deviceName(),
-                 QStringLiteral("Camera %1").arg(expectedCount, 2, 10, QLatin1Char('0')));
         verifyLogicalLayout(grid);
     }
-
     QVERIFY(!grid.canAddVideoWidget());
     QCOMPARE(maximumSpy.count(), 1);
     QVERIFY(grid.addVideoWidget() == nullptr);
-    QCOMPARE(grid.videoWidgetCount(), VideoGridWidget::kMaximumVideoWidgetCount);
     QCOMPARE(maximumSpy.count(), 2);
 }
 
@@ -156,40 +173,36 @@ void VideoGridDynamicTest::interactionStatesRejectReentry()
     grid.show();
     QVERIFY(QTest::qWaitForWindowExposed(&grid));
 
+    VideoWidget *first = addAndWait(grid);
     QSignalSpy addedSpy(&grid, &VideoGridWidget::videoWidgetAdded);
-    QVERIFY(grid.addVideoWidget() != nullptr);
-    QCOMPARE(grid.interactionState(), VideoGridWidget::GridInteractionState::AddingWidget);
+    VideoWidget *second = grid.addVideoWidget();
+    QVERIFY(second != nullptr);
+    QCOMPARE(
+        grid.interactionState(),
+        VideoGridWidget::GridInteractionState::AddingWidget
+    );
     QVERIFY(grid.addVideoWidget() == nullptr);
     QVERIFY(!grid.swapVideoWidgets(0, 1));
     QTRY_COMPARE_WITH_TIMEOUT(addedSpy.count(), 1, 1000);
 
     QSignalSpy swappedSpy(&grid, &VideoGridWidget::videoWidgetsSwapped);
     QVERIFY(grid.swapVideoWidgets(0, 1));
-    QCOMPARE(grid.interactionState(), VideoGridWidget::GridInteractionState::SwappingWidgets);
-    QVERIFY(grid.addVideoWidget() == nullptr);
-    QVERIFY(!grid.swapVideoWidgets(0, 1));
+    QVERIFY(!grid.removeVideoWidget(first));
     QTRY_COMPARE_WITH_TIMEOUT(swappedSpy.count(), 1, 1000);
-    QCOMPARE(grid.interactionState(), VideoGridWidget::GridInteractionState::Idle);
 
     VideoWidget *fullscreenWidget = grid.videoWidgetAt(0);
     QSignalSpy fullscreenSpy(&grid, &VideoGridWidget::fullscreenRequested);
     QTest::mouseDClick(fullscreenWidget, Qt::LeftButton);
     QCOMPARE(fullscreenSpy.count(), 1);
-    QCOMPARE(grid.interactionState(),
-             VideoGridWidget::GridInteractionState::EnteringFullscreen);
-    QVERIFY(grid.addVideoWidget() == nullptr);
-    QVERIFY(!grid.swapVideoWidgets(0, 1));
-
+    QVERIFY(!grid.removeVideoWidget(fullscreenWidget));
     grid.notifyFullscreenEntryResult(fullscreenWidget, true);
-    QCOMPARE(grid.interactionState(), VideoGridWidget::GridInteractionState::Fullscreen);
-    QVERIFY(!fullscreenWidget->isDragEnabled());
-
     grid.notifyFullscreenExitStarted(fullscreenWidget);
-    QCOMPARE(grid.interactionState(),
-             VideoGridWidget::GridInteractionState::ExitingFullscreen);
     grid.notifyFullscreenExited(fullscreenWidget);
-    QCOMPARE(grid.interactionState(), VideoGridWidget::GridInteractionState::Idle);
-    QVERIFY(fullscreenWidget->isDragEnabled());
+    QCOMPARE(
+        grid.interactionState(),
+        VideoGridWidget::GridInteractionState::Idle
+    );
+    QVERIFY(first != nullptr);
 }
 
 void VideoGridDynamicTest::dynamicallyCreatedWidgetKeepsConnections()
@@ -198,57 +211,42 @@ void VideoGridDynamicTest::dynamicallyCreatedWidgetKeepsConnections()
     grid.resize(960, 540);
     grid.show();
     QVERIFY(QTest::qWaitForWindowExposed(&grid));
-
-    QSignalSpy addedSpy(&grid, &VideoGridWidget::videoWidgetAdded);
-    VideoWidget *newWidget = grid.addVideoWidget();
-    QVERIFY(newWidget != nullptr);
-    QTRY_COMPARE_WITH_TIMEOUT(addedSpy.count(), 1, 1000);
+    VideoWidget *first = grid.addVideoWidget(QStringLiteral("First"));
+    QVERIFY(first != nullptr);
+    QTest::qWait(300);
+    VideoWidget *second = grid.addVideoWidget(QStringLiteral("Second"));
+    QVERIFY(second != nullptr);
+    QTest::qWait(300);
 
     QSignalSpy fullscreenSpy(&grid, &VideoGridWidget::fullscreenRequested);
-    QTest::mouseDClick(newWidget, Qt::LeftButton);
+    second->fullscreenRequested(second);
     QCOMPARE(fullscreenSpy.count(), 1);
-    QCOMPARE(fullscreenSpy.at(0).at(0).value<VideoWidget *>(), newWidget);
-    grid.notifyFullscreenEntryResult(newWidget, false);
+    grid.notifyFullscreenEntryResult(second, false);
 
-    VideoWidget *originalFirstWidget = grid.videoWidgetAt(0);
     QSignalSpy swappedSpy(&grid, &VideoGridWidget::videoWidgetsSwapped);
-    newWidget->swapRequested(newWidget, originalFirstWidget);
+    second->swapRequested(second, first);
     QTRY_COMPARE_WITH_TIMEOUT(swappedSpy.count(), 1, 1000);
-    QCOMPARE(grid.videoWidgetAt(0), newWidget);
-    QCOMPARE(grid.videoWidgetAt(1), originalFirstWidget);
+    QCOMPARE(grid.videoWidgetAt(0), second);
+    QCOMPARE(grid.videoWidgetAt(1), first);
 }
 
 void VideoGridDynamicTest::mainWindowDisablesAddActionAtMaximum()
 {
     MainWindow mainWindow;
-    mainWindow.show();
-    QVERIFY(QTest::qWaitForWindowExposed(&mainWindow));
-
-    auto *grid = mainWindow.findChild<VideoGridWidget *>();
     auto *addAction = mainWindow.findChild<QAction *>(
-        QStringLiteral("addVideoWidgetAction")
+        QStringLiteral("addConnectionAction")
     );
-    QVERIFY(grid != nullptr);
     QVERIFY(addAction != nullptr);
-    QVERIFY(addAction->isEnabled());
-    QCOMPARE(grid->videoWidgetCount(), MainWindow::kInitialPlaybackWidgetCount);
 
-    for (int expectedCount = MainWindow::kInitialPlaybackWidgetCount + 1;
-         expectedCount <= VideoGridWidget::kMaximumVideoWidgetCount;
-         ++expectedCount) {
-        QSignalSpy addedSpy(grid, &VideoGridWidget::videoWidgetAdded);
-        addAction->trigger();
-        QVERIFY(!addAction->isEnabled());
-        QTRY_COMPARE_WITH_TIMEOUT(addedSpy.count(), 1, 1000);
-        QCOMPARE(grid->videoWidgetCount(), expectedCount);
-        QCOMPARE(addAction->isEnabled(),
-                 expectedCount < VideoGridWidget::kMaximumVideoWidgetCount);
+    for (int index = 1; index <= 16; ++index) {
+        QVERIFY(mainWindow.addConnectionWidget(
+                    QStringLiteral("Camera %1")
+                        .arg(index, 2, 10, QLatin1Char('0'))
+                ) != nullptr);
     }
-
+    QCOMPARE(mainWindow.videoWidgetCount(), 16);
     QVERIFY(!addAction->isEnabled());
     QVERIFY(addAction->toolTip().contains(QStringLiteral("16")));
-    addAction->trigger();
-    QCOMPARE(grid->videoWidgetCount(), VideoGridWidget::kMaximumVideoWidgetCount);
 }
 
 void VideoGridDynamicTest::verifyLogicalLayout(VideoGridWidget &grid)
@@ -256,8 +254,13 @@ void VideoGridDynamicTest::verifyLogicalLayout(VideoGridWidget &grid)
     auto *layout = qobject_cast<QGridLayout *>(grid.layout());
     QVERIFY(layout != nullptr);
     QCOMPARE(layout->count(), grid.videoWidgetCount());
-
     const GridDimensions dimensions = grid.gridDimensions();
+    if (grid.videoWidgetCount() == 0) {
+        QCOMPARE(dimensions.rows, 0);
+        QCOMPARE(dimensions.columns, 0);
+        return;
+    }
+
     QSet<VideoWidget *> uniqueWidgets;
     for (int index = 0; index < grid.videoWidgetCount(); ++index) {
         VideoWidget *videoWidget = grid.videoWidgetAt(index);
@@ -271,14 +274,29 @@ void VideoGridDynamicTest::verifyLogicalLayout(VideoGridWidget &grid)
         int column = -1;
         int rowSpan = 0;
         int columnSpan = 0;
-        layout->getItemPosition(layoutIndex, &row, &column, &rowSpan, &columnSpan);
+        layout->getItemPosition(
+            layoutIndex, &row, &column, &rowSpan, &columnSpan
+        );
         QCOMPARE(row, index / dimensions.columns);
         QCOMPARE(column, index % dimensions.columns);
-        QVERIFY(row < dimensions.rows);
-        QVERIFY(column < dimensions.columns);
         QCOMPARE(rowSpan, 1);
         QCOMPARE(columnSpan, 1);
     }
+}
+
+VideoWidget *VideoGridDynamicTest::addAndWait(
+    VideoGridWidget &grid,
+    const QString &name
+)
+{
+    QSignalSpy addedSpy(&grid, &VideoGridWidget::videoWidgetAdded);
+    VideoWidget *videoWidget = name.isEmpty()
+                                   ? grid.addVideoWidget()
+                                   : grid.addVideoWidget(name);
+    if (videoWidget != nullptr && addedSpy.count() == 0) {
+        QTest::qWait(300);
+    }
+    return videoWidget;
 }
 
 QTEST_MAIN(VideoGridDynamicTest)

@@ -3,6 +3,7 @@
 #include <QApplication>
 #include <QDateTime>
 #include <QDebug>
+#include <QContextMenuEvent>
 #include <QDrag>
 #include <QDragEnterEvent>
 #include <QDragLeaveEvent>
@@ -10,6 +11,7 @@
 #include <QLabel>
 #include <QMimeData>
 #include <QMouseEvent>
+#include <QMenu>
 #include <QPalette>
 #include <QPainter>
 #include <QPaintEvent>
@@ -110,6 +112,7 @@ VideoWidget::VideoWidget(QWidget *parent)
     videoSurface_->setAttribute(Qt::WA_TransparentForMouseEvents);
     videoSurface_->setAttribute(Qt::WA_StyledBackground);
     videoSurface_->setAutoFillBackground(true);
+    videoSurface_->installEventFilter(this);
 
     // 视频区域换 parent 后仍需独立保持黑色，不能依赖 VideoWidget 后代选择器。
     QPalette videoSurfacePalette = videoSurface_->palette();
@@ -280,6 +283,35 @@ void VideoWidget::dropEvent(QDropEvent *event)
     emit swapRequested(source, this);
 }
 
+void VideoWidget::contextMenuEvent(QContextMenuEvent *event)
+{
+    if (!dragEnabled_) {
+        event->ignore();
+        return;
+    }
+
+    QMenu menu(this);
+    QAction *reconnectAction = menu.addAction(tr("重新连接"));
+    QAction *removeAction = menu.addAction(tr("断开并移除"));
+    QAction *selected = menu.exec(event->globalPos());
+    if (selected == reconnectAction) {
+        emit reconnectRequested(this);
+    } else if (selected == removeAction) {
+        emit removeRequested(this);
+    }
+    event->accept();
+}
+
+bool VideoWidget::eventFilter(QObject *watched, QEvent *event)
+{
+    if (watched == videoSurface_ && event->type() == QEvent::Resize) {
+        emit presentationTargetChanged(
+            this, videoSurface_->size(), fullscreenSurfaceMode_
+        );
+    }
+    return QFrame::eventFilter(watched, event);
+}
+
 void VideoWidget::startDrag()
 {
     auto *drag = new QDrag(this);
@@ -362,4 +394,6 @@ void VideoWidget::setFullscreenSurfaceMode(bool active, bool restoreStatusLabelV
 {
     // 状态标签位于真实视频区域内；全屏时隐藏它，避免占用未来实际画面。
     statusLabel_->setVisible(active ? false : restoreStatusLabelVisible);
+    fullscreenSurfaceMode_ = active;
+    emit presentationTargetChanged(this, videoSurface_->size(), active);
 }

@@ -143,6 +143,10 @@ int main(int argc, char *argv[])
     }
 
     VideoGridWidget grid;
+    if (!expect(grid.addVideoWidget() != nullptr,
+                QStringLiteral("应能从空状态创建第一个视频格。"))) {
+        return EXIT_FAILURE;
+    }
     grid.resize(1280, 720);
     // 触发布局计算，确保测试访问的是已完成初始布局的控件树。
     grid.show();

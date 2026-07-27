@@ -2,6 +2,7 @@
 
 #include <QPointer>
 #include <QRect>
+#include <QString>
 #include <QVector>
 #include <QWidget>
 
@@ -21,7 +22,7 @@ struct GridDimensions
 };
 
 /**
- * @brief 管理 1～16 个视频格的动态网格容器。
+ * @brief 管理 0～16 个视频格的动态网格容器。
  *
  * 该类拥有全部 VideoWidget，并以 videoWidgets_ 的顺序作为设备与视觉槽位的唯一
  * 映射。添加、交换和全屏切换通过统一状态互斥，避免多个布局事务并发修改控件树。
@@ -50,7 +51,7 @@ public:
     static constexpr int kMaximumVideoWidgetCount = 16;
 
     /**
-     * @brief 创建默认包含一个视频格的动态网格。
+     * @brief 创建初始为空的动态网格。
      *
      * @param parent Qt 父对象；创建的视频格由该网格及其布局管理。
      * @thread 必须在 Qt UI 线程中调用。
@@ -123,6 +124,12 @@ public:
      * @thread 必须在 Qt UI 线程中调用。
      */
     VideoWidget *addVideoWidget();
+    VideoWidget *addVideoWidget(const QString &deviceName);
+
+    /**
+     * @brief 移除并延迟销毁一个不在全屏状态的视频格。
+     */
+    bool removeVideoWidget(VideoWidget *videoWidget);
 
     /**
      * @brief 判断是否正在执行视频格交换动画。
@@ -176,6 +183,9 @@ signals:
     /** @brief 新视频格的添加动画完成，控件已经恢复交互。 */
     void videoWidgetAdded(VideoWidget *videoWidget);
 
+    /** @brief 视频格已经从网格解除并等待销毁。 */
+    void videoWidgetRemoved(VideoWidget *videoWidget);
+
     /** @brief 当前视频格数量已经达到上限。 */
     void maximumVideoWidgetCountReached();
 
@@ -203,7 +213,7 @@ signals:
 private:
     static constexpr int kMaximumGridDimension = 4;
 
-    VideoWidget *createVideoWidget();
+    VideoWidget *createVideoWidget(const QString &deviceName);
     void connectVideoWidgetSignals(VideoWidget *videoWidget);
     void handleSwapRequested(VideoWidget *source, VideoWidget *target);
     void handleFullscreenRequested(VideoWidget *videoWidget);

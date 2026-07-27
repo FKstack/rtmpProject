@@ -1,8 +1,12 @@
 #include "ui/MainWindow.h"
 
 #include <QAction>
+#include <QLabel>
+#include <QPushButton>
+#include <QStackedWidget>
 #include <QStatusBar>
 #include <QToolBar>
+#include <QVBoxLayout>
 
 #include "ui/FullscreenVideoWindow.h"
 #include "ui/VideoGridWidget.h"
@@ -19,17 +23,42 @@ MainWindow::MainWindow(QWidget *parent)
     videoToolBar->setMovable(false);
     videoToolBar->setFloatable(false);
 
-    addVideoAction_ = videoToolBar->addAction(tr("添加视频窗口"));
-    addVideoAction_->setObjectName(QStringLiteral("addVideoWidgetAction"));
+    addVideoAction_ = videoToolBar->addAction(tr("添加新的连接"));
+    addVideoAction_->setObjectName(QStringLiteral("addConnectionAction"));
 
-    videoGrid_ = new VideoGridWidget(this);
-    setCentralWidget(videoGrid_);
+    centralStack_ = new QStackedWidget(this);
+    emptyPage_ = new QWidget(centralStack_);
+    auto *emptyLayout = new QVBoxLayout(emptyPage_);
+    emptyLayout->setAlignment(Qt::AlignCenter);
+    auto *emptyTitle = new QLabel(tr("尚未添加 RTMP 摄像头连接"), emptyPage_);
+    emptyTitle->setAlignment(Qt::AlignCenter);
+    emptyTitle->setObjectName(QStringLiteral("emptyConnectionsTitle"));
+    emptyAddButton_ = new QPushButton(tr("添加新的连接"), emptyPage_);
+    emptyAddButton_->setObjectName(QStringLiteral("emptyAddConnectionButton"));
+    emptyAddButton_->setMinimumSize(200, 52);
+    emptyLayout->addWidget(emptyTitle);
+    emptyLayout->addWidget(emptyAddButton_, 0, Qt::AlignCenter);
+
+    videoGrid_ = new VideoGridWidget(centralStack_);
+    centralStack_->addWidget(emptyPage_);
+    centralStack_->addWidget(videoGrid_);
+    setCentralWidget(centralStack_);
 
     fullscreenVideoWindow_ = new FullscreenVideoWindow(this);
 
-    connect(addVideoAction_, &QAction::triggered, this, &MainWindow::addVideoWidget);
+    connect(
+        addVideoAction_, &QAction::triggered,
+        this, &MainWindow::addConnectionRequested
+    );
+    connect(
+        emptyAddButton_, &QPushButton::clicked,
+        this, &MainWindow::addConnectionRequested
+    );
     connect(videoGrid_, &VideoGridWidget::videoWidgetCountChanged,
-            this, [this](int) { updateAddVideoAction(); });
+            this, [this](int) {
+                updateAddVideoAction();
+                updateCentralPage();
+            });
     connect(videoGrid_, &VideoGridWidget::gridInteractionStateChanged,
             this, [this](VideoGridWidget::GridInteractionState) {
                 updateAddVideoAction();
@@ -54,12 +83,8 @@ MainWindow::MainWindow(QWidget *parent)
                 restoreAfterFullscreen();
             });
 
-    // 主窗口尚不可见，复用动态添加路径同步创建四格且不会播放启动动画。
-    while (videoGrid_->videoWidgetCount() < kInitialPlaybackWidgetCount) {
-        Q_ASSERT(videoGrid_->addVideoWidget() != nullptr);
-    }
-
     updateAddVideoAction();
+    updateCentralPage();
 }
 
 MainWindow::~MainWindow()
@@ -79,10 +104,25 @@ VideoWidget *MainWindow::primaryVideoWidget() const noexcept
     return videoWidgetAt(0);
 }
 
-void MainWindow::addVideoWidget()
+VideoWidget *MainWindow::addConnectionWidget(const QString &displayName)
 {
-    videoGrid_->addVideoWidget();
+    VideoWidget *videoWidget = videoGrid_->addVideoWidget(displayName);
     updateAddVideoAction();
+    updateCentralPage();
+    return videoWidget;
+}
+
+bool MainWindow::removeConnectionWidget(VideoWidget *videoWidget)
+{
+    const bool removed = videoGrid_->removeVideoWidget(videoWidget);
+    updateAddVideoAction();
+    updateCentralPage();
+    return removed;
+}
+
+int MainWindow::videoWidgetCount() const noexcept
+{
+    return videoGrid_ != nullptr ? videoGrid_->videoWidgetCount() : 0;
 }
 
 void MainWindow::updateAddVideoAction()
@@ -111,6 +151,19 @@ void MainWindow::updateAddVideoAction()
                 .arg(VideoGridWidget::kMaximumVideoWidgetCount)
         );
     }
+}
+
+void MainWindow::updateCentralPage()
+{
+    if (centralStack_ == nullptr || emptyPage_ == nullptr ||
+        videoGrid_ == nullptr) {
+        return;
+    }
+    centralStack_->setCurrentWidget(
+        videoGrid_->videoWidgetCount() == 0
+            ? emptyPage_
+            : static_cast<QWidget *>(videoGrid_)
+    );
 }
 
 void MainWindow::handleFullscreenRequest(VideoWidget *videoWidget)

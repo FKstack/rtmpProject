@@ -51,6 +51,7 @@ void FFmpegPlayerLifecycleTest::stopIsIdempotent()
     player.stop();
     player.stop();
     QVERIFY(!player.isRunning());
+    QCOMPARE(player.metricsSnapshot().decodedFrames, std::uint64_t {0});
 }
 
 void FFmpegPlayerLifecycleTest::reconnectWaitCanBeInterrupted()

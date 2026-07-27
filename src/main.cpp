@@ -2,155 +2,110 @@
 #include <QCommandLineOption>
 #include <QCommandLineParser>
 #include <QDebug>
-#include <QPointer>
-#include <QVector>
+#include <QThread>
 
+#include <algorithm>
+
+#include "app/StreamConnectionController.h"
 #include "app/StyleLoader.h"
 #include "media/MultiStreamPlaybackManager.h"
 #include "ui/MainWindow.h"
-#include "ui/VideoWidget.h"
 
 namespace {
 
-QStringList defaultStreamUrls()
+int defaultDecodeWorkerCount()
 {
-    QStringList urls;
-    urls.reserve(MainWindow::kInitialPlaybackWidgetCount);
-    for (int cameraNumber = 1;
-         cameraNumber <= MainWindow::kInitialPlaybackWidgetCount;
-         ++cameraNumber) {
-        urls.append(
-            QStringLiteral("rtmp://127.0.0.1:1935/live/camera%1")
-                .arg(cameraNumber, 3, 10, QLatin1Char('0'))
-        );
-    }
-    return urls;
+    const int ideal = QThread::idealThreadCount();
+    return std::clamp(ideal > 0 ? ideal / 2 : 1, 1, 8);
 }
-
-void updateVideoWidgetState(
-    VideoWidget *videoWidget,
-    FFmpegPlayer::PlaybackState state
-)
-{
-    if (videoWidget == nullptr) {
-        return;
-    }
-
-    switch (state) {
-    case FFmpegPlayer::PlaybackState::Stopped:
-        videoWidget->clearFrame();
-        videoWidget->setStatusText(QObject::tr("已停止"));
-        break;
-    case FFmpegPlayer::PlaybackState::Connecting:
-        videoWidget->clearFrame();
-        videoWidget->setStatusText(QObject::tr("正在连接 RTMP..."));
-        break;
-    case FFmpegPlayer::PlaybackState::Playing:
-        videoWidget->setStatusText(QObject::tr("正在缓冲视频帧..."));
-        break;
-    case FFmpegPlayer::PlaybackState::Reconnecting:
-        videoWidget->clearFrame();
-        videoWidget->setStatusText(QObject::tr("连接中断，正在重连..."));
-        break;
-    }
-}
-
 } // namespace
 
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
-
-    // 为后续配置、日志和系统级 Qt 服务提供稳定的应用与组织标识。
     QApplication::setApplicationName(QStringLiteral("RtmpMonitor"));
     QApplication::setOrganizationName(QStringLiteral("RtmpProject"));
 
-    QCommandLineParser commandLineParser;
-    commandLineParser.setApplicationDescription(
-        QStringLiteral("四路 RTMP/H.264 实时预览客户端")
+    QCommandLineParser parser;
+    parser.setApplicationDescription(
+        QStringLiteral("最多 16 路 RTMP/H.264 动态实时预览客户端")
     );
-    commandLineParser.addHelpOption();
-    commandLineParser.addVersionOption();
+    parser.addHelpOption();
+    parser.addVersionOption();
+
     QCommandLineOption urlOption(
         {QStringLiteral("u"), QStringLiteral("url")},
         QStringLiteral(
-            "要拉取的 RTMP URL；可重复 1～4 次，依次覆盖 Camera 01～04。"
+            "启动时预装的 RTMP URL；可重复 1～16 次。不提供时显示空连接页。"
         ),
         QStringLiteral("rtmp-url")
     );
-    commandLineParser.addOption(urlOption);
-    commandLineParser.process(app);
+    QCommandLineOption decodeThreadsOption(
+        QStringLiteral("decode-threads"),
+        QStringLiteral("共享解码 worker 数量，范围 1～16。"),
+        QStringLiteral("count"),
+        QString::number(defaultDecodeWorkerCount())
+    );
+    QCommandLineOption metricsFileOption(
+        QStringLiteral("metrics-file"),
+        QStringLiteral("每秒原子写入 JSON 指标的本地路径。"),
+        QStringLiteral("path")
+    );
+    QCommandLineOption latencyMarkerOption(
+        QStringLiteral("latency-marker"),
+        QStringLiteral("启用测试画面中的机器可读延迟标记解析。")
+    );
+    parser.addOption(urlOption);
+    parser.addOption(decodeThreadsOption);
+    parser.addOption(metricsFileOption);
+    parser.addOption(latencyMarkerOption);
+    parser.process(app);
 
-    QStringList streamUrls = defaultStreamUrls();
-    const QStringList urlOverrides = commandLineParser.values(urlOption);
-    if (urlOverrides.size() > MainWindow::kInitialPlaybackWidgetCount) {
-        qCritical().noquote()
-            << QStringLiteral("--url 最多只能重复 %1 次。")
-                   .arg(MainWindow::kInitialPlaybackWidgetCount);
+    const QStringList streamUrls = parser.values(urlOption);
+    if (streamUrls.size() > 16) {
+        qCritical().noquote() << QStringLiteral("--url 最多只能重复 16 次。");
         return EXIT_FAILURE;
     }
-    for (int index = 0; index < urlOverrides.size(); ++index) {
-        streamUrls[index] = urlOverrides.at(index);
+
+    bool workerCountValid = false;
+    const int workerCount =
+        parser.value(decodeThreadsOption).toInt(&workerCountValid);
+    if (!workerCountValid || workerCount < 1 || workerCount > 16) {
+        qCritical().noquote()
+            << QStringLiteral("--decode-threads 必须是 1～16 的整数。");
+        return EXIT_FAILURE;
     }
 
-    // 启动阶段仅加载一次全局 QSS；外部样式缺失时由 StyleLoader 自动回退到内置资源。
-    const StyleLoadResult styleResult = StyleLoader::instance().applyApplicationStyle(app);
+    const StyleLoadResult styleResult =
+        StyleLoader::instance().applyApplicationStyle(app);
     if (!styleResult.applied) {
         qWarning().noquote()
-            << QStringLiteral("启动时未能应用默认 QSS：%1").arg(styleResult.errorMessage);
+            << QStringLiteral("启动时未能应用默认 QSS：%1")
+                   .arg(styleResult.errorMessage);
     }
+
+    PlaybackPerformanceOptions performanceOptions;
+    performanceOptions.decodeWorkerCount = workerCount;
+    performanceOptions.latencyMarkerEnabled =
+        parser.isSet(latencyMarkerOption);
+
+    MultiStreamPlaybackManager playbackManager(performanceOptions);
+    playbackManager.setMetricsOutputPath(parser.value(metricsFileOption));
 
     MainWindow mainWindow;
+    StreamConnectionController connectionController(
+        &mainWindow, &playbackManager
+    );
 
-    QVector<QPointer<VideoWidget>> playbackWidgets;
-    playbackWidgets.reserve(MainWindow::kInitialPlaybackWidgetCount);
-    for (int index = 0; index < MainWindow::kInitialPlaybackWidgetCount; ++index) {
-        VideoWidget *videoWidget = mainWindow.videoWidgetAt(index);
-        if (videoWidget == nullptr) {
-            qCritical().noquote()
-                << QStringLiteral("无法取得 Camera %1 的视频格。").arg(index + 1);
-            return EXIT_FAILURE;
-        }
-        playbackWidgets.append(videoWidget);
+    if (!connectionController.preloadUrls(streamUrls)) {
+        qCritical().noquote()
+            << QStringLiteral(
+                   "预装连接失败：请检查 URL 是否为不重复的有效 rtmp:// 地址。"
+               );
+        return EXIT_FAILURE;
     }
 
-    MultiStreamPlaybackManager playbackManager(streamUrls);
-    QObject::connect(
-        &playbackManager, &MultiStreamPlaybackManager::frameReady,
-        &mainWindow,
-        [playbackWidgets](int streamIndex, const QImage &image) {
-            if (streamIndex >= 0 && streamIndex < playbackWidgets.size() &&
-                playbackWidgets.at(streamIndex) != nullptr) {
-                playbackWidgets.at(streamIndex)->displayFrame(image);
-            }
-        }
-    );
-    QObject::connect(
-        &playbackManager, &MultiStreamPlaybackManager::stateChanged,
-        &mainWindow,
-        [playbackWidgets](
-            int streamIndex,
-            FFmpegPlayer::PlaybackState state
-        ) {
-            if (streamIndex >= 0 && streamIndex < playbackWidgets.size()) {
-                updateVideoWidgetState(playbackWidgets.at(streamIndex), state);
-            }
-        }
-    );
-    QObject::connect(
-        &playbackManager, &MultiStreamPlaybackManager::errorOccurred,
-        &mainWindow,
-        [playbackWidgets](int streamIndex, const QString &message) {
-            if (streamIndex >= 0 && streamIndex < playbackWidgets.size() &&
-                playbackWidgets.at(streamIndex) != nullptr) {
-                playbackWidgets.at(streamIndex)->setStatusText(message);
-            }
-        }
-    );
-
     mainWindow.show();
-    playbackManager.startAll();
-
     const int exitCode = app.exec();
     playbackManager.stopAll();
     return exitCode;

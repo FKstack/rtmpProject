@@ -3,12 +3,15 @@
 #include <QFrame>
 #include <QImage>
 #include <QPoint>
+#include <QSize>
 #include <QString>
 
 class QDragEnterEvent;
 class QDragLeaveEvent;
 class QDragMoveEvent;
 class QDropEvent;
+class QContextMenuEvent;
+class QEvent;
 class QLabel;
 class QMouseEvent;
 class FullscreenVideoWindow;
@@ -88,6 +91,19 @@ public slots:
     void clearFrame();
 
 signals:
+    /** @brief 用户从右键菜单请求重连当前稳定连接。 */
+    void reconnectRequested(VideoWidget *videoWidget);
+
+    /** @brief 用户从右键菜单请求断开并移除当前连接。 */
+    void removeRequested(VideoWidget *videoWidget);
+
+    /** @brief 视频区域大小或全屏状态变化。 */
+    void presentationTargetChanged(
+        VideoWidget *videoWidget,
+        const QSize &viewportSize,
+        bool fullscreen
+    );
+
     /**
      * @brief 请求将源视频格与当前目标视频格交换。
      *
@@ -119,6 +135,8 @@ protected:
     void dragMoveEvent(QDragMoveEvent *event) override;
     void dragLeaveEvent(QDragLeaveEvent *event) override;
     void dropEvent(QDropEvent *event) override;
+    void contextMenuEvent(QContextMenuEvent *event) override;
+    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
     enum class DragState {
@@ -146,4 +164,5 @@ private:
     DragState dragState_ = DragState::Idle;
     bool dragEnabled_ = true;
     bool mousePressed_ = false;
+    bool fullscreenSurfaceMode_ = false;
 };
