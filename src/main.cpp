@@ -8,6 +8,9 @@
 
 #include "app/StreamConnectionController.h"
 #include "app/StyleLoader.h"
+#include "logging/LogConfiguration.h"
+#include "logging/LogManager.h"
+#include "logging/UserMessageService.h"
 #include "media/MultiStreamPlaybackManager.h"
 #include "ui/MainWindow.h"
 
@@ -55,10 +58,39 @@ int main(int argc, char *argv[])
         QStringLiteral("latency-marker"),
         QStringLiteral("启用测试画面中的机器可读延迟标记解析。")
     );
+    QCommandLineOption maximumReconnectFailuresOption(
+        QStringLiteral("max-reconnect-failures"),
+        QStringLiteral(
+            "最大连续失败次数，范围 0～1000；0 表示无限重试。"
+        ),
+        QStringLiteral("count"),
+        QStringLiteral("0")
+    );
+    QCommandLineOption logLevelOption(
+        QStringLiteral("log-level"),
+        QStringLiteral(
+            "最低系统日志级别：trace、debug、info、warning、error 或 critical。"
+        ),
+        QStringLiteral("level")
+    );
+    QCommandLineOption logDirectoryOption(
+        QStringLiteral("log-dir"),
+        QStringLiteral("轮转 JSONL 日志目录。"),
+        QStringLiteral("path")
+    );
+    QCommandLineOption logConfigOption(
+        QStringLiteral("log-config"),
+        QStringLiteral("日志 INI 配置文件路径。"),
+        QStringLiteral("path")
+    );
     parser.addOption(urlOption);
     parser.addOption(decodeThreadsOption);
     parser.addOption(metricsFileOption);
     parser.addOption(latencyMarkerOption);
+    parser.addOption(maximumReconnectFailuresOption);
+    parser.addOption(logLevelOption);
+    parser.addOption(logDirectoryOption);
+    parser.addOption(logConfigOption);
     parser.process(app);
 
     const QStringList streamUrls = parser.values(urlOption);
@@ -76,25 +108,106 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
+    bool failureLimitValid = false;
+    const int maximumReconnectFailures =
+        parser.value(maximumReconnectFailuresOption)
+            .toInt(&failureLimitValid);
+    if (!failureLimitValid ||
+        maximumReconnectFailures < 0 ||
+        maximumReconnectFailures > 1'000) {
+        qCritical().noquote()
+            << QStringLiteral(
+                   "--max-reconnect-failures 必须是 0～1000 的整数。"
+               );
+        return EXIT_FAILURE;
+    }
+
+    QString loggingConfigurationError;
+    LoggingOptions loggingOptions = LogConfiguration::load(
+        parser.value(logConfigOption),
+        &loggingConfigurationError
+    );
+    if (!loggingConfigurationError.isEmpty()) {
+        qWarning().noquote() << loggingConfigurationError;
+    }
+    if (parser.isSet(logLevelOption)) {
+        LogLevel minimumLogLevel = loggingOptions.minimumLevel;
+        if (!LogManager::parseLevel(
+                parser.value(logLevelOption),
+                &minimumLogLevel
+            )) {
+            qCritical().noquote()
+                << QStringLiteral(
+                       "--log-level 必须是 trace、debug、info、warning、"
+                       "error 或 critical。"
+                   );
+            return EXIT_FAILURE;
+        }
+        loggingOptions.minimumLevel = minimumLogLevel;
+    }
+    if (parser.isSet(logDirectoryOption)) {
+        loggingOptions.directoryPath = parser.value(logDirectoryOption);
+    }
+    LogManager logManager;
+    const bool logFileReady = logManager.initialize(loggingOptions);
+    UserMessageService userMessageService(
+        loggingOptions.userMessageRepeatWindowMs
+    );
+
     const StyleLoadResult styleResult =
         StyleLoader::instance().applyApplicationStyle(app);
     if (!styleResult.applied) {
-        qWarning().noquote()
-            << QStringLiteral("启动时未能应用默认 QSS：%1")
-                   .arg(styleResult.errorMessage);
+        logManager.logSystem(
+            LogLevel::Warning,
+            QStringLiteral("ui"),
+            QStringLiteral("style_load_failed"),
+            styleResult.errorMessage
+        );
     }
 
     PlaybackPerformanceOptions performanceOptions;
     performanceOptions.decodeWorkerCount = workerCount;
     performanceOptions.latencyMarkerEnabled =
         parser.isSet(latencyMarkerOption);
+    performanceOptions.maximumConsecutiveFailures =
+        maximumReconnectFailures;
 
     MultiStreamPlaybackManager playbackManager(performanceOptions);
     playbackManager.setMetricsOutputPath(parser.value(metricsFileOption));
 
     MainWindow mainWindow;
+    mainWindow.setUserMessageService(&userMessageService);
     StreamConnectionController connectionController(
-        &mainWindow, &playbackManager
+        &mainWindow,
+        &playbackManager,
+        &logManager,
+        &userMessageService
+    );
+    if (!logFileReady) {
+        logManager.logSystem(
+            LogLevel::Error,
+            QStringLiteral("logging"),
+            QStringLiteral("initialization_failed"),
+            QStringLiteral(
+                "One or more local log files could not be initialized."
+            )
+        );
+    }
+    logManager.logSystem(
+        LogLevel::Info,
+        QStringLiteral("application"),
+        QStringLiteral("startup"),
+        QStringLiteral("RtmpMonitor started."),
+        {
+            {
+                QStringLiteral("reconnectDelayMs"),
+                performanceOptions.reconnectDelayMs
+            },
+            {
+                QStringLiteral("maximumReconnectFailures"),
+                maximumReconnectFailures
+            }
+        }
     );
 
     if (!connectionController.preloadUrls(streamUrls)) {
@@ -102,11 +215,25 @@ int main(int argc, char *argv[])
             << QStringLiteral(
                    "预装连接失败：请检查 URL 是否为不重复的有效 rtmp:// 地址。"
                );
+        logManager.logSystem(
+            LogLevel::Error,
+            QStringLiteral("application"),
+            QStringLiteral("preload_failed"),
+            QStringLiteral("预装连接失败。")
+        );
+        logManager.shutdown();
         return EXIT_FAILURE;
     }
 
     mainWindow.show();
     const int exitCode = app.exec();
     playbackManager.stopAll();
+    logManager.logSystem(
+        LogLevel::Info,
+        QStringLiteral("application"),
+        QStringLiteral("shutdown"),
+        QStringLiteral("RtmpMonitor is shutting down.")
+    );
+    logManager.shutdown();
     return exitCode;
 }

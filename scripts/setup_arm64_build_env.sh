@@ -201,6 +201,7 @@ install_multiarch_qt()
         binfmt-support \
         qt6-base-dev-tools:amd64 \
         qt6-base-dev:arm64 \
+        libqt6opengl6-dev:arm64 \
         libgl-dev:arm64 \
         libegl-dev:arm64 \
         libgles-dev:arm64
@@ -236,8 +237,14 @@ install_isolated_qt_sysroot()
     # 中重新下载软件索引；任一文件缺失仍会进入安装流程并自动修复。
     if [[ -f ${arm64_sysroot}/.rtmp-monitor-ready && \
           -f ${arm64_sysroot}/usr/include/GL/gl.h && \
+          -f ${arm64_sysroot}/usr/include/EGL/egl.h && \
+          -f ${arm64_sysroot}/usr/include/GLES2/gl2.h && \
           -e ${arm64_sysroot}/usr/lib/aarch64-linux-gnu/libGL.so && \
-          -f ${arm64_sysroot}/usr/lib/aarch64-linux-gnu/cmake/Qt6/Qt6Config.cmake ]]; then
+          -e ${arm64_sysroot}/usr/lib/aarch64-linux-gnu/libEGL.so && \
+          -e ${arm64_sysroot}/usr/lib/aarch64-linux-gnu/libGLESv2.so && \
+          -f ${arm64_sysroot}/usr/lib/aarch64-linux-gnu/cmake/Qt6/Qt6Config.cmake && \
+          -f ${arm64_sysroot}/usr/lib/aarch64-linux-gnu/cmake/Qt6OpenGL/Qt6OpenGLConfig.cmake && \
+          -f ${arm64_sysroot}/usr/lib/aarch64-linux-gnu/cmake/Qt6OpenGLWidgets/Qt6OpenGLWidgetsConfig.cmake ]]; then
         echo "隔离 ARM64 Qt sysroot 已就绪，跳过目标包重复安装。"
         return
     fi
@@ -259,13 +266,14 @@ install_isolated_qt_sysroot()
     fi
     if ! chroot "${arm64_sysroot}" /usr/bin/env "${network_environment[@]}" \
         DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        qt6-base-dev libgl-dev libegl-dev libgles-dev; then
+        qt6-base-dev libqt6opengl6-dev libgl-dev libegl-dev libgles-dev; then
         echo "代理安装 ARM64 Qt 失败，改用直连续装。"
         disable_proxy
         network_environment=()
         chroot "${arm64_sysroot}" /usr/bin/env \
             DEBIAN_FRONTEND=noninteractive apt-get install -y --fix-missing \
-            --no-install-recommends qt6-base-dev libgl-dev libegl-dev libgles-dev
+            --no-install-recommends qt6-base-dev libqt6opengl6-dev \
+            libgl-dev libegl-dev libgles-dev
     fi
     chroot "${arm64_sysroot}" apt-get clean
     rm -rf "${arm64_sysroot}/var/lib/apt/lists/"*
@@ -428,8 +436,16 @@ environment_ready()
 
     [[ -f ${arm64_sysroot}/.rtmp-monitor-ready ]] || return 1
     [[ -f ${arm64_sysroot}/usr/include/GL/gl.h ]] || return 1
+    [[ -f ${arm64_sysroot}/usr/include/EGL/egl.h ]] || return 1
+    [[ -f ${arm64_sysroot}/usr/include/GLES2/gl2.h ]] || return 1
     [[ -e ${arm64_sysroot}/usr/lib/aarch64-linux-gnu/libGL.so ]] || return 1
+    [[ -e ${arm64_sysroot}/usr/lib/aarch64-linux-gnu/libEGL.so ]] || return 1
+    [[ -e ${arm64_sysroot}/usr/lib/aarch64-linux-gnu/libGLESv2.so ]] || return 1
     [[ -f ${arm64_sysroot}/usr/lib/aarch64-linux-gnu/cmake/Qt6/Qt6Config.cmake ]] || return 1
+    [[ -f ${arm64_sysroot}/usr/lib/aarch64-linux-gnu/cmake/Qt6OpenGL/Qt6OpenGLConfig.cmake ]] || return 1
+    [[ -f ${arm64_sysroot}/usr/lib/aarch64-linux-gnu/cmake/Qt6OpenGLWidgets/Qt6OpenGLWidgetsConfig.cmake ]] || return 1
+    [[ -e ${arm64_sysroot}/usr/lib/aarch64-linux-gnu/libQt6OpenGL.so.6 ]] || return 1
+    [[ -e ${arm64_sysroot}/usr/lib/aarch64-linux-gnu/libQt6OpenGLWidgets.so.6 ]] || return 1
     [[ -f ${ffmpeg_marker} ]] || return 1
     grep -qxF "${ffmpeg_profile}" "${ffmpeg_marker}" || return 1
 
@@ -460,10 +476,15 @@ dpkg-query -W -f='${Package} ${Architecture} ${Version}\n' \
 
 if [[ -f ${arm64_sysroot}/.rtmp-monitor-ready ]]; then
     chroot "${arm64_sysroot}" dpkg-query -W \
-        -f='${Package} ${Architecture} ${Version}\n' qt6-base-dev libgl-dev
+        -f='${Package} ${Architecture} ${Version}\n' \
+        qt6-base-dev libqt6opengl6-dev libgl-dev libegl-dev libgles-dev
+    qt_target_root="${arm64_sysroot}"
     qt_target_library="${arm64_sysroot}/usr/lib/aarch64-linux-gnu/libQt6Widgets.so.6"
 else
-    dpkg-query -W -f='${Package} ${Architecture} ${Version}\n' qt6-base-dev:arm64
+    dpkg-query -W -f='${Package} ${Architecture} ${Version}\n' \
+        qt6-base-dev:arm64 libqt6opengl6-dev:arm64 \
+        libgl-dev:arm64 libegl-dev:arm64 libgles-dev:arm64
+    qt_target_root=""
     qt_target_library="/usr/lib/aarch64-linux-gnu/libQt6Widgets.so.6"
 fi
 
@@ -473,6 +494,11 @@ for qt_host_tool in moc rcc uic; do
 done
 
 file -L "${qt_target_library}" | grep -q 'ARM aarch64'
+for target_library in libGL.so libEGL.so libGLESv2.so \
+    libQt6OpenGL.so.6 libQt6OpenGLWidgets.so.6; do
+    file -L "${qt_target_root}/usr/lib/aarch64-linux-gnu/${target_library}" |
+        grep -q 'ARM aarch64'
+done
 
 PKG_CONFIG_SYSROOT_DIR="${arm64_sysroot}" \
 PKG_CONFIG_LIBDIR="${arm64_sysroot}/usr/local/lib/aarch64-linux-gnu/pkgconfig:${arm64_sysroot}/usr/local/share/pkgconfig" \

@@ -1,8 +1,6 @@
 #include "ui/FullscreenVideoWindow.h"
 
 #include <QCloseEvent>
-#include <QDateTime>
-#include <QDebug>
 #include <QGuiApplication>
 #include <QKeyEvent>
 #include <QMouseEvent>
@@ -73,7 +71,6 @@ FullscreenVideoWindow::~FullscreenVideoWindow()
 
 bool FullscreenVideoWindow::enterFullscreen(VideoWidget *videoWidget)
 {
-    logFullscreenEvent(videoWidget, QEvent::None);
     if (transitionState_ != TransitionState::Windowed || videoWidget == nullptr ||
         !videoWidget->isVisible()) {
         return false;
@@ -139,7 +136,6 @@ bool FullscreenVideoWindow::enterFullscreen(VideoWidget *videoWidget)
 
 void FullscreenVideoWindow::exitFullscreen()
 {
-    logFullscreenEvent(this, QEvent::None);
     if (transitionState_ != TransitionState::Fullscreen || !isFullscreenActive()) {
         return;
     }
@@ -205,7 +201,6 @@ void FullscreenVideoWindow::mouseMoveEvent(QMouseEvent *event)
 
 void FullscreenVideoWindow::mouseDoubleClickEvent(QMouseEvent *event)
 {
-    logFullscreenEvent(this, event->type());
     if (event->button() == Qt::LeftButton) {
         exitFullscreen();
         event->accept();
@@ -242,7 +237,6 @@ void FullscreenVideoWindow::resizeEvent(QResizeEvent *event)
 
 void FullscreenVideoWindow::closeEvent(QCloseEvent *event)
 {
-    logFullscreenEvent(this, event->type());
     exitFullscreen();
     event->accept();
 }
@@ -311,19 +305,6 @@ void FullscreenVideoWindow::clearRestoreState()
     restoreState_ = VideoSurfaceRestoreState{};
 }
 
-void FullscreenVideoWindow::logFullscreenEvent(const QObject *watched, int eventType) const
-{
-#ifndef NDEBUG
-    qDebug() << "fullscreen event"
-             << QDateTime::currentMSecsSinceEpoch()
-             << watched
-             << eventType
-             << transitionStateName();
-#else
-    Q_UNUSED(watched);
-    Q_UNUSED(eventType);
-#endif
-}
 
 const char *FullscreenVideoWindow::transitionStateName() const noexcept
 {

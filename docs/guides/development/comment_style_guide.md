@@ -1,5 +1,7 @@
 # Comment Style Guide
 
+> 文档分类：开发规范。
+
 本规范适用于 RtmpMonitor 项目中的 C++、Qt、FFmpeg 和 CMake 相关源码。RtmpMonitor 是同一套运行于 Windows x86_64 PC 和 Linux ARM64 嵌入式硬件盒子的 Qt 程序；注释需要解释工程决策、平台边界、线程约束和资源责任，使两个目标平台上的 RTMP 拉流、多路解码和视频显示都能被准确维护。
 
 ## 基本原则

@@ -6,10 +6,14 @@
 
 #include <vector>
 
+#include "logging/LogTypes.h"
+#include "logging/UserMessageTypes.h"
 #include "media/PlaybackTypes.h"
 
 class MainWindow;
+class LogManager;
 class MultiStreamPlaybackManager;
+class UserMessageService;
 class VideoWidget;
 
 /**
@@ -23,13 +27,16 @@ public:
     StreamConnectionController(
         MainWindow *mainWindow,
         MultiStreamPlaybackManager *playbackManager,
+        LogManager *logManager,
+        UserMessageService *userMessageService,
         QObject *parent = nullptr
     );
 
     StreamId addConnection(
         const QString &displayName,
         const QString &rtmpUrl,
-        bool startImmediately = true
+        bool startImmediately = true,
+        bool userInitiated = false
     );
     bool removeConnection(StreamId streamId, bool askForConfirmation);
     bool preloadUrls(const QStringList &streamUrls);
@@ -45,13 +52,29 @@ private:
         QString displayName;
         QString url;
         QPointer<VideoWidget> videoWidget;
+        UserFailureReason lastFailureReason = UserFailureReason::None;
+        bool removing = false;
     };
 
     void showConnectionDialog();
     void connectVideoWidget(Binding &binding);
-    void updateVideoWidgetState(
-        VideoWidget *videoWidget,
-        int playbackState
+    [[nodiscard]] LogContext logContext(const Binding &binding) const;
+    void logDeviceState(const Binding &binding, DeviceStatus status);
+    void publishUserEvent(
+        UserEventType type,
+        UserFailureReason reason,
+        const Binding *binding,
+        const QString &displayName = {}
+    );
+    void writeAudit(
+        AuditAction action,
+        AuditResult result,
+        const Binding *binding,
+        const QString &displayName,
+        const QString &reason = {}
+    );
+    [[nodiscard]] static UserFailureReason userReason(
+        PlaybackErrorCode code
     );
     [[nodiscard]] Binding *bindingFor(StreamId streamId) noexcept;
     [[nodiscard]] const Binding *bindingFor(StreamId streamId) const noexcept;
@@ -60,5 +83,7 @@ private:
 
     MainWindow *mainWindow_ = nullptr;
     MultiStreamPlaybackManager *playbackManager_ = nullptr;
+    LogManager *logManager_ = nullptr;
+    UserMessageService *userMessageService_ = nullptr;
     std::vector<Binding> bindings_;
 };

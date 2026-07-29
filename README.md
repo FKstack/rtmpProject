@@ -5,10 +5,10 @@ RtmpMonitor 是一个使用 C++17、Qt 6 Widgets 和 FFmpeg 的多路 H.264/RTMP
 动态添加、重连和移除最多 16 路连接，并针对 16 路 720p30 软件解码引入了网络读取、
 共享解码池和 UI 展示节奏三层解耦。
 
-完整路线见[项目规划](docs/project_plan.md)，四路版本的历史基线见
-[首批四路播放](docs/week4_multi_stream_playback.md)，当前实现和验收方法见
-[16 路架构与验收](docs/week4_sixteen_stream_validation.md)，本次变更和实测记录见
-[Week 4 模块与测试记录](docs/week4_release_test_and_module_changes.md)。
+完整路线见[项目规划](docs/roadmap/project_plan.md)，四路版本的历史基线见
+[首批四路播放](docs/weeks/week4/week4_multi_stream_playback.md)，当前实现和验收方法见
+[16 路架构与验收](docs/weeks/week4/week4_sixteen_stream_validation.md)，本次变更和实测记录见
+[Week 6 OpenGL 环境与原型验证](docs/weeks/week6/week6_opengl_environment_and_validation.md)。
 
 ## 当前状态
 
@@ -19,8 +19,10 @@ RtmpMonitor 是一个使用 C++17、Qt 6 Widgets 和 FFmpeg 的多路 H.264/RTMP
 | Week 3：单路播放 | 已完成 | FFmpeg 拉流、H.264 解码、重连、最新帧背压 |
 | Week 4A：四路播放 | 已完成 | 四路独立线程、故障隔离、人工实况验收 |
 | Week 4B：动态 16 路 | 功能回归通过 | 动态连接、网络/解码解耦、8-worker 池、指标与验收脚本 |
+| Week 5：状态与日志 | 已完成 | 统一设备状态、3 秒重连、用户事件、系统日志和独立审计日志 |
+| Week 6：OpenGL 原型 | 双平台门禁通过 | 保留 QPainter/QImage 默认路径；Windows 实际运行，ARM64 完成交叉链接与 ELF 检查 |
 | Windows 16 路验收 | 短窗口通过 | 视频故障隔离与 30 秒双屏实况通过；10 分钟性能资格测试仍需执行 |
-| Linux ARM64 | 交叉构建门禁 | 生成 AArch64 ELF；真实 QPA、播放与性能仍需目标盒子 |
+| Linux ARM64 | OpenGL 交叉构建门禁 | 主程序、EGL/GLES2 与 Qt OpenGL 原型均为 AArch64 ELF；真实 QPA/GPU/播放仍需目标盒子 |
 
 ## 使用方式
 
@@ -51,6 +53,10 @@ RtmpMonitor 是一个使用 C++17、Qt 6 Widgets 和 FFmpeg 的多路 H.264/RTMP
   1～8。
 - `--metrics-file <path>`：每秒原子写入不含 URL 的 JSON 指标。
 - `--latency-marker`：仅测试时解析双屏脚本的时间标记；正常运行不要启用。
+- `--max-reconnect-failures <0..1000>`：最大连续失败次数；默认 `0` 表示无限重试。
+- `--log-level <trace|debug|info|warning|error|critical>`：覆盖最低系统日志级别。
+- `--log-dir <path>`：覆盖轮转日志目录；默认使用系统应用数据目录。
+- `--log-config <path>`：覆盖默认日志 INI 配置文件路径。
 
 ## 动态 UI
 
@@ -72,6 +78,32 @@ RtmpMonitor 是一个使用 C++17、Qt 6 Widgets 和 FFmpeg 的多路 H.264/RTMP
 | 7～9 | 3×3 |
 | 10～12 | 3×4 |
 | 13～16 | 4×4 |
+
+## 设备状态、重连与日志
+
+每一路使用同一个 `DeviceStatus` 状态机：
+
+```text
+Disconnected -> Connecting -> Playing
+                         \-> Error -> Reconnecting -> Connecting
+```
+
+连接或读流失败后默认每 3 秒重试。收到有效视频并恢复播放后，连续失败计数清零；
+设置非零 `--max-reconnect-failures` 后，达到上限的单路停留在 `Error`，可以通过视频格
+右键“重新连接”重新启动，不影响其他设备。
+
+主窗口底部“事件消息”面板只显示普通用户可以理解的连接、新增、删除和操作失败
+提示，可从“视图 → 事件消息”关闭或恢复。技术错误不会进入该面板。
+
+本地日志使用两套独立 JSON Lines 文件：
+
+- `system.jsonl`：开发和运维诊断，受系统日志等级控制；
+- `audit.jsonl`：记录操作者、动作、对象和结果，不受系统日志等级影响。
+
+两类文件均由独立有界队列异步写入，并分别执行大小轮转、历史数量、保留天数和
+总空间限制。URL、消息及结构化字段中的账号、密码、Token、私钥和末级流密钥会在
+入队前统一脱敏。完整设计和配置见
+[日志体系架构](docs/guides/architecture/logging_architecture.md)。
 
 ## 播放架构
 
@@ -114,12 +146,24 @@ ctest --test-dir out\build-windows-x64\debug -C Debug --output-on-failure
 普通 PowerShell 未初始化 MSVC 时，先执行 Visual C++ 环境脚本，或在 Developer
 PowerShell 中构建。不能混用 MinGW Qt 和 MSVC 产物。
 
+OpenGL 环境、WGL/Qt 运行和完整回归：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\scripts\test_week6_opengl.ps1
+```
+
+该脚本把临时目录、应用数据和报告重定向到 `out/week6-opengl`，并拒绝 C 盘可写
+输出路径；只读使用已安装的 Windows SDK。
+
 ### Linux ARM64
 
 在 WSL2 Ubuntu 22.04 或 Linux 构建机上：
 
 ```bash
 bash scripts/verify_ffmpeg_arm64_env.sh
+sudo bash scripts/setup_arm64_build_env.sh
+bash scripts/verify_opengl_arm64_env.sh
 cmake --preset Linux-ARM64-Debug
 cmake --build --preset Linux-ARM64-Debug
 file out/build-linux-arm64/debug/rtmp_monitor
@@ -139,6 +183,12 @@ aarch64-linux-gnu-readelf -h out/build-linux-arm64/debug/rtmp_monitor
 | `rtmp_monitor_dynamic_grid_test` | 空状态、连接对话框、0～16 路、动态移除和右键入口 |
 | `rtmp_monitor_ffmpeg_player_test` | URL、幂等停止、失败重连和有界退出 |
 | `rtmp_monitor_multi_stream_test` | 16 个稳定 ID、解码池分配、故障隔离、批量退出和指标 JSON |
+| `rtmp_monitor_logging_test` | 系统/审计分流、配置、脱敏、队列、轮转和清理 |
+| `rtmp_monitor_user_message_test` | 大众文案映射、重复抑制和未来登录事件 |
+| `rtmp_monitor_connection_controller_test` | 新增、删除、连接失败和手动重连的三通路集成 |
+| `rtmp_monitor_log_panel_test` | 用户事件面板、暂停、清空、容量上限和安全状态文本 |
+| `rtmp_monitor_opengl_windows_smoke` | Win32/WGL 隐藏上下文、GL 信息、清屏和缓冲交换 |
+| `rtmp_monitor_qt_opengl_smoke` | `VideoRenderWidget` RGB 纹理上传、绘制和自动退出 |
 
 可选真实流 CTest 使用分号分隔的 16 个地址：
 
@@ -226,17 +276,27 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
 ```
 
 可选套件为 `Unit`、`Video`、`LiveLatency`、`All`。详细门槛、报告字段、手工操作和
-结果表见[16 路架构与验收](docs/week4_sixteen_stream_validation.md)。
+结果表见[16 路架构与验收](docs/weeks/week4/week4_sixteen_stream_validation.md)。
 
 ### 2026-07-28 本机短窗口结果
 
-- Windows Debug CTest：4/4 通过，总耗时 22.00 秒。
+- Windows Debug CTest：Week 5 完成后 6/6 通过，总耗时 52.93 秒。
 - 预录视频：16/16 publisher、16/16 playing、8 workers；解码约
   29.3～30.3 FPS，展示约 10.1～13.1 FPS，队列为 0；停止 Camera 03 仅该路重连，
   恢复后重新达到 16/16，最终无残留客户端。
 - 双屏实况 30 秒：16/16 路均有延迟样本；逐路 P95 为 169～177 ms，最大样本
   275 ms，应用平均 CPU 43.3%，峰值工作集 194.7 MiB，UI 最大间隔 169 ms。
 - Linux ARM64：主程序和四个测试目标均重新生成 ELF64/AArch64。
+
+### 2026-07-29 Week 6 OpenGL 结果
+
+- Windows WGL 与 Qt OpenGL 冒烟目标均实际运行通过；GPU 为 NVIDIA GeForce
+  RTX 3060 Laptop GPU，OpenGL 4.6.0 NVIDIA 591.86。
+- Windows Debug 完整 CTest 10/10 通过，总耗时 75.25 秒。
+- WSL2 ARM64 sysroot 补齐 `libqt6opengl6-dev:arm64` 后，主程序、
+  EGL/GLES2 冒烟目标与 Qt OpenGL 原型均通过 ELF64/AArch64 和动态依赖门禁。
+- ARM64 结果仅为交叉编译与链接成功；真实 QPA、EGLFS/Wayland/X11、GPU 和视频
+  运行仍待目标盒子验收。
 
 这些结果证明当前功能路径和短窗口性能正常，不替代 10 分钟持续门槛，也不替代真实
 ARM64 盒子的 QPA、VPU、网络和长期稳定性测试。
@@ -269,12 +329,19 @@ git diff --check
 
 ## 文档
 
-- [项目规划](docs/project_plan.md)
-- [16 路动态连接、解码架构与验收](docs/week4_sixteen_stream_validation.md)
-- [Week 4 模块变更与测试操作记录](docs/week4_release_test_and_module_changes.md)
-- [四路历史基线](docs/week4_multi_stream_playback.md)
-- [Windows x64 与 Linux ARM64 构建](docs/cross_platform_build.md)
-- [第三周播放器](docs/week3_ffmpeg_player.md)
-- [桌面端到端延迟基线](docs/week3_desktop_latency_test.md)
-- [代码规范](docs/code_style_guide.md)
-- [注释规范](docs/comment_style_guide.md)
+- [文档分类索引](docs/README.md)
+- [项目规划](docs/roadmap/project_plan.md)
+- [Week 4～5 代码框架、维护与深入学习指南](docs/guides/architecture/week4_week5_architecture_guide.md)
+- [Week 4 多路媒体与并发深度学习](docs/guides/architecture/week4_media_concurrency_deep_dive.md)
+- [用户事件、系统日志与审计日志架构](docs/guides/architecture/logging_architecture.md)
+- [Week 4 新对话公开交接](docs/weeks/week4/week4_conversation_handoff.md)
+- [Week 5 设备状态、日志与重连](docs/weeks/week5/week5_device_status_and_logging.md)
+- [Week 6 OpenGL 环境与原型验证](docs/weeks/week6/week6_opengl_environment_and_validation.md)
+- [16 路动态连接、解码架构与验收](docs/weeks/week4/week4_sixteen_stream_validation.md)
+- [Week 4 模块变更与测试操作记录](docs/weeks/week4/week4_release_test_and_module_changes.md)
+- [四路历史基线](docs/weeks/week4/week4_multi_stream_playback.md)
+- [Windows x64 与 Linux ARM64 构建](docs/guides/build-and-testing/cross_platform_build.md)
+- [第三周播放器](docs/weeks/week3/week3_ffmpeg_player.md)
+- [桌面端到端延迟基线](docs/weeks/week3/week3_desktop_latency_test.md)
+- [代码规范](docs/guides/development/code_style_guide.md)
+- [注释规范](docs/guides/development/comment_style_guide.md)

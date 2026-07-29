@@ -155,7 +155,6 @@ private:
     void hideControlBar();
     void positionControlBar();
     void clearRestoreState();
-    void logFullscreenEvent(const QObject *watched, int eventType) const;
     [[nodiscard]] const char *transitionStateName() const noexcept;
 
     QVBoxLayout *videoLayout_ = nullptr;

@@ -2,12 +2,18 @@
 
 #include <QMainWindow>
 
+#include "logging/UserMessageTypes.h"
+
 class QAction;
+class QDockWidget;
 class FullscreenVideoWindow;
+class LogPanel;
+class UserMessageService;
 class QPushButton;
 class QStackedWidget;
 class VideoGridWidget;
 class VideoWidget;
+enum class DeviceStatus;
 
 /**
  * @brief 应用程序的主窗口。
@@ -58,6 +64,19 @@ public:
 
     [[nodiscard]] int videoWidgetCount() const noexcept;
 
+    /** @brief 连接普通用户事件源并显示到底部事件面板。 */
+    void setUserMessageService(UserMessageService *service);
+
+    /** @brief 更新指定视频格的设备状态和可选错误详情。 */
+    void updateDeviceStatus(
+        VideoWidget *videoWidget,
+        DeviceStatus status,
+        UserFailureReason reason = UserFailureReason::None
+    );
+
+    [[nodiscard]] QDockWidget *logDockWidget() const noexcept;
+    [[nodiscard]] LogPanel *logPanel() const noexcept;
+
 signals:
     /** @brief 中央按钮或工具栏请求打开连接对话框。 */
     void addConnectionRequested();
@@ -74,5 +93,9 @@ private:
     QStackedWidget *centralStack_ = nullptr;
     QWidget *emptyPage_ = nullptr;
     QPushButton *emptyAddButton_ = nullptr;
+    QDockWidget *logDockWidget_ = nullptr;
+    LogPanel *logPanel_ = nullptr;
+    QAction *showLogAction_ = nullptr;
+    QMetaObject::Connection logConnection_;
     bool wasVisibleBeforeFullscreen_ = false;
 };

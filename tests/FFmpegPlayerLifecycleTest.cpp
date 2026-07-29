@@ -8,12 +8,12 @@ namespace {
 
 bool containsState(
     const QSignalSpy &stateSpy,
-    FFmpegPlayer::PlaybackState expectedState
+    DeviceStatus expectedState
 )
 {
     for (const QList<QVariant> &arguments : stateSpy) {
         if (!arguments.isEmpty() &&
-            arguments.constFirst().value<FFmpegPlayer::PlaybackState>() == expectedState) {
+            arguments.constFirst().value<DeviceStatus>() == expectedState) {
             return true;
         }
     }
@@ -30,6 +30,7 @@ private slots:
     void rejectsInvalidUrls();
     void stopIsIdempotent();
     void reconnectWaitCanBeInterrupted();
+    void finiteReconnectLimitEndsInErrorAndResetsOnRestart();
     void decodesConfiguredLiveStream();
 };
 
@@ -42,6 +43,12 @@ void FFmpegPlayerLifecycleTest::rejectsInvalidUrls()
     QVERIFY(!player.start(QStringLiteral("https://127.0.0.1/live/camera001")));
     QVERIFY(!player.start(QStringLiteral("rtmp:///live/camera001")));
     QCOMPARE(errorSpy.count(), 3);
+    for (const QList<QVariant> &arguments : errorSpy) {
+        QCOMPARE(
+            arguments.constFirst().value<PlaybackError>().code,
+            PlaybackErrorCode::InvalidConfiguration
+        );
+    }
     QVERIFY(!player.isRunning());
 }
 
@@ -62,7 +69,7 @@ void FFmpegPlayerLifecycleTest::reconnectWaitCanBeInterrupted()
     QVERIFY(player.start(QStringLiteral("rtmp://127.0.0.1:1/live/unavailable")));
     QVERIFY(!player.start(QStringLiteral("rtmp://127.0.0.1:1/live/second")));
     QTRY_VERIFY_WITH_TIMEOUT(
-        containsState(stateSpy, FFmpegPlayer::PlaybackState::Reconnecting),
+        containsState(stateSpy, DeviceStatus::Reconnecting),
         6'000
     );
 
@@ -75,6 +82,52 @@ void FFmpegPlayerLifecycleTest::reconnectWaitCanBeInterrupted()
 
     player.stop();
     QVERIFY(!player.isRunning());
+}
+
+void FFmpegPlayerLifecycleTest::
+finiteReconnectLimitEndsInErrorAndResetsOnRestart()
+{
+    PlaybackPerformanceOptions options;
+    options.decodeWorkerCount = 1;
+    options.reconnectDelayMs = 50;
+    options.maximumConsecutiveFailures = 2;
+    FFmpegPlayer player(
+        1,
+        QStringLiteral("Limited Camera"),
+        nullptr,
+        options
+    );
+    QSignalSpy stateSpy(&player, &FFmpegPlayer::stateChanged);
+    QSignalSpy reconnectSpy(&player, &FFmpegPlayer::reconnectScheduled);
+
+    QVERIFY(player.start(
+        QStringLiteral("rtmp://127.0.0.1:1/live/unavailable")
+    ));
+    QTRY_VERIFY_WITH_TIMEOUT(!player.isRunning(), 12'000);
+    QVERIFY(containsState(stateSpy, DeviceStatus::Connecting));
+    QVERIFY(containsState(stateSpy, DeviceStatus::Reconnecting));
+    QVERIFY(containsState(stateSpy, DeviceStatus::Error));
+    QVERIFY(!stateSpy.isEmpty());
+    QTRY_COMPARE_WITH_TIMEOUT(
+        stateSpy.constLast()
+            .constFirst()
+            .value<DeviceStatus>(),
+        DeviceStatus::Error,
+        1'000
+    );
+    QCOMPARE(reconnectSpy.count(), 1);
+    QCOMPARE(reconnectSpy.constFirst().at(0).toInt(), 1);
+    QCOMPARE(reconnectSpy.constFirst().at(1).toInt(), 50);
+
+    stateSpy.clear();
+    reconnectSpy.clear();
+    QVERIFY(player.start(
+        QStringLiteral("rtmp://127.0.0.1:1/live/unavailable")
+    ));
+    QTRY_VERIFY_WITH_TIMEOUT(reconnectSpy.count() >= 1, 7'000);
+    QCOMPARE(reconnectSpy.constFirst().at(0).toInt(), 1);
+    player.stop();
+    QVERIFY(containsState(stateSpy, DeviceStatus::Disconnected));
 }
 
 void FFmpegPlayerLifecycleTest::decodesConfiguredLiveStream()
@@ -97,7 +150,10 @@ void FFmpegPlayerLifecycleTest::decodesConfiguredLiveStream()
     if (frameSpy.isEmpty()) {
         const QString lastError = errorSpy.isEmpty()
             ? QStringLiteral("No FFmpeg error was reported.")
-            : errorSpy.constLast().constFirst().toString();
+            : errorSpy.constLast()
+                  .constFirst()
+                  .value<PlaybackError>()
+                  .technicalMessage;
         QVERIFY2(!frameSpy.isEmpty(), qPrintable(lastError));
     }
 

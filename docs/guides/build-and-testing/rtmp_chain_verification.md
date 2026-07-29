@@ -1,5 +1,7 @@
 ﻿# RTMP 推流链路验证脚本说明
 
+> 文档分类：构建与验证。
+
 ## 1. 文档目的
 
 本文档用于说明项目中的 PowerShell 脚本：
@@ -35,7 +37,9 @@ ffplay 拉取 RTMP 流并播放
 ```text
 E:\rtmpProject
 ├── docs
-│   └── rtmp_chain_verification.md
+│   └── guides
+│       └── build-and-testing
+│           └── rtmp_chain_verification.md
 ├── include
 ├── scripts
 │   └── verify_rtmp_chain.ps1
@@ -926,7 +930,7 @@ Get-NetTCPConnection `
 
 ```text
 scripts/verify_rtmp_chain.ps1
-docs/rtmp_chain_verification.md
+docs/guides/build-and-testing/rtmp_chain_verification.md
 ```
 
 不建议提交：

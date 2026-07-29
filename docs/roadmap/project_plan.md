@@ -1,5 +1,7 @@
 # Windows x86_64 与 Linux ARM64 多路 RTMP 视频接收与显示项目规划
 
+> 文档分类：项目路线与阶段规划。
+
 ## 目录
 
 - [1. 项目目标](#1-项目目标)
@@ -326,10 +328,16 @@ rtmpProject/
     toolchains/
       aarch64-linux.cmake
   docs/
-    cross_platform_build.md
-    project_plan.md
-    environment_setup.md
-    troubleshooting.md
+    README.md
+    roadmap/
+      project_plan.md
+    guides/
+      architecture/
+      build-and-testing/
+        cross_platform_build.md
+      development/
+    weeks/
+      weekN/
   include/
     common/
       app/
@@ -476,7 +484,8 @@ Windows 11 主机
 - 已验证范围：Qt Widgets 主程序和四个测试目标完成 ARM64 编译、链接及 ELF 检查；主程序及多路测试目标均为 ELF64/AArch64，并已链接 sysroot 中的 ARM64 FFmpeg 8.1.2；QEMU 可运行最小 ARM64 C++17 程序。
 - 未验证范围：真实盒子上的 QPA、窗口、全屏、OpenGL、输入交互、四路实况播放和性能。
 
-环境配置命令及存储约束见 `scripts/setup_arm64_build_env.sh` 和 [跨平台构建说明](cross_platform_build.md)。
+环境配置命令及存储约束见 `scripts/setup_arm64_build_env.sh` 和
+[跨平台构建说明](../guides/build-and-testing/cross_platform_build.md)。
 
 Windows 侧只安装一个通用 G++ 不够，原因是完整 Qt 程序的交叉链接至少依赖以下四项：
 
@@ -639,7 +648,7 @@ ffplay -fflags nobuffer -flags low_delay rtmp://127.0.0.1/live/camera001
 | 第 3 周 | FFmpeg 拉流并显示一路视频 | 已完成：Camera 01 使用 QImage 显示，并支持可中断退出和自动重连。 | 已完成 |
 | 第 4 周 | 动态多路视频显示 | 已实现并通过短窗口功能回归：0～16 路动态连接、网络线程/解码池解耦、指标与验收脚本。 | 10 分钟 Windows 性能资格测试待执行 |
 | 第 5 周 | 设备状态、日志、断线重连 | 状态栏、日志、自动重连。 | 推荐 |
-| 第 6 周 | 性能优化、OpenGL 渲染、项目整理 | 基础性能优化，文档和脚本完善。 | 部分后期 |
+| 第 6 周 | 性能优化、OpenGL 渲染、项目整理 | 已完成独立 RGB OpenGL 原型、Windows 实机验证和 ARM64 交叉链接门禁；生产渲染替换等待长测数据。 | 原型完成 |
 | 六周后 1～2 周 | Linux ARM64 交叉构建与实机验证 | AArch64 ELF、toolchain、部署脚本和盒子验收记录。 | 工程化必做 |
 
 ### 8.2 第 1 周：跑通 RTMP 推流链路
@@ -773,9 +782,17 @@ rtmp://127.0.0.1/live/camera016
 - 连接只在当前会话有效，不持久化设备配置。
 - Windows 做真实 16 路和双屏延迟；ARM64 本轮只做交叉构建门禁。
 - 详细手工操作、报告字段和性能门槛见
-  [16 路动态连接、解码架构与性能验收](week4_sixteen_stream_validation.md)。
+  [16 路动态连接、解码架构与性能验收](../weeks/week4/week4_sixteen_stream_validation.md)。
 
 ### 8.6 第 5 周：设备状态、日志、断线重连
+
+当前实现状态：已完成。现有播放器状态机已统一为 `DeviceStatus`，补齐
+`Disconnected` 和 `Error`；断线后默认每 3 秒重试，最大连续失败次数通过
+`--max-reconnect-failures` 配置，`0` 表示无限重试。应用新增异步、有界、URL
+脱敏的系统与审计 JSONL 轮转日志，并将底部区域改为只显示大众语言的用户事件
+消息；面板支持暂停滚动和清空显示。
+详细设计与验收见
+[Week 5 设备状态、日志与重连](../weeks/week5/week5_device_status_and_logging.md)。
 
 | 项目 | 内容 |
 | --- | --- |
@@ -805,13 +822,20 @@ Disconnected
 
 ### 8.7 第 6 周：性能优化、OpenGL 渲染、项目整理
 
+当前实现状态：已完成独立 `VideoRenderWidget` RGB/RGBA 纹理原型，保留现有
+QPainter/QImage 为默认生产渲染路径。Windows 已实际运行 WGL 与 Qt OpenGL 冒烟
+程序，完整 CTest 10/10 通过；WSL2 已补齐 ARM64 GL/EGL/GLES/Qt OpenGL sysroot，
+并生成通过 ELF 与动态依赖门禁的 AArch64 EGL/GLES2 和 Qt OpenGL 原型。真实 ARM64
+QPA、EGLFS/Wayland/X11 和 GPU 运行仍待目标盒子验收。详细记录见
+[Week 6 OpenGL 环境与原型验证](../weeks/week6/week6_opengl_environment_and_validation.md)。
+
 | 项目 | 内容 |
 | --- | --- |
 | 学习目标 | 理解多路视频性能瓶颈，了解 QLabel/QImage 与 OpenGL 渲染差异，整理工程文档和测试脚本。 |
-| 开发任务 | 分析 CPU/内存占用；限制 UI 刷新帧率；减少 QImage 拷贝；尝试 QOpenGLWidget 渲染；完善 README、环境配置文档、测试脚本。 |
-| 产出物 | 可演示版本；初步性能报告；项目文档。 |
+| 开发任务 | 已有网格 15 FPS/全屏 30 FPS、最新帧邮箱和 FPS 指标保持不变；新增独立 QOpenGLWidget RGB 纹理原型、双平台图形构建门禁、环境与测试脚本。 |
+| 产出物 | `VideoRenderWidget` 原型；WGL、EGL/GLES2、Qt OpenGL 冒烟目标；Windows/ARM64 验证脚本；Week 6 环境与验收文档。 |
 | AI 编程提示词 | “请分析当前 Qt + FFmpeg 多路视频显示项目的性能瓶颈，并实现一个基础优化版本：每路解码线程可以按原始帧率解码，但 UI 显示限制为最高 25 FPS；新增帧率统计；保留 QLabel/QImage 方案，同时提供一个可选的 QOpenGLWidget VideoRenderWidget 原型用于后续替换。” |
-| 验收标准 | 4 路播放时 UI 不明显卡顿；CPU 占用可接受；窗口缩放正常；文档能指导他人重新搭建环境并跑通测试流。 |
+| 验收标准 | Windows OpenGL 目标实际编译运行且完整回归通过；ARM64 目标严格链接 sysroot 并生成 AArch64 ELF；文档明确交叉构建与实机运行边界。 |
 | 可能遇到的问题 | OpenGL 上下文只能在特定线程使用；YUV 纹理渲染复杂；硬件解码平台差异大；过早优化导致代码复杂。 |
 
 本周新手可以先做：
@@ -1092,7 +1116,7 @@ UI 线程只接收已经准备好的图像，并尽快刷新。
 | 可运行程序 | 同一源码生成 Windows x86_64 与 Linux ARM64 多路视频显示程序；MVP 先交付 Windows 版本。 | Windows MVP 必需，ARM64 工程版必需 |
 | CMake 项目 | 支持 MSVC 原生构建，并在跨平台阶段增加 Linux ARM64 toolchain 和独立 Preset。 | 是 |
 | README.md | 项目介绍、构建方式、运行方式。 | 是 |
-| docs/project_plan.md | 当前项目规划文档。 | 是 |
+| docs/roadmap/project_plan.md | 当前项目规划文档。 | 是 |
 | 环境配置文档 | 说明 Windows MSVC、WSL2 ARM64 工具链、Qt、FFmpeg、sysroot 和 SRS 配置。 | 推荐 |
 | 测试推流脚本 | 一键使用 FFmpeg 推送测试视频到 RTMP Server。 | 是 |
 | 示例 RTMP 地址 | 如 `rtmp://127.0.0.1/live/camera001`。 | 是 |

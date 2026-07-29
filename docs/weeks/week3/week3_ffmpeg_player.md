@@ -1,5 +1,7 @@
 # 第三周：从零理解并测试 FFmpegPlayer
 
+> 文档分类：Week 3 实现与测试。
+
 ## 1. 这份文档解决什么问题
 
 第三周模块完成了一件具体的事情：Qt 程序从一个 RTMP 地址接收 H.264 视频，
@@ -895,12 +897,12 @@ struct DecodeAttemptResult
 
 阅读本章时可以同时打开下面几个文件：
 
-- [`src/main.cpp`](../src/main.cpp)：应用入口和对象组合。
-- [`FFmpegPlayer.h`](../include/common/media/FFmpegPlayer.h)：播放器类的完整声明。
-- [`FFmpegPlayer.cpp`](../src/common/media/FFmpegPlayer.cpp)：拉流、解码、重连和退出实现。
-- [`VideoWidget.cpp`](../src/common/ui/VideoWidget.cpp)：QImage 显示和比例绘制。
-- [`CMakeLists.txt`](../CMakeLists.txt)：FFmpeg 链接及 DLL 部署。
-- [`FFmpegPlayerLifecycleTest.cpp`](../tests/FFmpegPlayerLifecycleTest.cpp)：生命周期和真实流测试。
+- [`src/main.cpp`](../../../src/main.cpp)：应用入口和对象组合。
+- [`FFmpegPlayer.h`](../../../include/common/media/FFmpegPlayer.h)：播放器类的完整声明。
+- [`FFmpegPlayer.cpp`](../../../src/common/media/FFmpegPlayer.cpp)：拉流、解码、重连和退出实现。
+- [`VideoWidget.cpp`](../../../src/common/ui/VideoWidget.cpp)：QImage 显示和比例绘制。
+- [`CMakeLists.txt`](../../../CMakeLists.txt)：FFmpeg 链接及 DLL 部署。
+- [`FFmpegPlayerLifecycleTest.cpp`](../../../tests/FFmpegPlayerLifecycleTest.cpp)：生命周期和真实流测试。
 
 建议先读 `.h` 文件，弄清类对外能做什么、内部保存什么；再读 `.cpp` 文件跟踪这些
 成员怎样协作。

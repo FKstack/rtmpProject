@@ -1,5 +1,7 @@
 # 第四周：首批四路 RTMP 独立播放
 
+> 文档分类：Week 4 实现与测试。
+
 > 历史基线：本文记录 2026-07-26 完成的固定四路版本。当前程序已经演进为
 > 0～16 路动态连接、独立网络线程、共享解码 worker 池和统一 UI 帧调度；请优先阅读
 > [16 路动态连接、解码架构与性能验收](week4_sixteen_stream_validation.md)。
@@ -194,7 +196,7 @@ aarch64-linux-gnu-readelf -h out/build-linux-arm64/debug/rtmp_monitor
 
 ## 8. 人工验收清单
 
-本节使用 [test_week4_multi_stream.ps1](../scripts/test_week4_multi_stream.ps1)
+本节使用 [test_week4_multi_stream.ps1](../../../scripts/test_week4_multi_stream.ps1)
 准备环境和注入故障。脚本不会模拟鼠标拖拽、双击或 `Alt+F4`，这些操作必须由
 测试人员亲自完成，才能覆盖真实的 Windows 输入和窗口行为。
 

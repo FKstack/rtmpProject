@@ -1,8 +1,6 @@
 #include "ui/VideoWidget.h"
 
 #include <QApplication>
-#include <QDateTime>
-#include <QDebug>
 #include <QContextMenuEvent>
 #include <QDrag>
 #include <QDragEnterEvent>
@@ -221,13 +219,6 @@ void VideoWidget::mouseReleaseEvent(QMouseEvent *event)
 
 void VideoWidget::mouseDoubleClickEvent(QMouseEvent *event)
 {
-#ifndef NDEBUG
-    qDebug() << "fullscreen event"
-             << QDateTime::currentMSecsSinceEpoch()
-             << this
-             << event->type()
-             << (dragEnabled_ ? "windowed-request" : "interaction-disabled");
-#endif
     if (dragEnabled_ && event->button() == Qt::LeftButton) {
         mousePressed_ = false;
         setDragState(DragState::Idle);

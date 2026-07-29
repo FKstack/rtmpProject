@@ -11,6 +11,40 @@ using StreamId = std::uint64_t;
 
 constexpr StreamId kInvalidStreamId = 0;
 
+/**
+ * @brief 描述一路设备从未连接到播放、重连和最终错误的统一状态。
+ */
+enum class DeviceStatus {
+    Disconnected,
+    Connecting,
+    Playing,
+    Reconnecting,
+    Error,
+};
+
+enum class PlaybackErrorCode {
+    AlreadyRunning,
+    RuntimeInitializationFailed,
+    InvalidConfiguration,
+    ConnectionTimeout,
+    HostUnavailable,
+    AuthenticationFailed,
+    MediaUnavailable,
+    UnsupportedMedia,
+    ResourceFailure,
+    DecodeFailure,
+    RetryLimitReached,
+    Unknown,
+};
+
+struct PlaybackError
+{
+    PlaybackErrorCode code = PlaybackErrorCode::Unknown;
+    int nativeCode = 0;
+    QString technicalMessage;
+    bool recoverable = true;
+};
+
 struct StreamConnection
 {
     StreamId id = kInvalidStreamId;
@@ -66,8 +100,12 @@ struct PlaybackPerformanceOptions
     int maximumQueuedPackets = 45;
     qint64 maximumQueuedBytes = 4 * 1024 * 1024;
     bool latencyMarkerEnabled = false;
+    int reconnectDelayMs = 3'000;
+    int maximumConsecutiveFailures = 0;
 };
 
+Q_DECLARE_METATYPE(DeviceStatus)
+Q_DECLARE_METATYPE(PlaybackError)
 Q_DECLARE_METATYPE(StreamConnection)
 Q_DECLARE_METATYPE(PresentableVideoFrame)
 Q_DECLARE_METATYPE(StreamMetrics)

@@ -62,11 +62,13 @@ public:
 
 signals:
     void frameReady(StreamId streamId, const PresentableVideoFrame &frame);
-    void stateChanged(
+    void stateChanged(StreamId streamId, DeviceStatus state);
+    void errorOccurred(StreamId streamId, const PlaybackError &error);
+    void reconnectScheduled(
         StreamId streamId,
-        FFmpegPlayer::PlaybackState state
+        int consecutiveFailures,
+        int delayMs
     );
-    void errorOccurred(StreamId streamId, const QString &message);
     void metricsUpdated(StreamId streamId, const StreamMetrics &metrics);
 
 private:

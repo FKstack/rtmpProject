@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cerrno>
 #include <cmath>
 #include <deque>
 #include <optional>
@@ -25,7 +26,6 @@ extern "C" {
 namespace {
 
 constexpr int kNetworkTimeoutMicroseconds = 3'000'000;
-constexpr std::array<int, 4> kReconnectDelaysMs {1'000, 2'000, 4'000, 5'000};
 constexpr int kDecodeBatchPackets = 4;
 constexpr qint64 kDecodeBatchMilliseconds = 5;
 constexpr std::size_t kMaximumLatencySamples = 20'000;
@@ -45,6 +45,19 @@ QString ffmpegError(int errorCode)
         return QStringLiteral("未知 FFmpeg 错误 (%1)").arg(errorCode);
     }
     return QString::fromUtf8(buffer.data());
+}
+
+PlaybackErrorCode networkErrorCode(int nativeCode)
+{
+    if (nativeCode == AVERROR(ETIMEDOUT)) {
+        return PlaybackErrorCode::ConnectionTimeout;
+    }
+    if (nativeCode == AVERROR(ECONNREFUSED) ||
+        nativeCode == AVERROR(EHOSTUNREACH) ||
+        nativeCode == AVERROR(ENETUNREACH)) {
+        return PlaybackErrorCode::HostUnavailable;
+    }
+    return PlaybackErrorCode::HostUnavailable;
 }
 
 class FFmpegNetworkRuntime final
@@ -270,17 +283,19 @@ qint64 percentile(std::vector<qint64> values, double fraction)
     return values.at(index);
 }
 
-QString stateName(FFmpegPlayer::PlaybackState state)
+QString stateName(DeviceStatus state)
 {
     switch (state) {
-    case FFmpegPlayer::PlaybackState::Stopped:
-        return QStringLiteral("stopped");
-    case FFmpegPlayer::PlaybackState::Connecting:
+    case DeviceStatus::Disconnected:
+        return QStringLiteral("disconnected");
+    case DeviceStatus::Connecting:
         return QStringLiteral("connecting");
-    case FFmpegPlayer::PlaybackState::Playing:
+    case DeviceStatus::Playing:
         return QStringLiteral("playing");
-    case FFmpegPlayer::PlaybackState::Reconnecting:
+    case DeviceStatus::Reconnecting:
         return QStringLiteral("reconnecting");
+    case DeviceStatus::Error:
+        return QStringLiteral("error");
     }
     return QStringLiteral("unknown");
 }
@@ -344,8 +359,9 @@ FFmpegPlayer::FFmpegPlayer(QObject *parent)
     sharedState_->owner = this;
     sharedState_->workerIndex = 0;
     sharedState_->options = options_;
-    qRegisterMetaType<FFmpegPlayer::PlaybackState>();
+    qRegisterMetaType<DeviceStatus>();
     qRegisterMetaType<PresentableVideoFrame>();
+    qRegisterMetaType<PlaybackError>();
     (void)ffmpegNetworkRuntime();
 }
 
@@ -376,8 +392,9 @@ FFmpegPlayer::FFmpegPlayer(
     sharedState_->pool = decodeWorkerPool_;
     sharedState_->workerIndex = decodeWorkerPool_->workerIndexFor(streamId_);
     sharedState_->options = options_;
-    qRegisterMetaType<FFmpegPlayer::PlaybackState>();
+    qRegisterMetaType<DeviceStatus>();
     qRegisterMetaType<PresentableVideoFrame>();
+    qRegisterMetaType<PlaybackError>();
     (void)ffmpegNetworkRuntime();
 }
 
@@ -392,11 +409,18 @@ bool FFmpegPlayer::start(const QString &rtmpUrl)
     Q_ASSERT(QThread::currentThread() == thread());
 
     if (isRunning()) {
-        emit errorOccurred(tr("播放器已经在运行。"));
+        emit errorOccurred(
+            {PlaybackErrorCode::AlreadyRunning, 0,
+             tr("播放器已经在运行。"), false}
+        );
         return false;
     }
     if (!ffmpegNetworkRuntime().isInitialized()) {
-        emit errorOccurred(tr("FFmpeg 网络模块初始化失败。"));
+        emit errorOccurred(
+            {PlaybackErrorCode::RuntimeInitializationFailed, 0,
+             tr("FFmpeg 网络模块初始化失败。"), false}
+        );
+        setStateOnOwnerThread(DeviceStatus::Error);
         return false;
     }
 
@@ -404,8 +428,11 @@ bool FFmpegPlayer::start(const QString &rtmpUrl)
     if (!parsedUrl.isValid() ||
         parsedUrl.scheme().compare(QStringLiteral("rtmp"), Qt::CaseInsensitive) != 0 ||
         parsedUrl.host().isEmpty() || parsedUrl.path().isEmpty()) {
-        emit errorOccurred(tr("RTMP URL 无效；仅支持 rtmp:// 地址。"));
-        setStateOnOwnerThread(PlaybackState::Stopped);
+        emit errorOccurred(
+            {PlaybackErrorCode::InvalidConfiguration, 0,
+             tr("RTMP URL 无效；仅支持 rtmp:// 地址。"), false}
+        );
+        setStateOnOwnerThread(DeviceStatus::Error);
         return false;
     }
 
@@ -468,7 +495,7 @@ void FFmpegPlayer::stop()
 {
     Q_ASSERT(QThread::currentThread() == thread());
     if (networkThread_ == nullptr &&
-        state_ == PlaybackState::Stopped) {
+        state_ == DeviceStatus::Disconnected) {
         return;
     }
     requestStop();
@@ -502,7 +529,7 @@ void FFmpegPlayer::stop()
         const std::lock_guard<std::mutex> lock(sharedState_->frameMutex);
         sharedState_->latestFrame = {};
     }
-    setStateOnOwnerThread(PlaybackState::Stopped);
+    setStateOnOwnerThread(DeviceStatus::Disconnected);
 }
 
 bool FFmpegPlayer::isRunning() const noexcept
@@ -625,26 +652,26 @@ StreamMetrics FFmpegPlayer::metricsSnapshot()
 void FFmpegPlayer::decodeNetworkLoop(QString rtmpUrl, std::uint64_t sessionId)
 {
     const QByteArray encodedUrl = rtmpUrl.toUtf8();
-    int reconnectDelayIndex = 0;
-    bool firstAttempt = true;
+    const int reconnectDelayMs = std::max(1, options_.reconnectDelayMs);
+    const int maximumFailures =
+        std::max(0, options_.maximumConsecutiveFailures);
+    int consecutiveFailures = 0;
+    bool failureLimitReached = false;
 
     while (!stopRequested_.load(std::memory_order_acquire)) {
-        postState(
-            firstAttempt ? PlaybackState::Connecting : PlaybackState::Reconnecting,
-            sessionId
-        );
-        if (!firstAttempt) {
-            sharedState_->reconnectCount.fetch_add(1, std::memory_order_relaxed);
-        }
+        postState(DeviceStatus::Connecting, sessionId);
         restartRequested_.store(false, std::memory_order_release);
 
         QString errorMessage;
+        int errorNativeCode = 0;
+        PlaybackErrorCode errorCode = PlaybackErrorCode::Unknown;
         bool receivedPackets = false;
         {
             FormatContextHandle formatContext;
             formatContext.value = avformat_alloc_context();
             if (formatContext.value == nullptr) {
                 errorMessage = tr("无法分配 FFmpeg 输入上下文。");
+                errorCode = PlaybackErrorCode::ResourceFailure;
             } else {
                 formatContext.value->interrupt_callback = {
                     &FFmpegPlayer::interruptCallback, this
@@ -669,12 +696,16 @@ void FFmpegPlayer::decodeNetworkLoop(QString rtmpUrl, std::uint64_t sessionId)
                     if (!stopRequested_.load(std::memory_order_acquire)) {
                         errorMessage =
                             tr("打开 RTMP 输入失败：%1").arg(ffmpegError(status));
+                        errorNativeCode = status;
+                        errorCode = networkErrorCode(status);
                     }
                 } else {
                     status = avformat_find_stream_info(formatContext.value, nullptr);
                     if (status < 0) {
                         errorMessage =
                             tr("读取流信息失败：%1").arg(ffmpegError(status));
+                        errorNativeCode = status;
+                        errorCode = PlaybackErrorCode::MediaUnavailable;
                     } else {
                         const AVCodec *decoder = nullptr;
                         const int videoStreamIndex = av_find_best_stream(
@@ -687,11 +718,16 @@ void FFmpegPlayer::decodeNetworkLoop(QString rtmpUrl, std::uint64_t sessionId)
                         );
                         if (videoStreamIndex < 0 || decoder == nullptr) {
                             errorMessage = tr("RTMP 输入中没有可解码的视频流。");
+                            errorNativeCode = videoStreamIndex;
+                            errorCode = PlaybackErrorCode::MediaUnavailable;
                         } else {
                             const AVCodecParameters *parameters =
                                 formatContext.value->streams[videoStreamIndex]->codecpar;
                             if (parameters->codec_id != AV_CODEC_ID_H264) {
                                 errorMessage = tr("当前版本只支持 H.264 视频流。");
+                                errorNativeCode =
+                                    static_cast<int>(parameters->codec_id);
+                                errorCode = PlaybackErrorCode::UnsupportedMedia;
                             } else {
                                 auto configuration =
                                     std::make_shared<CodecConfiguration>();
@@ -700,6 +736,8 @@ void FFmpegPlayer::decodeNetworkLoop(QString rtmpUrl, std::uint64_t sessionId)
                                         configuration->parameters, parameters
                                     ) < 0) {
                                     errorMessage = tr("复制视频流参数失败。");
+                                    errorCode =
+                                        PlaybackErrorCode::ResourceFailure;
                                 } else {
                                     configuration->timeBase =
                                         formatContext.value->streams[
@@ -713,6 +751,8 @@ void FFmpegPlayer::decodeNetworkLoop(QString rtmpUrl, std::uint64_t sessionId)
                                     AVPacket *packet = av_packet_alloc();
                                     if (packet == nullptr) {
                                         errorMessage = tr("无法分配视频数据包。");
+                                        errorCode =
+                                            PlaybackErrorCode::ResourceFailure;
                                     } else {
                                         while (!stopRequested_.load(
                                                    std::memory_order_acquire
@@ -733,6 +773,9 @@ void FFmpegPlayer::decodeNetworkLoop(QString rtmpUrl, std::uint64_t sessionId)
                                                     errorMessage = tr(
                                                         "视频流已中断：%1"
                                                     ).arg(ffmpegError(status));
+                                                    errorNativeCode = status;
+                                                    errorCode =
+                                                        networkErrorCode(status);
                                                 }
                                                 break;
                                             }
@@ -748,6 +791,8 @@ void FFmpegPlayer::decodeNetworkLoop(QString rtmpUrl, std::uint64_t sessionId)
                                                 av_packet_unref(packet);
                                                 errorMessage =
                                                     tr("无法复制视频数据包。");
+                                                errorCode =
+                                                    PlaybackErrorCode::ResourceFailure;
                                                 break;
                                             }
                                             av_packet_move_ref(ownedPacket, packet);
@@ -771,32 +816,55 @@ void FFmpegPlayer::decodeNetworkLoop(QString rtmpUrl, std::uint64_t sessionId)
         if (stopRequested_.load(std::memory_order_acquire)) {
             break;
         }
+
         if (receivedPackets) {
-            reconnectDelayIndex = 0;
+            consecutiveFailures = 0;
         }
-        const int reconnectDelayMs = kReconnectDelaysMs.at(reconnectDelayIndex);
-        if (!receivedPackets) {
-            reconnectDelayIndex = std::min(
-                reconnectDelayIndex + 1,
-                static_cast<int>(kReconnectDelaysMs.size()) - 1
-            );
-        }
-        postState(PlaybackState::Reconnecting, sessionId);
+        ++consecutiveFailures;
+        postState(DeviceStatus::Error, sessionId);
         if (!errorMessage.isEmpty()) {
             postError(
-                tr("%1；%2 秒后重试。")
-                    .arg(errorMessage)
-                    .arg(reconnectDelayMs / 1000),
+                {
+                    errorCode,
+                    errorNativeCode,
+                    errorMessage,
+                    true
+                },
                 sessionId
             );
         }
-        firstAttempt = false;
+
+        if (maximumFailures > 0 &&
+            consecutiveFailures >= maximumFailures) {
+            failureLimitReached = true;
+            postError(
+                {
+                    PlaybackErrorCode::RetryLimitReached,
+                    0,
+                    tr("已达到连续失败上限（%1 次），自动重连已停止。")
+                        .arg(maximumFailures),
+                    false
+                },
+                sessionId
+            );
+            break;
+        }
+
+        sharedState_->reconnectCount.fetch_add(1, std::memory_order_relaxed);
+        postState(DeviceStatus::Reconnecting, sessionId);
+        postReconnectScheduled(
+            consecutiveFailures,
+            reconnectDelayMs,
+            sessionId
+        );
         if (!waitForReconnect(reconnectDelayMs)) {
             break;
         }
     }
 
-    postState(PlaybackState::Stopped, sessionId);
+    if (!failureLimitReached) {
+        postState(DeviceStatus::Disconnected, sessionId);
+    }
 }
 
 void FFmpegPlayer::enqueueDecoderConfiguration(
@@ -1103,7 +1171,7 @@ void FFmpegPlayer::drainDecodeState(
                         ) != state->decoder.sessionId &&
                         state->owner != nullptr) {
                         state->owner->postState(
-                            PlaybackState::Playing,
+                            DeviceStatus::Playing,
                             state->decoder.sessionId
                         );
                     }
@@ -1169,7 +1237,15 @@ void FFmpegPlayer::drainDecodeState(
     if (!decodeError.isEmpty() && state->owner != nullptr) {
         FFmpegPlayer *owner = state->owner;
         const std::uint64_t session = state->configurationSessionId;
-        owner->postError(decodeError, session);
+        owner->postError(
+            {
+                PlaybackErrorCode::DecodeFailure,
+                0,
+                decodeError,
+                true
+            },
+            session
+        );
         owner->restartRequested_.store(true, std::memory_order_release);
         owner->reconnectCondition_.notify_all();
     }
@@ -1231,7 +1307,7 @@ void FFmpegPlayer::deliverLatestFrame(std::uint64_t sessionId)
 }
 
 void FFmpegPlayer::postState(
-    PlaybackState state,
+    DeviceStatus state,
     std::uint64_t sessionId
 )
 {
@@ -1246,20 +1322,40 @@ void FFmpegPlayer::postState(
     );
 }
 
-void FFmpegPlayer::postError(QString message, std::uint64_t sessionId)
+void FFmpegPlayer::postReconnectScheduled(
+    int consecutiveFailures,
+    int delayMs,
+    std::uint64_t sessionId
+)
 {
     QMetaObject::invokeMethod(
         this,
-        [this, message = std::move(message), sessionId] {
+        [this, consecutiveFailures, delayMs, sessionId] {
             if (sessionId == sessionId_.load(std::memory_order_acquire)) {
-                emit errorOccurred(message);
+                emit reconnectScheduled(consecutiveFailures, delayMs);
             }
         },
         Qt::QueuedConnection
     );
 }
 
-void FFmpegPlayer::setStateOnOwnerThread(PlaybackState state)
+void FFmpegPlayer::postError(
+    PlaybackError error,
+    std::uint64_t sessionId
+)
+{
+    QMetaObject::invokeMethod(
+        this,
+        [this, error = std::move(error), sessionId] {
+            if (sessionId == sessionId_.load(std::memory_order_acquire)) {
+                emit errorOccurred(error);
+            }
+        },
+        Qt::QueuedConnection
+    );
+}
+
+void FFmpegPlayer::setStateOnOwnerThread(DeviceStatus state)
 {
     Q_ASSERT(QThread::currentThread() == thread());
     if (state_ == state) {

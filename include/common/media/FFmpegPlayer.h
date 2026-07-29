@@ -26,14 +26,6 @@ class FFmpegPlayer final : public QObject
     Q_OBJECT
 
 public:
-    enum class PlaybackState {
-        Stopped,
-        Connecting,
-        Playing,
-        Reconnecting,
-    };
-    Q_ENUM(PlaybackState)
-
     /** @brief 创建带一个私有解码 worker 的兼容单路播放器。 */
     explicit FFmpegPlayer(QObject *parent = nullptr);
 
@@ -70,8 +62,9 @@ public:
 
 signals:
     void frameReady(const QImage &image);
-    void stateChanged(FFmpegPlayer::PlaybackState state);
-    void errorOccurred(const QString &message);
+    void stateChanged(DeviceStatus state);
+    void errorOccurred(const PlaybackError &error);
+    void reconnectScheduled(int consecutiveFailures, int delayMs);
 
 private:
     struct SharedState;
@@ -91,9 +84,14 @@ private:
     );
     void scheduleDecodeLocked(const std::shared_ptr<SharedState> &state);
     void deliverLatestFrame(std::uint64_t sessionId);
-    void postState(PlaybackState state, std::uint64_t sessionId);
-    void postError(QString message, std::uint64_t sessionId);
-    void setStateOnOwnerThread(PlaybackState state);
+    void postState(DeviceStatus state, std::uint64_t sessionId);
+    void postError(PlaybackError error, std::uint64_t sessionId);
+    void postReconnectScheduled(
+        int consecutiveFailures,
+        int delayMs,
+        std::uint64_t sessionId
+    );
+    void setStateOnOwnerThread(DeviceStatus state);
     [[nodiscard]] bool waitForReconnect(int delayMs);
 
     std::unique_ptr<DecodeWorkerPool> ownedDecodeWorkerPool_;
@@ -111,7 +109,7 @@ private:
     std::mutex reconnectMutex_;
     std::condition_variable reconnectCondition_;
 
-    PlaybackState state_ = PlaybackState::Stopped;
+    DeviceStatus state_ = DeviceStatus::Disconnected;
     std::uint64_t lastAutomaticSequence_ = 0;
     qint64 lastMetricsSampleMs_ = 0;
     std::uint64_t lastDecodedSample_ = 0;
@@ -119,5 +117,3 @@ private:
     double decodeFps_ = 0.0;
     double displayFps_ = 0.0;
 };
-
-Q_DECLARE_METATYPE(FFmpegPlayer::PlaybackState)

@@ -5,7 +5,6 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QLoggingCategory>
 
 namespace {
 
@@ -51,7 +50,6 @@ StyleLoadResult StyleLoader::applyApplicationStyle(
     StyleLoadResult result;
     if (!isSafeStyleFileName(options.styleFileName)) {
         result.errorMessage = QStringLiteral("样式文件名必须是不含路径的 .qss 文件名。");
-        qWarning().noquote() << result.errorMessage;
         return result;
     }
 
@@ -73,9 +71,6 @@ StyleLoadResult StyleLoader::applyApplicationStyle(
             return result;
         }
 
-        qWarning().noquote()
-            << QStringLiteral("无法读取外部 QSS：%1，尝试使用内置资源。原因：%2")
-                   .arg(externalStylePath, errorMessage);
     }
 
     const QString resourceStylePath = QStringLiteral(":/styles/%1").arg(options.styleFileName);
@@ -89,6 +84,5 @@ StyleLoadResult StyleLoader::applyApplicationStyle(
 
     result.errorMessage = QStringLiteral("无法读取内置 QSS：%1。原因：%2")
                               .arg(resourceStylePath, errorMessage);
-    qWarning().noquote() << result.errorMessage;
     return result;
 }

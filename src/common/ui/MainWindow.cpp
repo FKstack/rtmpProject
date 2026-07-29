@@ -1,7 +1,10 @@
 #include "ui/MainWindow.h"
 
 #include <QAction>
+#include <QDockWidget>
 #include <QLabel>
+#include <QMenu>
+#include <QMenuBar>
 #include <QPushButton>
 #include <QStackedWidget>
 #include <QStatusBar>
@@ -9,6 +12,9 @@
 #include <QVBoxLayout>
 
 #include "ui/FullscreenVideoWindow.h"
+#include "logging/UserMessageService.h"
+#include "media/PlaybackTypes.h"
+#include "ui/LogPanel.h"
 #include "ui/VideoGridWidget.h"
 #include "ui/VideoWidget.h"
 
@@ -43,6 +49,21 @@ MainWindow::MainWindow(QWidget *parent)
     centralStack_->addWidget(emptyPage_);
     centralStack_->addWidget(videoGrid_);
     setCentralWidget(centralStack_);
+
+    logPanel_ = new LogPanel(this);
+    logDockWidget_ = new QDockWidget(tr("事件消息"), this);
+    logDockWidget_->setObjectName(QStringLiteral("logDockWidget"));
+    logDockWidget_->setAllowedAreas(
+        Qt::BottomDockWidgetArea | Qt::TopDockWidgetArea
+    );
+    logDockWidget_->setWidget(logPanel_);
+    addDockWidget(Qt::BottomDockWidgetArea, logDockWidget_);
+
+    QMenu *viewMenu = menuBar()->addMenu(tr("视图"));
+    showLogAction_ = logDockWidget_->toggleViewAction();
+    showLogAction_->setText(tr("事件消息"));
+    showLogAction_->setObjectName(QStringLiteral("showLogAction"));
+    viewMenu->addAction(showLogAction_);
 
     fullscreenVideoWindow_ = new FullscreenVideoWindow(this);
 
@@ -123,6 +144,68 @@ bool MainWindow::removeConnectionWidget(VideoWidget *videoWidget)
 int MainWindow::videoWidgetCount() const noexcept
 {
     return videoGrid_ != nullptr ? videoGrid_->videoWidgetCount() : 0;
+}
+
+void MainWindow::setUserMessageService(UserMessageService *service)
+{
+    if (logConnection_) {
+        disconnect(logConnection_);
+        logConnection_ = {};
+    }
+    if (service != nullptr) {
+        logConnection_ = connect(
+            service, &UserMessageService::messageAdded,
+            logPanel_, &LogPanel::appendMessage
+        );
+    }
+}
+
+void MainWindow::updateDeviceStatus(
+    VideoWidget *videoWidget,
+    DeviceStatus status,
+    UserFailureReason reason
+)
+{
+    if (videoWidget == nullptr) {
+        return;
+    }
+    switch (status) {
+    case DeviceStatus::Disconnected:
+        videoWidget->clearFrame();
+        videoWidget->setStatusText(tr("已断开"));
+        break;
+    case DeviceStatus::Connecting:
+        videoWidget->clearFrame();
+        videoWidget->setStatusText(tr("正在连接..."));
+        break;
+    case DeviceStatus::Playing:
+        videoWidget->setStatusText(tr("正在播放或等待画面..."));
+        break;
+    case DeviceStatus::Reconnecting:
+        videoWidget->clearFrame();
+        videoWidget->setStatusText(tr("连接中断，正在重连..."));
+        break;
+    case DeviceStatus::Error:
+        videoWidget->clearFrame();
+        if (reason == UserFailureReason::AuthenticationFailed) {
+            videoWidget->setStatusText(tr("设备验证失败，请检查设备信息"));
+        } else if (reason == UserFailureReason::MediaUnavailable) {
+            videoWidget->setStatusText(tr("暂时无法获取设备画面"));
+        } else {
+            videoWidget->setStatusText(tr("设备连接失败，请检查网络连接"));
+        }
+        break;
+    }
+}
+
+QDockWidget *MainWindow::logDockWidget() const noexcept
+{
+    return logDockWidget_;
+}
+
+LogPanel *MainWindow::logPanel() const noexcept
+{
+    return logPanel_;
 }
 
 void MainWindow::updateAddVideoAction()

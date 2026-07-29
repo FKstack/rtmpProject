@@ -97,6 +97,7 @@ MultiStreamPlaybackManager::MultiStreamPlaybackManager(
 {
     qRegisterMetaType<StreamMetrics>();
     qRegisterMetaType<PresentableVideoFrame>();
+    qRegisterMetaType<PlaybackError>();
 
     presentationTimer_->setTimerType(Qt::PreciseTimer);
     presentationTimer_->setInterval(33);
@@ -196,7 +197,7 @@ StreamId MultiStreamPlaybackManager::addStream(
         entry->player.get(),
         &FFmpegPlayer::stateChanged,
         this,
-        [this, streamId](FFmpegPlayer::PlaybackState state) {
+        [this, streamId](DeviceStatus state) {
             emit stateChanged(streamId, state);
         }
     );
@@ -204,8 +205,20 @@ StreamId MultiStreamPlaybackManager::addStream(
         entry->player.get(),
         &FFmpegPlayer::errorOccurred,
         this,
-        [this, streamId](const QString &message) {
-            emit errorOccurred(streamId, message);
+        [this, streamId](const PlaybackError &error) {
+            emit errorOccurred(streamId, error);
+        }
+    );
+    connect(
+        entry->player.get(),
+        &FFmpegPlayer::reconnectScheduled,
+        this,
+        [this, streamId](int consecutiveFailures, int delayMs) {
+            emit reconnectScheduled(
+                streamId,
+                consecutiveFailures,
+                delayMs
+            );
         }
     );
     entries_.push_back(std::move(entry));

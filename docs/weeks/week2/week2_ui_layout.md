@@ -1,5 +1,7 @@
 # 第二周：Qt 动态视频网格实现说明
 
+> 文档分类：Week 2 实现记录。
+
 ## 1. 当前目标
 
 第二周 UI 已从最初的固定 2x2 原型扩展为可交互的动态多路监控框架：
@@ -16,7 +18,7 @@
 
 - [动态网格与添加动画详解](week2_dynamic_grid.md)
 - [拖拽换位与单路全屏详解](week2_drag_and_fullscreen.md)
-- [QSS 样式加载说明](style_loading.md)
+- [QSS 样式加载说明](../../guides/development/style_loading.md)
 
 ## 2. 当前文件结构
 

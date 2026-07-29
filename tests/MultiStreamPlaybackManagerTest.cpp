@@ -30,17 +30,31 @@ QStringList unavailableStreamUrls()
 bool containsState(
     const QSignalSpy &spy,
     StreamId streamId,
-    FFmpegPlayer::PlaybackState state
+    DeviceStatus state
 )
 {
     for (const QList<QVariant> &arguments : spy) {
         if (arguments.size() >= 2 &&
             arguments.at(0).toULongLong() == streamId &&
-            arguments.at(1).value<FFmpegPlayer::PlaybackState>() == state) {
+            arguments.at(1).value<DeviceStatus>() == state) {
             return true;
         }
     }
     return false;
+}
+
+QList<QVariant> reconnectForStream(
+    const QSignalSpy &spy,
+    StreamId streamId
+)
+{
+    for (const QList<QVariant> &arguments : spy) {
+        if (arguments.size() >= 3 &&
+            arguments.at(0).toULongLong() == streamId) {
+            return arguments;
+        }
+    }
+    return {};
 }
 
 } // namespace
@@ -137,6 +151,9 @@ void MultiStreamPlaybackManagerTest::oneInvalidUrlDoesNotBlockOtherStreams()
     QSignalSpy stateSpy(
         &manager, &MultiStreamPlaybackManager::stateChanged
     );
+    QSignalSpy reconnectSpy(
+        &manager, &MultiStreamPlaybackManager::reconnectScheduled
+    );
 
     QCOMPARE(manager.startAll(), 15);
     const QList<StreamId> ids = manager.streamIds();
@@ -146,15 +163,27 @@ void MultiStreamPlaybackManagerTest::oneInvalidUrlDoesNotBlockOtherStreams()
     }
     QVERIFY(!errorSpy.isEmpty());
     QCOMPARE(errorSpy.constFirst().at(0).toULongLong(), ids.at(0));
+    QCOMPARE(
+        errorSpy.constFirst().at(1).value<PlaybackError>().code,
+        PlaybackErrorCode::InvalidConfiguration
+    );
 
     QTRY_VERIFY_WITH_TIMEOUT(
         containsState(
             stateSpy,
             ids.at(1),
-            FFmpegPlayer::PlaybackState::Reconnecting
+            DeviceStatus::Reconnecting
         ),
         6'000
     );
+    QTRY_VERIFY_WITH_TIMEOUT(
+        !reconnectForStream(reconnectSpy, ids.at(1)).isEmpty(),
+        6'000
+    );
+    const QList<QVariant> reconnect =
+        reconnectForStream(reconnectSpy, ids.at(1));
+    QCOMPARE(reconnect.at(1).toInt(), 1);
+    QCOMPARE(reconnect.at(2).toInt(), 3'000);
 
     manager.stopStream(ids.at(2));
     QVERIFY(!manager.isStreamRunning(ids.at(2)));

@@ -90,3 +90,29 @@ QFrame[styleRole="fullscreenControlBar"] QPushButton:hover {
 QFrame[styleRole="fullscreenControlBar"] QPushButton#exitFullscreenButton {
     background-color: rgba(194, 68, 68, 175);
 }
+
+QDockWidget#logDockWidget {
+    color: #f0f0f0;
+}
+
+QWidget#logPanel {
+    background-color: #202428;
+    color: #f0f0f0;
+}
+
+QWidget#logPanel QTextEdit#logTextEdit {
+    background-color: #111315;
+    border: 1px solid #444b52;
+    color: #d5d9de;
+    font-family: Consolas, "Courier New", monospace;
+}
+
+QWidget#logPanel QComboBox,
+QWidget#logPanel QPushButton,
+QWidget#logPanel QToolButton {
+    background-color: #343a40;
+    border: 1px solid #59616a;
+    border-radius: 3px;
+    color: #f0f0f0;
+    padding: 3px 8px;
+}

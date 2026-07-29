@@ -46,6 +46,76 @@ include(ProjectOptions)
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets)
 
+option(
+    RTMP_MONITOR_BUILD_OPENGL_PROTOTYPE
+    "Build the optional RGB OpenGL renderer prototype and smoke targets."
+    ON
+)
+
+if(RTMP_MONITOR_BUILD_OPENGL_PROTOTYPE)
+    find_package(Qt6 REQUIRED COMPONENTS OpenGL OpenGLWidgets)
+
+    if(WIN32)
+        find_package(OpenGL REQUIRED)
+    elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        find_path(RTMP_MONITOR_EGL_INCLUDE_DIR
+            NAMES EGL/egl.h
+            REQUIRED
+        )
+        find_path(RTMP_MONITOR_GLES2_INCLUDE_DIR
+            NAMES GLES2/gl2.h
+            REQUIRED
+        )
+        find_library(RTMP_MONITOR_EGL_LIBRARY
+            NAMES EGL
+            REQUIRED
+        )
+        find_library(RTMP_MONITOR_GLES2_LIBRARY
+            NAMES GLESv2
+            REQUIRED
+        )
+
+        foreach(arm64_opengl_path IN ITEMS
+            "${RTMP_MONITOR_EGL_INCLUDE_DIR}"
+            "${RTMP_MONITOR_GLES2_INCLUDE_DIR}"
+            "${RTMP_MONITOR_EGL_LIBRARY}"
+            "${RTMP_MONITOR_GLES2_LIBRARY}"
+        )
+            file(TO_CMAKE_PATH
+                "${arm64_opengl_path}"
+                arm64_opengl_normalized_path
+            )
+            if(NOT arm64_opengl_normalized_path
+                    MATCHES "^${CMAKE_SYSROOT}(/|$)")
+                message(FATAL_ERROR
+                    "ARM64 OpenGL dependency escaped the target sysroot: "
+                    "${arm64_opengl_path}"
+                )
+            endif()
+        endforeach()
+
+        add_library(rtmp_monitor_arm64_egl INTERFACE)
+        target_include_directories(rtmp_monitor_arm64_egl
+            INTERFACE
+                "${RTMP_MONITOR_EGL_INCLUDE_DIR}"
+        )
+        target_link_libraries(rtmp_monitor_arm64_egl
+            INTERFACE
+                "${RTMP_MONITOR_EGL_LIBRARY}"
+        )
+
+        add_library(rtmp_monitor_arm64_gles2 INTERFACE)
+        target_include_directories(rtmp_monitor_arm64_gles2
+            INTERFACE
+                "${RTMP_MONITOR_GLES2_INCLUDE_DIR}"
+        )
+        target_link_libraries(rtmp_monitor_arm64_gles2
+            INTERFACE
+                "${RTMP_MONITOR_GLES2_LIBRARY}"
+        )
+    endif()
+endif()
+
 add_library(rtmp_monitor_ffmpeg INTERFACE)
 
 if(WIN32)
@@ -93,6 +163,35 @@ set(RTMP_MONITOR_APP_SOURCES
 set(RTMP_MONITOR_STYLE_RESOURCE
     resources/styles.qrc
 )
+
+set(RTMP_MONITOR_LOGGING_SOURCES
+    include/common/logging/LogTypes.h
+    include/common/logging/LogConfiguration.h
+    include/common/logging/SensitiveDataSanitizer.h
+    include/common/logging/UserMessageTypes.h
+    include/common/logging/UserMessageService.h
+    include/common/logging/LogManager.h
+    src/common/logging/LogConfiguration.cpp
+    src/common/logging/SensitiveDataSanitizer.cpp
+    src/common/logging/UserMessageService.cpp
+    src/common/logging/LogManager.cpp
+)
+
+qt_add_library(rtmp_monitor_logging STATIC
+    ${RTMP_MONITOR_LOGGING_SOURCES}
+)
+
+target_include_directories(rtmp_monitor_logging
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/common
+)
+
+target_link_libraries(rtmp_monitor_logging
+    PUBLIC
+        Qt6::Core
+)
+
+rtmp_monitor_apply_project_options(rtmp_monitor_logging)
 
 qt_add_library(rtmp_monitor_app STATIC
     ${RTMP_MONITOR_APP_SOURCES}
@@ -152,6 +251,8 @@ set(RTMP_MONITOR_UI_SOURCES
     src/common/ui/VideoGridWidget.cpp
     include/common/ui/MainWindow.h
     src/common/ui/MainWindow.cpp
+    include/common/ui/LogPanel.h
+    src/common/ui/LogPanel.cpp
 )
 
 qt_add_library(rtmp_monitor_ui STATIC
@@ -166,9 +267,31 @@ target_include_directories(rtmp_monitor_ui
 target_link_libraries(rtmp_monitor_ui
     PUBLIC
         Qt6::Widgets
+        rtmp_monitor_logging
 )
 
 rtmp_monitor_apply_project_options(rtmp_monitor_ui)
+
+if(RTMP_MONITOR_BUILD_OPENGL_PROTOTYPE)
+    qt_add_library(rtmp_monitor_opengl_prototype STATIC
+        include/common/ui/VideoRenderWidget.h
+        src/common/ui/VideoRenderWidget.cpp
+    )
+
+    target_include_directories(rtmp_monitor_opengl_prototype
+        PUBLIC
+            ${CMAKE_CURRENT_SOURCE_DIR}/include/common
+    )
+
+    target_link_libraries(rtmp_monitor_opengl_prototype
+        PUBLIC
+            Qt6::OpenGLWidgets
+        PRIVATE
+            Qt6::OpenGL
+    )
+
+    rtmp_monitor_apply_project_options(rtmp_monitor_opengl_prototype)
+endif()
 
 qt_add_executable(rtmp_monitor
     src/main.cpp
@@ -184,6 +307,7 @@ endif()
 target_link_libraries(rtmp_monitor
     PRIVATE
         rtmp_monitor_app
+        rtmp_monitor_logging
         rtmp_monitor_media
         rtmp_monitor_ui
 )
@@ -228,6 +352,64 @@ include(CTest)
 
 if(BUILD_TESTING)
     find_package(Qt6 REQUIRED COMPONENTS Test)
+
+    if(RTMP_MONITOR_BUILD_OPENGL_PROTOTYPE)
+        qt_add_executable(rtmp_monitor_qt_opengl_smoke
+            tests/QtOpenGLSmoke.cpp
+        )
+        target_link_libraries(rtmp_monitor_qt_opengl_smoke
+            PRIVATE
+                rtmp_monitor_opengl_prototype
+        )
+        rtmp_monitor_apply_project_options(rtmp_monitor_qt_opengl_smoke)
+
+        if(WIN32)
+            set_target_properties(rtmp_monitor_qt_opengl_smoke
+                PROPERTIES WIN32_EXECUTABLE FALSE)
+
+            add_executable(rtmp_monitor_opengl_windows_smoke
+                tests/OpenGLWindowsSmoke.cpp
+            )
+            target_link_libraries(rtmp_monitor_opengl_windows_smoke
+                PRIVATE
+                    OpenGL::GL
+                    gdi32
+                    user32
+            )
+            rtmp_monitor_apply_project_options(
+                rtmp_monitor_opengl_windows_smoke
+            )
+
+            add_test(
+                NAME rtmp_monitor_opengl_windows_smoke
+                COMMAND rtmp_monitor_opengl_windows_smoke
+            )
+            add_test(
+                NAME rtmp_monitor_qt_opengl_smoke
+                COMMAND rtmp_monitor_qt_opengl_smoke
+            )
+            set_tests_properties(
+                rtmp_monitor_opengl_windows_smoke
+                rtmp_monitor_qt_opengl_smoke
+                PROPERTIES
+                    LABELS "week6;opengl"
+                    RUN_SERIAL TRUE
+                    TIMEOUT 15
+            )
+        elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+            add_executable(rtmp_monitor_opengl_egl_smoke
+                tests/OpenGLEglSmoke.cpp
+            )
+            target_link_libraries(rtmp_monitor_opengl_egl_smoke
+                PRIVATE
+                    rtmp_monitor_arm64_egl
+                    rtmp_monitor_arm64_gles2
+            )
+            rtmp_monitor_apply_project_options(
+                rtmp_monitor_opengl_egl_smoke
+            )
+        endif()
+    endif()
 
     # 冒烟测试只链接 UI 库，避免意外依赖后续播放器或网络模块。
     qt_add_executable(rtmp_monitor_ui_smoke_test
@@ -308,6 +490,82 @@ if(BUILD_TESTING)
     add_test(NAME rtmp_monitor_multi_stream_test
         COMMAND rtmp_monitor_multi_stream_test)
     rtmp_monitor_copy_ffmpeg_runtime(rtmp_monitor_multi_stream_test)
+
+    qt_add_executable(rtmp_monitor_logging_test
+        tests/LogManagerTest.cpp
+    )
+    if(WIN32)
+        set_target_properties(rtmp_monitor_logging_test
+            PROPERTIES WIN32_EXECUTABLE FALSE)
+    endif()
+    target_link_libraries(rtmp_monitor_logging_test
+        PRIVATE
+            rtmp_monitor_logging
+            Qt6::Test
+    )
+    rtmp_monitor_apply_project_options(rtmp_monitor_logging_test)
+    add_test(NAME rtmp_monitor_logging_test
+        COMMAND rtmp_monitor_logging_test)
+
+    qt_add_executable(rtmp_monitor_user_message_test
+        tests/UserMessageServiceTest.cpp
+    )
+    if(WIN32)
+        set_target_properties(rtmp_monitor_user_message_test
+            PROPERTIES WIN32_EXECUTABLE FALSE)
+    endif()
+    target_link_libraries(rtmp_monitor_user_message_test
+        PRIVATE
+            rtmp_monitor_logging
+            Qt6::Test
+    )
+    rtmp_monitor_apply_project_options(rtmp_monitor_user_message_test)
+    add_test(NAME rtmp_monitor_user_message_test
+        COMMAND rtmp_monitor_user_message_test)
+
+    qt_add_executable(rtmp_monitor_connection_controller_test
+        tests/StreamConnectionControllerTest.cpp
+        include/common/app/StreamConnectionController.h
+        src/common/app/StreamConnectionController.cpp
+        ${RTMP_MONITOR_STYLE_RESOURCE}
+    )
+    if(WIN32)
+        set_target_properties(rtmp_monitor_connection_controller_test
+            PROPERTIES WIN32_EXECUTABLE FALSE)
+    endif()
+    target_link_libraries(rtmp_monitor_connection_controller_test
+        PRIVATE
+            rtmp_monitor_logging
+            rtmp_monitor_media
+            rtmp_monitor_ui
+            Qt6::Test
+    )
+    rtmp_monitor_apply_project_options(
+        rtmp_monitor_connection_controller_test
+    )
+    add_test(NAME rtmp_monitor_connection_controller_test
+        COMMAND rtmp_monitor_connection_controller_test)
+    rtmp_monitor_copy_ffmpeg_runtime(
+        rtmp_monitor_connection_controller_test
+    )
+
+    qt_add_executable(rtmp_monitor_log_panel_test
+        tests/LogPanelTest.cpp
+        ${RTMP_MONITOR_STYLE_RESOURCE}
+    )
+    if(WIN32)
+        set_target_properties(rtmp_monitor_log_panel_test
+            PROPERTIES WIN32_EXECUTABLE FALSE)
+    endif()
+    target_link_libraries(rtmp_monitor_log_panel_test
+        PRIVATE
+            rtmp_monitor_app
+            rtmp_monitor_ui
+            Qt6::Test
+    )
+    rtmp_monitor_apply_project_options(rtmp_monitor_log_panel_test)
+    add_test(NAME rtmp_monitor_log_panel_test
+        COMMAND rtmp_monitor_log_panel_test)
 endif()
 
 include(GNUInstallDirs)

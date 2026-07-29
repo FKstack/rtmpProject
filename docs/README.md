@@ -1,0 +1,78 @@
+# RtmpMonitor 文档索引
+
+项目文档按“路线规划、通用指南、分周实现”分类。第一次接触项目时，建议先阅读项目计划和架构总览，再按周次进入具体实现。
+
+## 1. 路线规划
+
+- [项目计划](roadmap/project_plan.md)：项目目标、阶段安排、验收标准和当前进度。
+
+## 2. 通用指南
+
+### 2.1 架构与深入学习
+
+- [Week 4～5 架构、维护与深入学习指南](guides/architecture/week4_week5_architecture_guide.md)：从 Week 3 过渡到多路播放、状态、重连和日志框架。
+- [Week 4 多路媒体与并发深度学习](guides/architecture/week4_media_concurrency_deep_dive.md)：线程模型、包队列、共享解码池和代码调用链详解。
+- [用户事件、系统日志与审计日志架构](guides/architecture/logging_architecture.md)：三类信息边界、配置、轮转、脱敏和维护入口。
+
+### 2.2 开发规范
+
+- [代码规范](guides/development/code_style_guide.md)
+- [注释规范](guides/development/comment_style_guide.md)
+- [QSS 样式加载与主题扩展](guides/development/style_loading.md)
+
+### 2.3 构建与验证
+
+- [Windows x64 与 Linux ARM64 跨平台构建](guides/build-and-testing/cross_platform_build.md)
+- [RTMP 推流链路验证脚本](guides/build-and-testing/rtmp_chain_verification.md)
+
+## 3. 分周实现
+
+### Week 2：动态界面
+
+- [Qt 动态视频网格实现](weeks/week2/week2_ui_layout.md)
+- [动态视频网格与添加动画](weeks/week2/week2_dynamic_grid.md)
+- [拖拽换位与单路全屏](weeks/week2/week2_drag_and_fullscreen.md)
+- [功能调用链详解](weeks/week2/week2_feature_call_flow.md)
+
+### Week 3：单路播放与延迟
+
+- [从零理解并测试 FFmpegPlayer](weeks/week3/week3_ffmpeg_player.md)
+- [桌面实况端到端延迟测试](weeks/week3/week3_desktop_latency_test.md)
+
+### Week 4：多路播放与并发
+
+- [首批四路 RTMP 独立播放](weeks/week4/week4_multi_stream_playback.md)
+- [16 路动态连接、解码架构与性能验收](weeks/week4/week4_sixteen_stream_validation.md)
+- [16 路模块变更与测试操作记录](weeks/week4/week4_release_test_and_module_changes.md)
+- [新对话公开交接文档](weeks/week4/week4_conversation_handoff.md)
+
+### Week 5：设备状态、日志与重连
+
+- [设备状态、日志与可配置重连](weeks/week5/week5_device_status_and_logging.md)
+
+### Week 6：OpenGL 环境与原型
+
+- [Windows 与 WSL2 ARM64 OpenGL 环境及原型验证](weeks/week6/week6_opengl_environment_and_validation.md)
+
+## 4. 推荐阅读路径
+
+只熟悉 Week 1～3 时：
+
+1. [项目计划](roadmap/project_plan.md)
+2. [Week 4～5 架构指南](guides/architecture/week4_week5_architecture_guide.md)
+3. [多路媒体与并发深度学习](guides/architecture/week4_media_concurrency_deep_dive.md)
+4. [Week 5 实现记录](weeks/week5/week5_device_status_and_logging.md)
+5. [Week 6 OpenGL 环境与原型验证](weeks/week6/week6_opengl_environment_and_validation.md)
+
+进行日常维护时：
+
+1. 先用架构指南确定模块职责。
+2. 再阅读对应周次的实现与测试文档。
+3. 修改前核对开发规范，修改后按构建与验证文档执行检查。
+
+## 5. 文档归档约定
+
+- 项目目标和进度放入 `roadmap/`。
+- 跨周复用的架构、开发和构建资料放入 `guides/`。
+- 某一阶段的实现、测试和交接记录放入 `weeks/weekN/`。
+- `docs/project_handoff.md` 是被 Git 忽略的本地临时交接材料，不作为公开索引中的权威文档；需要共享的交接内容应放入对应周次目录。
