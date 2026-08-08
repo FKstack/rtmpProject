@@ -1,16 +1,22 @@
 #include "ui/VideoGridWidget.h"
 
+#include <algorithm>
 #include <utility>
 
 #include <QAbstractAnimation>
 #include <QEasingCurve>
+#include <QEvent>
 #include <QGraphicsOpacityEffect>
 #include <QGridLayout>
 #include <QLabel>
 #include <QParallelAnimationGroup>
+#include <QPainter>
 #include <QPixmap>
 #include <QPropertyAnimation>
+#include <QResizeEvent>
 #include <QSize>
+#include <QShowEvent>
+#include <QTimer>
 
 #include "ui/VideoWidget.h"
 
@@ -18,6 +24,38 @@ namespace {
 
 constexpr int kLayoutAnimationDurationMs = 220;
 constexpr qreal kNewWidgetInitialScale = 0.85;
+constexpr int kWindowGridBaseMargin = 4;
+constexpr int kWindowGridSpacing = 4;
+constexpr int kWallGridBaseMargin = 0;
+constexpr int kWallGridSpacing = 0;
+
+QSize largestAspectFit(QSize maximumSize, QSize aspect)
+{
+    if (maximumSize.width() <= 0 || maximumSize.height() <= 0 ||
+        aspect.width() <= 0 || aspect.height() <= 0) {
+        return {};
+    }
+
+    QSize best;
+    const auto consider = [&best, maximumSize](QSize candidate) {
+        if (candidate.width() <= 0 || candidate.height() <= 0 ||
+            candidate.width() > maximumSize.width() ||
+            candidate.height() > maximumSize.height()) {
+            return;
+        }
+        if (candidate.width() * candidate.height() >
+            best.width() * best.height()) {
+            best = candidate;
+        }
+    };
+
+    const qreal ratio = qreal(aspect.width()) / qreal(aspect.height());
+    consider({maximumSize.width(),
+              qRound(qreal(maximumSize.width()) / ratio)});
+    consider({qRound(qreal(maximumSize.height()) * ratio),
+              maximumSize.height()});
+    return best;
+}
 
 struct CapturedWidget
 {
@@ -48,14 +86,52 @@ QRect centeredScaledRect(const QRect &source, qreal scale)
 
 } // namespace
 
-VideoGridWidget::VideoGridWidget(QWidget *parent)
+VideoGridWidget::VideoGridWidget(
+    RendererPreference rendererPreference,
+    QWidget *parent
+)
     : QWidget(parent)
 {
+    canvasHost_ = new VideoCanvasHost(rendererPreference, this);
+    canvasHost_->setObjectName(QStringLiteral("videoGridCanvas"));
+    canvasHost_->setGeometry(rect());
+    canvasHost_->lower();
+
     gridLayout_ = new QGridLayout(this);
-    gridLayout_->setContentsMargins(12, 12, 12, 12);
-    gridLayout_->setSpacing(12);
+    gridLayout_->setContentsMargins(
+        kWindowGridBaseMargin, kWindowGridBaseMargin,
+        kWindowGridBaseMargin, kWindowGridBaseMargin
+    );
+    gridLayout_->setSpacing(kWindowGridSpacing);
 
     relayoutVideoWidgets();
+}
+
+void VideoGridWidget::resizeEvent(QResizeEvent *event)
+{
+    QWidget::resizeEvent(event);
+    canvasHost_->setGeometry(rect());
+    updateMonitoringGridGeometry();
+    gridLayout_->activate();
+    QTimer::singleShot(0, this, &VideoGridWidget::refreshRenderSnapshot);
+}
+
+void VideoGridWidget::changeEvent(QEvent *event)
+{
+    QWidget::changeEvent(event);
+    if (event != nullptr &&
+        (event->type() == QEvent::FontChange ||
+         event->type() == QEvent::StyleChange)) {
+        updateGeometry();
+        relayoutVideoWidgets();
+    }
+}
+
+void VideoGridWidget::showEvent(QShowEvent *event)
+{
+    QWidget::showEvent(event);
+    canvasHost_->lower();
+    QTimer::singleShot(0, this, &VideoGridWidget::refreshRenderSnapshot);
 }
 
 GridDimensions VideoGridWidget::calculateGridDimensions(int widgetCount) noexcept
@@ -70,6 +146,70 @@ GridDimensions VideoGridWidget::calculateGridDimensions(int widgetCount) noexcep
     }
 
     return {(widgetCount + columns - 1) / columns, columns};
+}
+
+MonitoringGridGeometry VideoGridWidget::calculateMonitoringGridGeometry(
+    QSize availableSize,
+    GridDimensions dimensions,
+    QSize videoChromeSize,
+    QMargins baseMargins,
+    int spacing,
+    QSize videoAspect
+) noexcept
+{
+    MonitoringGridGeometry geometry;
+    if (availableSize.width() <= 0 || availableSize.height() <= 0 ||
+        dimensions.rows <= 0 || dimensions.columns <= 0 || spacing < 0 ||
+        videoAspect.width() <= 0 || videoAspect.height() <= 0 ||
+        videoChromeSize.width() < 0 || videoChromeSize.height() < 0) {
+        return geometry;
+    }
+
+    const int horizontalGaps = (dimensions.columns - 1) * spacing;
+    const int verticalGaps = (dimensions.rows - 1) * spacing;
+    const int usableWidth = availableSize.width() - baseMargins.left() -
+                            baseMargins.right() - horizontalGaps;
+    const int usableHeight = availableSize.height() - baseMargins.top() -
+                             baseMargins.bottom() - verticalGaps;
+    if (usableWidth <= 0 || usableHeight <= 0) {
+        return geometry;
+    }
+
+    const int maximumVideoWidth =
+        usableWidth / dimensions.columns - videoChromeSize.width();
+    const int maximumVideoHeight =
+        usableHeight / dimensions.rows - videoChromeSize.height();
+    geometry.videoViewportSize = largestAspectFit(
+        {maximumVideoWidth, maximumVideoHeight}, videoAspect
+    );
+    if (!geometry.videoViewportSize.isValid()) {
+        return geometry;
+    }
+    geometry.cellSize = geometry.videoViewportSize + videoChromeSize;
+    const QSize gridSize(
+        dimensions.columns * geometry.cellSize.width() + horizontalGaps,
+        dimensions.rows * geometry.cellSize.height() + verticalGaps
+    );
+    const int horizontalExtra = std::max(
+        0,
+        availableSize.width() - baseMargins.left() - baseMargins.right() -
+            gridSize.width()
+    );
+    const int verticalExtra = std::max(
+        0,
+        availableSize.height() - baseMargins.top() - baseMargins.bottom() -
+            gridSize.height()
+    );
+    const int left = baseMargins.left() + horizontalExtra / 2;
+    const int top = baseMargins.top() + verticalExtra / 2;
+    geometry.layoutMargins = {
+        left,
+        top,
+        baseMargins.right() + horizontalExtra - horizontalExtra / 2,
+        baseMargins.bottom() + verticalExtra - verticalExtra / 2,
+    };
+    geometry.gridRect = QRect(QPoint(left, top), gridSize);
+    return geometry;
 }
 
 GridDimensions VideoGridWidget::gridDimensions() const noexcept
@@ -102,6 +242,51 @@ VideoGridWidget::GridInteractionState VideoGridWidget::interactionState() const 
     return interactionState_;
 }
 
+MonitoringGridGeometry VideoGridWidget::monitoringGridGeometry() const noexcept
+{
+    return monitoringGridGeometry_;
+}
+
+bool VideoGridWidget::isMonitoringWallMode() const noexcept
+{
+    return monitoringWallMode_;
+}
+
+void VideoGridWidget::setMonitoringWallMode(bool enabled)
+{
+    if (monitoringWallMode_ == enabled) {
+        return;
+    }
+    monitoringWallMode_ = enabled;
+    gridLayout_->setSpacing(
+        monitoringWallMode_ ? kWallGridSpacing : kWindowGridSpacing
+    );
+    updateMonitoringGridGeometry();
+    updateGeometry();
+    gridLayout_->invalidate();
+    gridLayout_->activate();
+    refreshRenderSnapshot();
+    QTimer::singleShot(0, this, &VideoGridWidget::refreshRenderSnapshot);
+}
+
+QSize VideoGridWidget::minimumSizeHint() const
+{
+    constexpr int minimumVideoWidth = 144;
+    constexpr int minimumVideoHeight = 81;
+    const GridDimensions dimensions = gridDimensions();
+    if (dimensions.rows <= 0 || dimensions.columns <= 0) {
+        return QWidget::minimumSizeHint();
+    }
+    const QSize cellSize = maximumVideoChromeSizeHint() +
+                           QSize(minimumVideoWidth, minimumVideoHeight);
+    return {
+        kWindowGridBaseMargin * 2 + dimensions.columns * cellSize.width() +
+            (dimensions.columns - 1) * kWindowGridSpacing,
+        kWindowGridBaseMargin * 2 + dimensions.rows * cellSize.height() +
+            (dimensions.rows - 1) * kWindowGridSpacing,
+    };
+}
+
 VideoWidget *VideoGridWidget::addVideoWidget()
 {
     return addVideoWidget({});
@@ -126,7 +311,9 @@ VideoWidget *VideoGridWidget::addVideoWidget(const QString &deviceName)
         if (oldGeometry.isEmpty()) {
             canAnimate = false;
         }
-        capturedWidgets.append({videoWidget, oldGeometry, videoWidget->grab()});
+        capturedWidgets.append({
+            videoWidget, oldGeometry, captureWidgetSnapshot(videoWidget)
+        });
     }
 
     auto *newVideoWidget = createVideoWidget(deviceName);
@@ -170,7 +357,7 @@ VideoWidget *VideoGridWidget::addVideoWidget(const QString &deviceName)
                                snapshot});
     }
 
-    const QPixmap newWidgetPixmap = newVideoWidget->grab();
+    const QPixmap newWidgetPixmap = captureWidgetSnapshot(newVideoWidget);
     const QRect newWidgetStartGeometry =
         centeredScaledRect(newWidgetTargetGeometry, kNewWidgetInitialScale);
     auto *newWidgetSnapshot = createSnapshotOverlay(newWidgetPixmap,
@@ -247,6 +434,7 @@ bool VideoGridWidget::removeVideoWidget(VideoWidget *videoWidget)
     }
 
     videoWidgets_.removeAt(index);
+    unbindVideoStream(videoWidget);
     gridLayout_->removeWidget(videoWidget);
     videoWidget->hide();
     emit videoWidgetRemoved(videoWidget);
@@ -277,8 +465,12 @@ bool VideoGridWidget::swapVideoWidgets(int firstIndex, int secondIndex)
         return false;
     }
 
-    auto *firstOverlay = createSnapshotOverlay(firstWidget->grab(), firstGeometry);
-    auto *secondOverlay = createSnapshotOverlay(secondWidget->grab(), secondGeometry);
+    auto *firstOverlay = createSnapshotOverlay(
+        captureWidgetSnapshot(firstWidget), firstGeometry
+    );
+    auto *secondOverlay = createSnapshotOverlay(
+        captureWidgetSnapshot(secondWidget), secondGeometry
+    );
 
     setInteractionState(GridInteractionState::SwappingWidgets);
     firstWidget->hide();
@@ -374,6 +566,81 @@ void VideoGridWidget::notifyFullscreenExited(VideoWidget *videoWidget)
 
     fullscreenVideoWidget_ = nullptr;
     setInteractionState(GridInteractionState::Idle);
+    refreshRenderSnapshot();
+}
+
+void VideoGridWidget::bindVideoStream(
+    VideoWidget *videoWidget,
+    StreamId streamId,
+    std::shared_ptr<LatestFrameMailbox> mailbox
+)
+{
+    if (videoWidget == nullptr || indexOf(videoWidget) < 0 ||
+        streamId == kInvalidStreamId || mailbox == nullptr) {
+        return;
+    }
+    videoWidget->bindRenderSource(streamId, mailbox);
+    canvasHost_->registerStream(streamId, std::move(mailbox));
+    refreshRenderSnapshot();
+}
+
+void VideoGridWidget::unbindVideoStream(VideoWidget *videoWidget)
+{
+    if (videoWidget == nullptr) {
+        return;
+    }
+    const StreamId streamId = videoWidget->streamId();
+    if (streamId != kInvalidStreamId) {
+        canvasHost_->unregisterStream(streamId);
+    }
+    videoWidget->unbindRenderSource();
+    refreshRenderSnapshot();
+}
+
+void VideoGridWidget::refreshRenderSnapshot()
+{
+    RenderSnapshot snapshot;
+    snapshot.logicalCanvasSize = size();
+    snapshot.devicePixelRatio = devicePixelRatioF();
+    snapshot.items.reserve(videoWidgets_.size());
+    for (int index = 0; index < videoWidgets_.size(); ++index) {
+        VideoWidget *videoWidget = videoWidgets_.at(index);
+        if (videoWidget == nullptr ||
+            videoWidget->streamId() == kInvalidStreamId) {
+            continue;
+        }
+        RenderItem item;
+        item.streamId = videoWidget->streamId();
+        item.tileRect = videoWidget->geometry();
+        item.videoViewport = videoWidget->videoViewportRect(this);
+        item.displayMode = monitoringWallMode_
+                               ? VideoDisplayMode::Contain
+                               : videoWidget->displayMode();
+        item.title = videoWidget->deviceName();
+        item.status = videoWidget->statusText();
+        // frameVisible is the semantic stream state. Transient QWidget
+        // visibility during stacked-page changes or preload animations must not
+        // be frozen into the renderer snapshot; the canvas scheduler already
+        // pauses when the canvas itself is hidden.
+        item.frameVisible = videoWidget->isFrameVisible();
+        snapshot.items.push_back(std::move(item));
+    }
+    canvasHost_->setSnapshot(std::move(snapshot));
+}
+
+QString VideoGridWidget::activeRendererBackend() const
+{
+    return canvasHost_->activeBackendName();
+}
+
+RenderStatistics VideoGridWidget::renderStatistics() const noexcept
+{
+    return canvasHost_->statistics();
+}
+
+RenderRuntimeMetrics VideoGridWidget::rendererRuntimeMetrics() const
+{
+    return canvasHost_->runtimeMetrics();
 }
 
 VideoWidget *VideoGridWidget::createVideoWidget(const QString &deviceName)
@@ -401,6 +668,17 @@ void VideoGridWidget::connectVideoWidgetSignals(VideoWidget *videoWidget)
             this, &VideoGridWidget::handleSwapRequested, Qt::UniqueConnection);
     connect(videoWidget, &VideoWidget::fullscreenRequested,
             this, &VideoGridWidget::handleFullscreenRequested, Qt::UniqueConnection);
+    connect(videoWidget, &VideoWidget::renderStateChanged,
+            this, &VideoGridWidget::handleRenderStateChanged,
+            Qt::UniqueConnection);
+}
+
+void VideoGridWidget::handleRenderStateChanged(VideoWidget *videoWidget)
+{
+    if (videoWidget == nullptr || indexOf(videoWidget) < 0) {
+        return;
+    }
+    refreshRenderSnapshot();
 }
 
 void VideoGridWidget::handleSwapRequested(VideoWidget *source, VideoWidget *target)
@@ -453,8 +731,47 @@ void VideoGridWidget::relayoutVideoWidgets()
         gridLayout_->setColumnStretch(column, 1);
     }
 
+    updateMonitoringGridGeometry();
+    updateGeometry();
     gridLayout_->invalidate();
     gridLayout_->activate();
+    QTimer::singleShot(0, this, &VideoGridWidget::refreshRenderSnapshot);
+}
+
+void VideoGridWidget::updateMonitoringGridGeometry()
+{
+    const int baseMargin = monitoringWallMode_
+                               ? kWallGridBaseMargin
+                               : kWindowGridBaseMargin;
+    const int spacing = monitoringWallMode_
+                            ? kWallGridSpacing
+                            : kWindowGridSpacing;
+    monitoringGridGeometry_ = calculateMonitoringGridGeometry(
+        size(), gridDimensions(), maximumVideoChromeSizeHint(),
+        QMargins(baseMargin, baseMargin, baseMargin, baseMargin), spacing
+    );
+    if (monitoringGridGeometry_.isValid()) {
+        gridLayout_->setContentsMargins(monitoringGridGeometry_.layoutMargins);
+    } else {
+        gridLayout_->setContentsMargins(
+            baseMargin, baseMargin, baseMargin, baseMargin
+        );
+    }
+    gridLayout_->invalidate();
+}
+
+QSize VideoGridWidget::maximumVideoChromeSizeHint() const
+{
+    QSize maximum;
+    for (const VideoWidget *videoWidget : videoWidgets_) {
+        if (videoWidget == nullptr) {
+            continue;
+        }
+        const QSize chrome = videoWidget->videoChromeSizeHint();
+        maximum.setWidth(std::max(maximum.width(), chrome.width()));
+        maximum.setHeight(std::max(maximum.height(), chrome.height()));
+    }
+    return maximum;
 }
 
 void VideoGridWidget::setInteractionState(GridInteractionState state)
@@ -486,4 +803,38 @@ QLabel *VideoGridWidget::createSnapshotOverlay(const QPixmap &pixmap,
     overlay->show();
     overlay->raise();
     return overlay;
+}
+
+QPixmap VideoGridWidget::captureWidgetSnapshot(VideoWidget *videoWidget)
+{
+    if (videoWidget == nullptr) {
+        return {};
+    }
+    QPixmap snapshot = videoWidget->grab();
+    if (!videoWidget->isFrameVisible() || snapshot.isNull()) {
+        return snapshot;
+    }
+    QImage canvas = canvasHost_->grabFramebufferImage();
+    if (canvas.isNull()) {
+        return snapshot;
+    }
+    const qreal dpr = std::max<qreal>(1.0, canvas.devicePixelRatio());
+    const QRect viewport = videoWidget->videoViewportRect(this);
+    const QRect source(
+        qRound(viewport.x() * dpr),
+        qRound(viewport.y() * dpr),
+        qRound(viewport.width() * dpr),
+        qRound(viewport.height() * dpr)
+    );
+    if (source.isEmpty()) {
+        return snapshot;
+    }
+    QImage videoImage = canvas.copy(source.intersected(canvas.rect()));
+    videoImage.setDevicePixelRatio(dpr);
+    const QPoint destinationTopLeft = videoWidget->mapFrom(
+        this, viewport.topLeft()
+    );
+    QPainter painter(&snapshot);
+    painter.drawImage(QRect(destinationTopLeft, viewport.size()), videoImage);
+    return snapshot;
 }

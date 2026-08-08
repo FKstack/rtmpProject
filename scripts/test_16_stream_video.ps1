@@ -31,7 +31,12 @@ param(
     [string]$InputFile = "",
     [string]$AppPath = "",
     [string]$OutputRoot = "",
+    [string]$AssetDirectory = "",
     [string[]]$StreamUrls = @(),
+    [ValidatePattern("^[A-Za-z0-9_-]+$")]
+    [string]$StreamPrefix = "camera",
+    [ValidateSet("auto", "opengl", "cpu")]
+    [string]$Renderer = "cpu",
     [switch]$InternalLauncher,
     [string]$InternalStreamUrlsBase64 = ""
 )
@@ -118,17 +123,22 @@ if ([string]::IsNullOrWhiteSpace($AppPath)) {
 if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
     $OutputRoot = Join-Path $ProjectRoot "out\16-stream-video"
 }
+$OutputRoot = [IO.Path]::GetFullPath($OutputRoot)
+$AppPath = [IO.Path]::GetFullPath($AppPath)
 if ($StreamUrls.Count -eq 0) {
     $StreamUrls = @(
         1..16 | ForEach-Object {
-            "rtmp://127.0.0.1:1935/live/camera{0:D3}" -f $_
+            "rtmp://127.0.0.1:1935/live/{0}{1:D3}" -f $StreamPrefix, $_
         }
     )
 }
 
-$AssetRoot = Join-Path $OutputRoot "assets"
-$LogsRoot = Join-Path $ProjectRoot "out\logs\16-stream-video"
-$RuntimeRoot = Join-Path $ProjectRoot "out\runtime\16-stream-video"
+if ([string]::IsNullOrWhiteSpace($AssetDirectory)) {
+    $AssetDirectory = Join-Path $OutputRoot "assets"
+}
+$AssetRoot = [IO.Path]::GetFullPath($AssetDirectory)
+$LogsRoot = Join-Path $OutputRoot "logs"
+$RuntimeRoot = Join-Path $OutputRoot "runtime"
 $NginxRuntimeRoot = Join-Path $RuntimeRoot "nginx"
 $NginxSourceExe = Join-Path $NginxRoot "sbin\nginx.exe"
 $NginxSourceConfig = Join-Path $NginxRoot "conf\nginx.conf"
@@ -272,10 +282,11 @@ function Invoke-BoundedProcess {
         Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
         throw "$Stage 超过 $TimeoutSeconds 秒截止时间。"
     }
-    [void]$process.WaitForExit(1000)
+    $process.WaitForExit()
     $process.Refresh()
-    if ($null -ne $process.ExitCode -and $process.ExitCode -ne 0) {
-        throw "$Stage 失败，退出码 $($process.ExitCode)。"
+    $exitCode = [int]$process.ExitCode
+    if ($exitCode -ne 0) {
+        throw "$Stage 失败，退出码 $exitCode。"
     }
 }
 
@@ -470,7 +481,9 @@ function Invoke-Prepare {
         }
 
         Write-Host ("[{0:D2}/16] 生成 CAMERA {0:D3}" -f $camera)
-        $label = "CAMERA {0:D3}" -f $camera
+        # PowerShell 5.1 Start-Process flattens ArgumentList and can split a
+        # filter argument at spaces. Keep the burned-in identifier shell-safe.
+        $label = "CAMERA-{0:D3}" -f $camera
         $filter = "scale=1280:720:force_original_aspect_ratio=decrease," +
             "pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=$($Colors[$camera-1])," +
             "drawbox=x=28:y=28:w=420:h=92:color=black@0.65:t=fill," +
@@ -556,7 +569,10 @@ function Start-Publisher {
 
 function Start-Application {
     param([object]$State)
-    $arguments = @("--decode-threads", "8", "--metrics-file", $MetricsPath)
+    $arguments = @(
+        "--decode-threads", "8", "--metrics-file", $MetricsPath,
+        "--renderer", $Renderer
+    )
     foreach ($url in $StreamUrls) { $arguments += @("--url", $url) }
     $process = Start-Process -FilePath $AppPath -ArgumentList $arguments `
         -WorkingDirectory (Split-Path -Parent $AppPath) `
@@ -688,6 +704,8 @@ function Invoke-ActionBroker {
         "-InputFile", $InputFile,
         "-AppPath", $AppPath,
         "-OutputRoot", $OutputRoot,
+        "-AssetDirectory", $AssetRoot,
+        "-Renderer", $Renderer,
         "-InternalStreamUrlsBase64", $streamUrlsBase64
     )
     $quotedArguments = @($arguments | ForEach-Object {
@@ -846,6 +864,32 @@ function Invoke-StartApp {
     Save-State $state
 }
 
+function Get-Percentile {
+    param([double[]]$Values, [double]$Fraction)
+    if ($Values.Count -eq 0) { return -1 }
+    $sorted = @($Values | Sort-Object)
+    $index = [Math]::Max(0, [Math]::Min(
+        $sorted.Count - 1, [Math]::Ceiling($Fraction * $sorted.Count) - 1
+    ))
+    return [double]$sorted[$index]
+}
+
+function Get-LinearSlopePerMinute {
+    param([double[]]$Values)
+    if ($Values.Count -lt 2) { return 0.0 }
+    $meanX = ($Values.Count - 1) / 2.0
+    $meanY = [double](($Values | Measure-Object -Average).Average)
+    $numerator = 0.0
+    $denominator = 0.0
+    for ($index = 0; $index -lt $Values.Count; ++$index) {
+        $dx = $index - $meanX
+        $numerator += $dx * ($Values[$index] - $meanY)
+        $denominator += $dx * $dx
+    }
+    if ($denominator -le 0) { return 0.0 }
+    return 60.0 * $numerator / $denominator
+}
+
 function Invoke-RunAutomated {
     $samples = @()
     $passed = $false
@@ -872,6 +916,9 @@ function Invoke-RunAutomated {
             if ($app.HasExited) { throw "应用在自动测试期间退出。" }
             if (-not (Test-Path -LiteralPath $MetricsPath)) { continue }
             $snapshot = Get-Content $MetricsPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ([int]$snapshot.schemaVersion -ne 3) {
+                throw "指标 schema 必须为 v3，实际为 $($snapshot.schemaVersion)。"
+            }
             $now = Get-Date
             $cpuNow = $app.TotalProcessorTime.TotalSeconds
             $elapsed = ($now - $previousAt).TotalSeconds
@@ -884,10 +931,22 @@ function Invoke-RunAutomated {
                 Playing = @($snapshot.streams | Where-Object state -eq "playing").Count
                 MinimumDecodeFps = [double](($snapshot.streams | Measure-Object decodeFps -Minimum).Minimum)
                 MinimumDisplayFps = [double](($snapshot.streams | Measure-Object displayFps -Minimum).Minimum)
+                AverageDisplayFps = [double](($snapshot.streams | Measure-Object displayFps -Average).Average)
+                MaximumFrameAgeMs = [double](($snapshot.streams | Measure-Object lastFrameAgeMs -Maximum).Maximum)
+                MaximumInternalLatencyP95Ms = [double](($snapshot.streams | Measure-Object internalLatencyP95Ms -Maximum).Maximum)
                 MaximumQueue = [int](($snapshot.streams | Measure-Object queuePackets -Maximum).Maximum)
                 CpuPercent = $cpuPercent
                 WorkingSetMiB = $app.WorkingSet64 / 1MB
                 UiGapMs = [int]$snapshot.maximumUiTimerGapMs
+                RendererActive = [string]$snapshot.renderer.activeBackend
+                PaintCpuUs = [double]$snapshot.renderStatistics.paintCpuUs
+                UploadCpuUs = [double]$snapshot.renderStatistics.uploadCpuUs
+                GpuTimeUs = [double]$snapshot.renderStatistics.gpuTimeUs
+                TextureBytes = [double]$snapshot.renderStatistics.textureBytes
+                SubmittedFrames = [double](($snapshot.streams | Measure-Object submittedFrames -Sum).Sum)
+                OverwrittenFrames = [double](($snapshot.streams | Measure-Object mailboxOverwrittenFrames -Sum).Sum)
+                UploadedFrames = [double](($snapshot.streams | Measure-Object uploadedFrames -Sum).Sum)
+                RenderedFrames = [double](($snapshot.streams | Measure-Object renderedFrames -Sum).Sum)
             }
             if (($second % 5) -eq 0) {
                 Write-Host ("{0,4}/{1}s playing={2}/16 minDecode={3:N1} CPU={4:N1}% WS={5:N0}MiB" -f
@@ -897,24 +956,58 @@ function Invoke-RunAutomated {
             }
         }
 
-        $steady = @($samples | Select-Object -Skip ([Math]::Min(5, $samples.Count)))
+        if ($samples.Count -le 5) {
+            throw "有效 metrics 样本不足：$($samples.Count)；请检查 metrics-file 是否为绝对路径以及应用是否持续写入 schema v3。"
+        }
+        $steady = @($samples | Select-Object -Skip 5)
         $decodePassRatio = @($steady | Where-Object MinimumDecodeFps -ge 27).Count /
             [Math]::Max(1, $steady.Count)
         $averageCpu = ($steady | Measure-Object CpuPercent -Average).Average
+        $cpuP95 = Get-Percentile @($steady | ForEach-Object CpuPercent) 0.95
+        $averageDisplayFps = ($steady | Measure-Object AverageDisplayFps -Average).Average
+        $frameAgeP95 = Get-Percentile @($steady | ForEach-Object MaximumFrameAgeMs) 0.95
+        $internalLatencyP95 = Get-Percentile @($steady | ForEach-Object MaximumInternalLatencyP95Ms) 0.95
+        $paintCpuP95 = Get-Percentile @($steady | ForEach-Object PaintCpuUs) 0.95
+        $uploadCpuP95 = Get-Percentile @($steady | ForEach-Object UploadCpuUs) 0.95
+        $gpuTimeP95 = Get-Percentile @(
+            $steady | Where-Object GpuTimeUs -ge 0 | ForEach-Object GpuTimeUs
+        ) 0.95
         $peakMemory = ($steady | Measure-Object WorkingSetMiB -Maximum).Maximum
+        $workingSetSlope = Get-LinearSlopePerMinute @(
+            $steady | ForEach-Object WorkingSetMiB
+        )
         $maxUiGap = ($steady | Measure-Object UiGapMs -Maximum).Maximum
         $maxQueue = ($steady | Measure-Object MaximumQueue -Maximum).Maximum
+        $activeRenderer = [string]$samples[-1].RendererActive
+        $rendererMatched = $activeRenderer -eq $Renderer -or
+            ($Renderer -eq "auto" -and $activeRenderer -in @("cpu", "opengl"))
+        $textureEvidence = $Renderer -ne "opengl" -or
+            (($steady | Measure-Object TextureBytes -Minimum).Minimum -gt 0)
         $passed = $decodePassRatio -ge 0.95 -and $averageCpu -le 85 -and
-            $peakMemory -le 2048 -and $maxUiGap -lt 500 -and $maxQueue -le 45
+            $peakMemory -le 2048 -and $maxUiGap -lt 500 -and $maxQueue -le 45 -and
+            $rendererMatched -and $textureEvidence
 
         $report = [ordered]@{
-            SchemaVersion = 1
+            SchemaVersion = 2
             Scenario = "sixteen-stream-video"
+            RequestedRenderer = $Renderer
+            ActiveRenderer = $activeRenderer
+            RendererMatched = $rendererMatched
+            TextureEvidence = $textureEvidence
+            Renderer = $snapshot.renderer
             Passed = $passed
             DurationSeconds = $DurationSeconds
             DecodePassRatio = $decodePassRatio
             AverageApplicationCpuPercent = $averageCpu
+            ApplicationCpuP95Percent = $cpuP95
+            AverageDisplayFps = $averageDisplayFps
+            LatestFrameAgeP95Ms = $frameAgeP95
+            InternalLatencyP95Ms = $internalLatencyP95
+            PaintCpuP95Us = $paintCpuP95
+            UploadCpuP95Us = $uploadCpuP95
+            GpuTimeP95Us = $gpuTimeP95
             PeakWorkingSetMiB = $peakMemory
+            WorkingSetSlopeMiBPerMinute = $workingSetSlope
             MaximumUiTimerGapMs = $maxUiGap
             MaximumQueuePackets = $maxQueue
             Samples = $samples
@@ -928,7 +1021,14 @@ function Invoke-RunAutomated {
 - 时长：$DurationSeconds 秒
 - 解码 FPS 达标采样比例：$([Math]::Round($decodePassRatio * 100, 1))%
 - 应用平均 CPU：$([Math]::Round($averageCpu, 1))%
+- 应用 CPU P95：$([Math]::Round($cpuP95, 1))%
+- 请求/实际后端：$Renderer / $($samples[-1].RendererActive)
+- 平均显示 FPS：$([Math]::Round($averageDisplayFps, 2))
+- 最新帧年龄 P95：$([Math]::Round($frameAgeP95, 1)) ms
+- paint/upload CPU P95：$([Math]::Round($paintCpuP95, 1)) / $([Math]::Round($uploadCpuP95, 1)) us
+- GPU 时间 P95：$([Math]::Round($gpuTimeP95, 1)) us（-1 表示不可用）
 - 峰值工作集：$([Math]::Round($peakMemory, 1)) MiB
+- 工作集斜率：$([Math]::Round($workingSetSlope, 3)) MiB/min
 - UI 最大定时器间隔：$maxUiGap ms
 - 最大压缩包队列：$maxQueue/45
 "@ | Set-Content -LiteralPath $ReportMarkdownPath -Encoding UTF8

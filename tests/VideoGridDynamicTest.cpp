@@ -1,14 +1,69 @@
 #include <QAction>
+#include <QDockWidget>
+#include <QFrame>
 #include <QGridLayout>
+#include <QLabel>
+#include <QMenuBar>
 #include <QPushButton>
 #include <QSet>
 #include <QSignalSpy>
+#include <QStatusBar>
 #include <QTest>
+#include <QToolBar>
 
+#include <algorithm>
+#include <array>
+#include <cstdint>
+#include <memory>
+#include <vector>
+
+#include "media/LatestFrameMailbox.h"
+#include "media/VideoFrame.h"
 #include "ui/ConnectionDialog.h"
+#include "ui/FullscreenVideoWindow.h"
 #include "ui/MainWindow.h"
 #include "ui/VideoGridWidget.h"
 #include "ui/VideoWidget.h"
+
+namespace {
+
+VideoFrame makeGridTestFrame(std::uint64_t sequence)
+{
+    constexpr int width = 64;
+    constexpr int height = 48;
+    constexpr int chromaWidth = width / 2;
+    constexpr int chromaHeight = height / 2;
+    std::vector<std::uint8_t> y(width * height, 82);
+    std::vector<std::uint8_t> u(chromaWidth * chromaHeight, 90);
+    std::vector<std::uint8_t> v(chromaWidth * chromaHeight, 240);
+    std::array<VideoPlaneView, VideoFrame::kMaximumPlanes> planes {{
+        {y.data(), width, width, height},
+        {u.data(), chromaWidth, chromaWidth, chromaHeight},
+        {v.data(), chromaWidth, chromaWidth, chromaHeight},
+    }};
+    const auto frame = VideoFrame::copyFromPlanes(
+        width,
+        height,
+        VideoPixelFormat::Yuv420P8,
+        planes,
+        0,
+        1,
+        {1, 30},
+        {
+            VideoColorPrimaries::Bt709,
+            VideoTransferFunction::Bt709,
+            VideoMatrixCoefficients::Bt709,
+            VideoColorRange::Limited,
+        },
+        sequence,
+        1,
+        0
+    );
+    Q_ASSERT(frame.has_value());
+    return *frame;
+}
+
+} // namespace
 
 class VideoGridDynamicTest final : public QObject
 {
@@ -18,6 +73,9 @@ private slots:
     void initTestCase();
     void calculateGridDimensions_data();
     void calculateGridDimensions();
+    void calculateMonitoringGridGeometry_data();
+    void calculateMonitoringGridGeometry();
+    void monitoringWallGeometryUsesFullHd();
     void initialGridIsEmpty();
     void mainWindowShowsEmptyConnectionPage();
     void connectionDialogValidatesInput();
@@ -25,6 +83,11 @@ private slots:
     void addWidgetsToMaximum();
     void interactionStatesRejectReentry();
     void dynamicallyCreatedWidgetKeepsConnections();
+    void displayModeIsPerWidgetAndSurvivesGridOperations();
+    void monitoringGridKeepsSixteenByNineViewports();
+    void logDockDefaultsHiddenAndCanBeShown();
+    void monitoringWallRoundTripRestoresWindowChrome();
+    void transientWidgetVisibilityDoesNotSuppressSharedCanvas();
     void mainWindowDisablesAddActionAtMaximum();
 
 private:
@@ -68,6 +131,84 @@ void VideoGridDynamicTest::calculateGridDimensions()
         VideoGridWidget::calculateGridDimensions(count);
     QCOMPARE(dimensions.rows, rows);
     QCOMPARE(dimensions.columns, columns);
+}
+
+void VideoGridDynamicTest::calculateMonitoringGridGeometry_data()
+{
+    QTest::addColumn<QSize>("availableSize");
+    QTest::addColumn<int>("count");
+    const QVector<QSize> sizes {
+        {1280, 720}, {1920, 1080}, {1920, 1032}, {2560, 1440},
+    };
+    for (const QSize &size : sizes) {
+        for (int count = 1; count <= 16; ++count) {
+            const QByteArray name = QByteArray::number(size.width()) + "x" +
+                                    QByteArray::number(size.height()) + "-" +
+                                    QByteArray::number(count);
+            QTest::newRow(name.constData()) << size << count;
+        }
+    }
+}
+
+void VideoGridDynamicTest::calculateMonitoringGridGeometry()
+{
+    QFETCH(QSize, availableSize);
+    QFETCH(int, count);
+    const GridDimensions dimensions =
+        VideoGridWidget::calculateGridDimensions(count);
+    const QSize chrome(16, 39);
+    const MonitoringGridGeometry geometry =
+        VideoGridWidget::calculateMonitoringGridGeometry(
+            availableSize, dimensions, chrome
+    );
+    QVERIFY(geometry.isValid());
+    const qreal widthError = qAbs(
+        qreal(geometry.videoViewportSize.width()) -
+        qreal(geometry.videoViewportSize.height()) * 16.0 / 9.0
+    );
+    const qreal heightError = qAbs(
+        qreal(geometry.videoViewportSize.height()) -
+        qreal(geometry.videoViewportSize.width()) * 9.0 / 16.0
+    );
+    QVERIFY(std::min(widthError, heightError) <= 0.51);
+    QCOMPARE(geometry.cellSize, geometry.videoViewportSize + chrome);
+    QCOMPARE(
+        geometry.gridRect.size(),
+        QSize(
+            dimensions.columns * geometry.cellSize.width() +
+                (dimensions.columns - 1) * 4,
+            dimensions.rows * geometry.cellSize.height() +
+                (dimensions.rows - 1) * 4
+        )
+    );
+    QVERIFY(qAbs(geometry.layoutMargins.left() -
+                 geometry.layoutMargins.right()) <= 1);
+    QVERIFY(qAbs(geometry.layoutMargins.top() -
+                 geometry.layoutMargins.bottom()) <= 1);
+    const int maximumVideoWidth =
+        (availableSize.width() - 8 - (dimensions.columns - 1) * 4) /
+            dimensions.columns - chrome.width();
+    const int maximumVideoHeight =
+        (availableSize.height() - 8 - (dimensions.rows - 1) * 4) /
+            dimensions.rows - chrome.height();
+    QVERIFY(geometry.videoViewportSize.width() <= maximumVideoWidth);
+    QVERIFY(geometry.videoViewportSize.height() <= maximumVideoHeight);
+    QVERIFY(geometry.videoViewportSize.width() == maximumVideoWidth ||
+            geometry.videoViewportSize.height() == maximumVideoHeight);
+}
+
+void VideoGridDynamicTest::monitoringWallGeometryUsesFullHd()
+{
+    const MonitoringGridGeometry geometry =
+        VideoGridWidget::calculateMonitoringGridGeometry(
+            QSize(1920, 1080), {4, 4}, QSize(2, 2), QMargins(), 0
+        );
+    QVERIFY(geometry.isValid());
+    QVERIFY(geometry.layoutMargins.left() <= 8);
+    QVERIFY(geometry.layoutMargins.right() <= 8);
+    QVERIFY(geometry.layoutMargins.top() <= 1);
+    QVERIFY(geometry.layoutMargins.bottom() <= 1);
+    QCOMPARE(geometry.gridRect.height(), 1080);
 }
 
 void VideoGridDynamicTest::initialGridIsEmpty()
@@ -155,6 +296,7 @@ void VideoGridDynamicTest::addWidgetsToMaximum()
          ++expectedCount) {
         VideoWidget *addedWidget = addAndWait(grid);
         QVERIFY(addedWidget != nullptr);
+        QCOMPARE(addedWidget->displayMode(), VideoDisplayMode::Contain);
         QCOMPARE(grid.videoWidgetCount(), expectedCount);
         uniqueWidgets.insert(addedWidget);
         QCOMPARE(uniqueWidgets.size(), expectedCount);
@@ -228,6 +370,260 @@ void VideoGridDynamicTest::dynamicallyCreatedWidgetKeepsConnections()
     QTRY_COMPARE_WITH_TIMEOUT(swappedSpy.count(), 1, 1000);
     QCOMPARE(grid.videoWidgetAt(0), second);
     QCOMPARE(grid.videoWidgetAt(1), first);
+}
+
+void VideoGridDynamicTest::displayModeIsPerWidgetAndSurvivesGridOperations()
+{
+    VideoGridWidget grid(RendererPreference::Cpu);
+    grid.resize(960, 540);
+    grid.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&grid));
+
+    VideoWidget *first = addAndWait(grid, QStringLiteral("First"));
+    VideoWidget *second = addAndWait(grid, QStringLiteral("Second"));
+    QCOMPARE(first->displayMode(), VideoDisplayMode::Contain);
+    QCOMPARE(second->displayMode(), VideoDisplayMode::Contain);
+
+    QSignalSpy renderStateSpy(first, &VideoWidget::renderStateChanged);
+    first->setDisplayMode(VideoDisplayMode::Cover);
+    QCOMPARE(first->displayMode(), VideoDisplayMode::Cover);
+    QCOMPARE(renderStateSpy.count(), 1);
+    first->setDisplayMode(VideoDisplayMode::Cover);
+    QCOMPARE(renderStateSpy.count(), 1);
+    QCOMPARE(second->displayMode(), VideoDisplayMode::Contain);
+
+    auto mailbox = std::make_shared<LatestFrameMailbox>();
+    grid.bindVideoStream(first, 41, mailbox);
+    auto *canvas = grid.findChild<VideoCanvasHost *>(
+        QStringLiteral("videoGridCanvas")
+    );
+    QVERIFY(canvas != nullptr);
+    QCOMPARE(canvas->controller()->snapshot().items.size(), std::size_t(1));
+    QCOMPARE(
+        canvas->controller()->snapshot().items.front().displayMode,
+        VideoDisplayMode::Cover
+    );
+    grid.setMonitoringWallMode(true);
+    QVERIFY(grid.isMonitoringWallMode());
+    QCOMPARE(first->displayMode(), VideoDisplayMode::Cover);
+    QCOMPARE(
+        canvas->controller()->snapshot().items.front().displayMode,
+        VideoDisplayMode::Contain
+    );
+    grid.setMonitoringWallMode(false);
+    QCOMPARE(first->displayMode(), VideoDisplayMode::Cover);
+    QCOMPARE(
+        canvas->controller()->snapshot().items.front().displayMode,
+        VideoDisplayMode::Cover
+    );
+    first->showFrame();
+    first->clearFrame();
+    first->showFrame();
+    QCOMPARE(first->displayMode(), VideoDisplayMode::Cover);
+
+    QSignalSpy swappedSpy(&grid, &VideoGridWidget::videoWidgetsSwapped);
+    QVERIFY(grid.swapVideoWidgets(0, 1));
+    QTRY_COMPARE_WITH_TIMEOUT(swappedSpy.count(), 1, 1000);
+    QCOMPARE(grid.videoWidgetAt(1), first);
+    QCOMPARE(grid.videoWidgetAt(1)->displayMode(), VideoDisplayMode::Cover);
+    QCOMPARE(grid.videoWidgetAt(0), second);
+    QCOMPARE(grid.videoWidgetAt(0)->displayMode(), VideoDisplayMode::Contain);
+
+    grid.unbindVideoStream(first);
+    grid.bindVideoStream(first, 42, std::make_shared<LatestFrameMailbox>());
+    QCOMPARE(first->displayMode(), VideoDisplayMode::Cover);
+}
+
+void VideoGridDynamicTest::monitoringGridKeepsSixteenByNineViewports()
+{
+    VideoGridWidget grid(RendererPreference::Cpu);
+    grid.resize(1280, 720);
+    grid.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&grid));
+    for (int index = 0; index < 16; ++index) {
+        QVERIFY(addAndWait(
+            grid,
+            index == 0
+                ? QString(400, QLatin1Char('W'))
+                : QStringLiteral("Camera %1").arg(index + 1)
+        ) != nullptr);
+    }
+
+    const QVector<QSize> sizes {
+        {1280, 720}, {1920, 1032},
+    };
+    for (const QSize &size : sizes) {
+        grid.resize(size);
+        QCoreApplication::processEvents();
+        const MonitoringGridGeometry geometry = grid.monitoringGridGeometry();
+        QVERIFY(geometry.isValid());
+        QVERIFY(qAbs(geometry.layoutMargins.left() -
+                     geometry.layoutMargins.right()) <= 1);
+        QVERIFY(qAbs(geometry.layoutMargins.top() -
+                     geometry.layoutMargins.bottom()) <= 1);
+        for (int index = 0; index < 16; ++index) {
+            VideoWidget *widget = grid.videoWidgetAt(index);
+            QVERIFY(widget != nullptr);
+            const QRect viewport = widget->videoViewportRect(&grid);
+            QCOMPARE(viewport.size(), geometry.videoViewportSize);
+            const qreal widthError = qAbs(
+                qreal(viewport.width()) - qreal(viewport.height()) * 16.0 / 9.0
+            );
+            const qreal heightError = qAbs(
+                qreal(viewport.height()) - qreal(viewport.width()) * 9.0 / 16.0
+            );
+            QVERIFY(std::min(widthError, heightError) <= 0.51);
+            const VideoPlacement placement = calculateVideoPlacement(
+                QRectF(viewport), QSize(1280, 720), VideoDisplayMode::Contain
+            );
+            QVERIFY(qAbs(placement.targetRect.left() - viewport.left()) <= 1.0);
+            QVERIFY(qAbs(placement.targetRect.right() - viewport.right()) <= 1.0);
+            QVERIFY(qAbs(placement.targetRect.top() - viewport.top()) <= 1.0);
+            QVERIFY(qAbs(placement.targetRect.bottom() - viewport.bottom()) <= 1.0);
+            QCOMPARE(placement.sourceUv, QRectF(0, 0, 1, 1));
+        }
+    }
+
+    VideoWidget *first = grid.videoWidgetAt(0);
+    auto *surface = first->findChild<QFrame *>(QStringLiteral("videoSurface"));
+    auto *title = first->findChild<QLabel *>(QStringLiteral("deviceNameLabel"));
+    QVERIFY(surface != nullptr);
+    QVERIFY(title != nullptr);
+    QCOMPARE(title->parentWidget(), surface);
+    QCOMPARE(first->deviceName(), QString(400, QLatin1Char('W')));
+    QVERIFY(title->text() != first->deviceName());
+    QVERIFY(surface->rect().contains(title->geometry()));
+    QVERIFY(first->videoChromeSizeHint().height() <= 4);
+}
+
+void VideoGridDynamicTest::logDockDefaultsHiddenAndCanBeShown()
+{
+    MainWindow mainWindow(RendererPreference::Cpu);
+    mainWindow.show();
+    auto *dock = mainWindow.findChild<QDockWidget *>(
+        QStringLiteral("logDockWidget")
+    );
+    auto *action = mainWindow.findChild<QAction *>(
+        QStringLiteral("showLogAction")
+    );
+    QVERIFY(dock != nullptr);
+    QVERIFY(action != nullptr);
+    QVERIFY(!dock->isVisible());
+    QVERIFY(!action->isChecked());
+
+    action->trigger();
+    QTRY_VERIFY(dock->isVisible());
+    QVERIFY(action->isChecked());
+    action->trigger();
+    QTRY_VERIFY(!dock->isVisible());
+    QVERIFY(!action->isChecked());
+}
+
+void VideoGridDynamicTest::monitoringWallRoundTripRestoresWindowChrome()
+{
+    MainWindow mainWindow(RendererPreference::Cpu);
+    VideoWidget *videoWidget = mainWindow.addConnectionWidget(
+        QStringLiteral("Camera Wall Round Trip")
+    );
+    QVERIFY(videoWidget != nullptr);
+    mainWindow.bindVideoStream(
+        videoWidget, 77, std::make_shared<LatestFrameMailbox>()
+    );
+    videoWidget->showFrame();
+    mainWindow.resize(1000, 700);
+    mainWindow.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&mainWindow));
+
+    auto *action = mainWindow.findChild<QAction *>(
+        QStringLiteral("monitoringWallAction")
+    );
+    auto *toolbar = mainWindow.findChild<QToolBar *>(
+        QStringLiteral("videoToolBar")
+    );
+    auto *dock = mainWindow.logDockWidget();
+    QStatusBar *status = mainWindow.statusBar();
+    QVERIFY(action != nullptr);
+    QVERIFY(toolbar != nullptr);
+    dock->show();
+    status->show();
+    QCoreApplication::processEvents();
+    const QSize originalSize = mainWindow.size();
+
+    action->trigger();
+    QTRY_VERIFY(mainWindow.isMonitoringWallMode());
+    QTRY_VERIFY(mainWindow.isFullScreen());
+    QVERIFY(action->isChecked());
+    QVERIFY(!mainWindow.menuBar()->isVisible());
+    QVERIFY(!toolbar->isVisible());
+    QVERIFY(!dock->isVisible());
+    QVERIFY(!status->isVisible());
+    auto *grid = mainWindow.findChild<VideoGridWidget *>();
+    QVERIFY(grid != nullptr);
+    QVERIFY(grid->isMonitoringWallMode());
+
+    QTest::mouseDClick(videoWidget, Qt::LeftButton);
+    auto *fullscreen = mainWindow.findChild<FullscreenVideoWindow *>();
+    QVERIFY(fullscreen != nullptr);
+    QTRY_VERIFY(fullscreen->isFullscreenActive());
+    fullscreen->exitFullscreen();
+    QTRY_VERIFY(!fullscreen->isFullscreenActive());
+    QTRY_VERIFY(mainWindow.isVisible());
+    QTRY_VERIFY(mainWindow.isFullScreen());
+    QVERIFY(mainWindow.isMonitoringWallMode());
+
+    QTest::keyClick(&mainWindow, Qt::Key_Escape);
+    QTRY_VERIFY(!mainWindow.isMonitoringWallMode());
+    QTRY_VERIFY(!mainWindow.isFullScreen());
+    QVERIFY(!action->isChecked());
+    QVERIFY(mainWindow.menuBar()->isVisible());
+    QVERIFY(toolbar->isVisible());
+    QVERIFY(dock->isVisible());
+    QVERIFY(status->isVisible());
+    QVERIFY(!grid->isMonitoringWallMode());
+    QVERIFY(qAbs(mainWindow.width() - originalSize.width()) <= 2);
+    QVERIFY(qAbs(mainWindow.height() - originalSize.height()) <= 2);
+}
+
+void VideoGridDynamicTest::transientWidgetVisibilityDoesNotSuppressSharedCanvas()
+{
+    VideoGridWidget grid(RendererPreference::Cpu);
+    grid.resize(960, 540);
+
+    std::vector<std::shared_ptr<LatestFrameMailbox>> mailboxes;
+    for (StreamId streamId = 1; streamId <= 4; ++streamId) {
+        VideoWidget *videoWidget = grid.addVideoWidget(
+            QStringLiteral("Camera %1").arg(streamId, 2, 10, QLatin1Char('0'))
+        );
+        QVERIFY(videoWidget != nullptr);
+        auto mailbox = std::make_shared<LatestFrameMailbox>();
+        grid.bindVideoStream(videoWidget, streamId, mailbox);
+
+        // Reproduce the preload/layout-animation window from the reported bug:
+        // the interaction anchor is temporarily hidden when Playing arrives.
+        videoWidget->hide();
+        videoWidget->showFrame();
+        QVERIFY(mailbox->submit(makeGridTestFrame(streamId)));
+        mailboxes.push_back(std::move(mailbox));
+    }
+
+    // No explicit refresh is allowed here: showFrame() must update the shared
+    // canvas snapshot through VideoWidget::renderStateChanged by itself.
+    RenderRuntimeMetrics metrics = grid.rendererRuntimeMetrics();
+    QCOMPARE(metrics.renderItemCount, 4);
+    QCOMPARE(metrics.boundMailboxCount, 4);
+    QCOMPARE(metrics.visibleRenderItemCount, 4);
+
+    for (int index = 0; index < grid.videoWidgetCount(); ++index) {
+        grid.videoWidgetAt(index)->show();
+    }
+    grid.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&grid));
+    QTRY_VERIFY_WITH_TIMEOUT(
+        grid.rendererRuntimeMetrics().uploadedFrames >= 4, 5'000
+    );
+    QTRY_VERIFY_WITH_TIMEOUT(
+        grid.rendererRuntimeMetrics().renderedFrames >= 4, 5'000
+    );
 }
 
 void VideoGridDynamicTest::mainWindowDisablesAddActionAtMaximum()

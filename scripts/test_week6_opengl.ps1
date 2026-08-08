@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Builds and runs the Week 6 OpenGL validation on Windows x86_64.
+    Builds and validates the production YUV OpenGL renderer on Windows x86_64.
 
 .DESCRIPTION
     This script does not install dependencies or persist environment changes.
@@ -160,6 +160,7 @@ $OriginalEnvironment = @{
     PATH = $env:PATH
     QT_OPENGL = $env:QT_OPENGL
     QT_QPA_PLATFORM = $env:QT_QPA_PLATFORM
+    RTMP_MONITOR_TEST_ARTIFACT_DIR = $env:RTMP_MONITOR_TEST_ARTIFACT_DIR
 }
 
 try {
@@ -171,6 +172,11 @@ try {
     $env:PATH = (Join-Path $QtRoot "bin") + ";" + $env:PATH
     $env:QT_OPENGL = "desktop"
     $env:QT_QPA_PLATFORM = "windows"
+    if ([string]::IsNullOrWhiteSpace($env:RTMP_MONITOR_TEST_ARTIFACT_DIR)) {
+        $env:RTMP_MONITOR_TEST_ARTIFACT_DIR = Join-Path $OutputRoot "quality-artifacts"
+    }
+    New-Item -ItemType Directory -Force `
+        -Path $env:RTMP_MONITOR_TEST_ARTIFACT_DIR | Out-Null
 
     $QmakeSpec = & $QmakePath -query QMAKE_SPEC
     if ($LASTEXITCODE -ne 0 -or $QmakeSpec.Trim() -ne "win32-msvc") {
@@ -219,7 +225,65 @@ try {
         ) `
         -ReportPath $ReportPath
 
-    Write-Host "Week 6 Windows OpenGL validation passed." -ForegroundColor Green
+    # QTest GUI executables do not reliably forward passing QINFO lines through
+    # CTest on Windows. Run the production framebuffer test once more with an
+    # explicit text sink so the numerical quality evidence is machine-readable.
+    $qualityExecutable = Join-Path $BuildDirectory `
+        "rtmp_monitor_opengl_grid_renderer_smoke.exe"
+    $qualityResultPath = Join-Path $OutputRoot "framebuffer-quality-results.txt"
+    Assert-File -Path $qualityExecutable -Description "production framebuffer test"
+    Invoke-LoggedCommand `
+        -FilePath $qualityExecutable `
+        -Arguments @("-o", "$qualityResultPath,txt") `
+        -ReportPath $ReportPath
+    $qualityResultText = Get-Content `
+        -LiteralPath $qualityResultPath -Raw -Encoding UTF8
+    Add-Content -LiteralPath $ReportPath -Value $qualityResultText -Encoding UTF8
+
+    $reportText = Get-Content -LiteralPath $ReportPath -Raw -Encoding UTF8
+    $vendorMatch = [regex]::Match($reportText, '(?m)^\d+: vendor=([^\r\n]+)$')
+    $rendererMatch = [regex]::Match($reportText, '(?m)^\d+: renderer=([^\r\n]+)$')
+    $versionMatch = [regex]::Match($reportText, '(?m)^\d+: version=([^\r\n]+)$')
+    $qualityCases = @([regex]::Matches(
+        $reportText,
+        'QUALITY case=(\S+) psnr=([\d.]+|inf) mae=([\d.]+) p99=(\d+)',
+        [Text.RegularExpressions.RegexOptions]::IgnoreCase
+    ) | ForEach-Object {
+        [ordered]@{
+            Case = $_.Groups[1].Value
+            PsnrDb = if ($_.Groups[2].Value -ieq "inf") {
+                999.0
+            } else { [double]$_.Groups[2].Value }
+            MeanAbsoluteError = [double]$_.Groups[3].Value
+            P99ChannelError = [int]$_.Groups[4].Value
+        }
+    })
+    if ($qualityCases.Count -ne 8) {
+        throw "Expected 8 framebuffer quality results, found $($qualityCases.Count)."
+    }
+    $summary = [ordered]@{
+        SchemaVersion = 2
+        CompletedAtUtc = [DateTime]::UtcNow.ToString('o')
+        Passed = $true
+        ProductionRenderer = "YUV420P/NV12 single-canvas OpenGL"
+        GraphicsApi = "Desktop OpenGL 3.3 Core or newer"
+        Vendor = if ($vendorMatch.Success) { $vendorMatch.Groups[1].Value.Trim() } else { "" }
+        Renderer = if ($rendererMatch.Success) { $rendererMatch.Groups[1].Value.Trim() } else { "" }
+        Version = if ($versionMatch.Success) { $versionMatch.Groups[1].Value.Trim() } else { "" }
+        Tests = @(
+            "rtmp_monitor_opengl_windows_smoke",
+            "rtmp_monitor_qt_opengl_smoke",
+            "rtmp_monitor_opengl_grid_renderer_smoke",
+            "full-ctest"
+        )
+        QualityCases = $qualityCases
+        QualityArtifactDirectory = [string]$env:RTMP_MONITOR_TEST_ARTIFACT_DIR
+    }
+    $summary | ConvertTo-Json -Depth 4 | Set-Content `
+        -LiteralPath (Join-Path $OutputRoot "windows-opengl-validation.json") `
+        -Encoding UTF8
+
+    Write-Host "Week 6 production OpenGL validation passed." -ForegroundColor Green
     Write-Host "Report: $ReportPath"
 }
 finally {

@@ -2,6 +2,14 @@
 
 项目文档按“路线规划、通用指南、分周实现”分类。第一次接触项目时，建议先阅读项目计划和架构总览，再按周次进入具体实现。
 
+## 0. 跨会话记忆
+
+- [记忆系统说明](memory/README.md)：文件职责、恢复流程、维护规则和 OpenViking 边界。
+- [当前项目快照](memory/project_snapshot.md)：经验证的当前状态、阻塞和下一步。
+- [重要设计决策](memory/decisions.md)：影响长期架构、平台、存储和安全的轻量 ADR。
+- [已知问题](memory/known_issues.md)：可复现问题和未完成的验收项。
+- `project_handoff.md`：本地会话交接文件，由 `.gitignore` 排除。
+
 ## 1. 路线规划
 
 - [项目计划](roadmap/project_plan.md)：项目目标、阶段安排、验收标准和当前进度。
@@ -19,6 +27,7 @@
 - [代码规范](guides/development/code_style_guide.md)
 - [注释规范](guides/development/comment_style_guide.md)
 - [QSS 样式加载与主题扩展](guides/development/style_loading.md)
+- [OpenViking 使用、结构观察与测试指南](guides/development/openviking_usage_and_testing.md)：理解上下文数据库、Hook、VikingFS、Web Studio 和可清理的学习实验。
 
 ### 2.3 构建与验证
 
@@ -50,9 +59,12 @@
 
 - [设备状态、日志与可配置重连](weeks/week5/week5_device_status_and_logging.md)
 
-### Week 6：OpenGL 环境与原型
+### Week 6：产品级 OpenGL 渲染与实证
 
-- [Windows 与 WSL2 ARM64 OpenGL 环境及原型验证](weeks/week6/week6_opengl_environment_and_validation.md)
+- [产品级 OpenGL 视频渲染与验证总览](weeks/week6/week6_opengl_environment_and_validation.md)
+- [产品视频渲染框架教学篇](weeks/week6/week6_product_rendering_framework_tutorial.md)
+- [CPU/OpenGL 自动化对照测试实战篇](weeks/week6/week6_renderer_performance_test_guide.md)
+- [正式 Renderer 对照脱敏结果 JSON](weeks/week6/week6_renderer_comparison_results.json)
 
 ## 4. 推荐阅读路径
 
@@ -62,7 +74,8 @@
 2. [Week 4～5 架构指南](guides/architecture/week4_week5_architecture_guide.md)
 3. [多路媒体与并发深度学习](guides/architecture/week4_media_concurrency_deep_dive.md)
 4. [Week 5 实现记录](weeks/week5/week5_device_status_and_logging.md)
-5. [Week 6 OpenGL 环境与原型验证](weeks/week6/week6_opengl_environment_and_validation.md)
+5. [Week 6 产品视频渲染框架教学篇](weeks/week6/week6_product_rendering_framework_tutorial.md)
+6. [Week 6 自动化对照测试实战篇](weeks/week6/week6_renderer_performance_test_guide.md)
 
 进行日常维护时：
 
@@ -76,3 +89,9 @@
 - 跨周复用的架构、开发和构建资料放入 `guides/`。
 - 某一阶段的实现、测试和交接记录放入 `weeks/weekN/`。
 - `docs/project_handoff.md` 是被 Git 忽略的本地临时交接材料，不作为公开索引中的权威文档；需要共享的交接内容应放入对应周次目录。
+# 渲染架构（2026-08-03）
+
+- [当前视频渲染架构审查](architecture/current_rendering_architecture_review.md)
+- [GoObject PDF 渲染框架映射](architecture/pdf_rendering_framework_mapping.md)
+- [产品级视频渲染框架](architecture/video_rendering_framework.md)
+- [ADR：单主 OpenGL 画布与临时全屏画布](architecture/adr/001-video-rendering-architecture.md)

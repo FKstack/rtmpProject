@@ -10,6 +10,10 @@
 # Local AI/agent workspace metadata
 .agents/
 .codex/
+.codex-home/
+CodexHome/
+plugin-cache/
+install-temp/
 
 # =========================
 # CMake build directories
@@ -77,6 +81,7 @@ Desktop.ini
 !.env.example
 *.local.env
 config.local.*
+*.user.config.*
 secrets/
 .secrets/
 credentials/
@@ -88,6 +93,24 @@ service-account*.json
 *.key
 *.p12
 *.pfx
+
+# OpenViking real configuration and persistent state
+# Commit documentation and placeholder examples only; never commit live
+# credentials, databases, logs, plugin state, or machine-local paths.
+ov.conf
+ovcli.conf
+.openviking/
+.openviking-local/
+openviking-data/
+openviking-db/
+openviking-logs/
+codex-plugin-state/
+!*.example.conf
+!AGENTS.md
+!docs/memory/
+!docs/memory/*.md
+!docs/roadmap/
+!docs/roadmap/*.md
 
 # =========================
 # Runtime diagnostics

@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "completedAtUtc": "2026-08-04T16:59:36.0248035Z",
+  "passed": true,
+  "configuration": {
+    "videoDurationSecondsPerBackend": 600,
+    "liveLatencyDurationSecondsPerBackend": 600,
+    "warmupSeconds": 20,
+    "cooldownSeconds": 30,
+    "decodeWorkers": 8,
+    "streamCount": 16,
+    "window": "1280x720",
+    "order": ["cpu", "opengl"]
+  },
+  "openglIdentity": {
+    "api": "Desktop OpenGL",
+    "vendor": "NVIDIA Corporation",
+    "renderer": "NVIDIA GeForce RTX 3060 Laptop GPU/PCIe/SSE2",
+    "version": "3.3.0 NVIDIA 591.86",
+    "fallbackOccurred": false
+  },
+  "video": {
+    "cpu": {
+      "averageApplicationCpuPercent": 4.8523,
+      "averageDisplayFps": 12.7379,
+      "latestFrameAgeP95Ms": 46,
+      "internalLatencyP95Ms": 42,
+      "maximumUiGapMs": 145,
+      "maximumQueuePackets": 1
+    },
+    "opengl": {
+      "averageApplicationCpuPercent": 1.5003,
+      "averageDisplayFps": 14.9133,
+      "latestFrameAgeP95Ms": 43,
+      "internalLatencyP95Ms": 40,
+      "gpuTimeP95Us": 18063,
+      "maximumUiGapMs": 271,
+      "maximumQueuePackets": 1,
+      "textureBytes": 22118400
+    },
+    "cpuReductionPercent": 69.08
+  },
+  "liveLatency": {
+    "cpu": {
+      "averageApplicationCpuPercent": 5.0736,
+      "averageDisplayFps": 10.0102,
+      "worstStreamP95Ms": 214,
+      "worstStreamMaximumMs": 2060,
+      "latestFrameAgeP95Ms": 45,
+      "internalLatencyP95Ms": 51,
+      "maximumUiGapMs": 1203
+    },
+    "opengl": {
+      "averageApplicationCpuPercent": 2.0676,
+      "averageDisplayFps": 14.7867,
+      "worstStreamP95Ms": 196,
+      "worstStreamMaximumMs": 317,
+      "latestFrameAgeP95Ms": 43,
+      "internalLatencyP95Ms": 42,
+      "gpuTimeP95Us": 21482,
+      "maximumUiGapMs": 441,
+      "textureBytes": 22118400
+    }
+  },
+  "quality": {
+    "caseCount": 8,
+    "minimumPsnrDb": 46.0896,
+    "maximumMeanAbsoluteError": 0.8889,
+    "maximumP99ChannelError": 2,
+    "passed": true
+  },
+  "notes": [
+    "All formal release gates passed after deterministic re-evaluation of the saved raw reports.",
+    "The planned Camera 03 outage temporarily released one route texture for one sample; the final 60 seconds returned to the warmed baseline with no allocation above baseline.",
+    "Quality proves equivalence to the CPU reference and no visible regression; it does not claim OpenGL is inherently sharper.",
+    "Absolute paths, stream URLs, process identifiers, screenshots, and raw logs are intentionally omitted."
+  ]
+}

@@ -1,18 +1,22 @@
 #include "ui/VideoWidget.h"
 
+#include <algorithm>
+#include <utility>
+
 #include <QApplication>
+#include <QActionGroup>
 #include <QContextMenuEvent>
 #include <QDrag>
 #include <QDragEnterEvent>
 #include <QDragLeaveEvent>
 #include <QDropEvent>
+#include <QEvent>
+#include <QFontMetrics>
 #include <QLabel>
 #include <QMimeData>
 #include <QMouseEvent>
 #include <QMenu>
-#include <QPalette>
-#include <QPainter>
-#include <QPaintEvent>
+#include <QResizeEvent>
 #include <QSizePolicy>
 #include <QStyle>
 #include <QTimer>
@@ -22,6 +26,7 @@ namespace {
 
 constexpr char kVideoWidgetMimeType[] = "application/x-rtmp-monitor-video-widget";
 constexpr int kClickEffectDurationMs = 140;
+constexpr int kTitleOverlayInset = 6;
 
 class VideoSurface final : public QFrame
 {
@@ -30,42 +35,6 @@ public:
         : QFrame(parent)
     {
     }
-
-    void setFrame(const QImage &image)
-    {
-        frame_ = image;
-        update();
-    }
-
-    void clearFrame()
-    {
-        frame_ = QImage();
-        update();
-    }
-
-protected:
-    void paintEvent(QPaintEvent *event) override
-    {
-        QFrame::paintEvent(event);
-        if (frame_.isNull()) {
-            return;
-        }
-
-        QSize targetSize = frame_.size();
-        targetSize.scale(size(), Qt::KeepAspectRatio);
-        const QRect targetRect(
-            QPoint((width() - targetSize.width()) / 2,
-                   (height() - targetSize.height()) / 2),
-            targetSize
-        );
-
-        QPainter painter(this);
-        painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
-        painter.drawImage(targetRect, frame_);
-    }
-
-private:
-    QImage frame_;
 };
 
 /**
@@ -85,40 +54,37 @@ VideoWidget::VideoWidget(QWidget *parent)
 {
     setFrameShape(QFrame::StyledPanel);
     setFrameShadow(QFrame::Plain);
-    // 4x4 布局仍需允许主窗口合理缩放，最小尺寸只保证标题和状态文本可辨认。
-    setMinimumSize(160, 100);
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     setAcceptDrops(true);
+    setAutoFillBackground(false);
     // 该属性是应用级 QSS 的稳定边界，避免视频格样式泄漏到后续其他 QFrame 控件。
     setProperty("styleRole", "videoWidget");
     setProperty("dragState", "idle");
 
-    auto *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(8, 8, 8, 8);
-    layout->setSpacing(6);
+    rootLayout_ = new QVBoxLayout(this);
+    rootLayout_->setContentsMargins(0, 0, 0, 0);
+    rootLayout_->setSpacing(0);
 
-    titleLabel_ = new QLabel(this);
-    titleLabel_->setObjectName(QStringLiteral("deviceNameLabel"));
-    titleLabel_->setAttribute(Qt::WA_TransparentForMouseEvents);
-
-    // 将视频区域与标题、状态文本分离，后续可替换为 QImage 或 OpenGL 渲染而不改变外层布局。
+    // 该区域只提供共享画布的几何锚点；像素不再由每路 QWidget 保存或绘制。
     videoSurface_ = new VideoSurface(this);
     videoSurface_->setObjectName(QStringLiteral("videoSurface"));
     videoSurface_->setProperty("styleRole", "videoSurface");
     videoSurface_->setFrameShape(QFrame::NoFrame);
     videoSurface_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     videoSurface_->setAttribute(Qt::WA_TransparentForMouseEvents);
-    videoSurface_->setAttribute(Qt::WA_StyledBackground);
-    videoSurface_->setAutoFillBackground(true);
-    videoSurface_->installEventFilter(this);
+    videoSurface_->setAttribute(Qt::WA_StyledBackground, false);
+    videoSurface_->setAutoFillBackground(false);
 
     // 视频区域换 parent 后仍需独立保持黑色，不能依赖 VideoWidget 后代选择器。
-    QPalette videoSurfacePalette = videoSurface_->palette();
-    videoSurfacePalette.setColor(QPalette::Window, Qt::black);
-    videoSurface_->setPalette(videoSurfacePalette);
+    videoSurface_->setAttribute(Qt::WA_NoSystemBackground);
+
+    titleLabel_ = new QLabel(videoSurface_);
+    titleLabel_->setObjectName(QStringLiteral("deviceNameLabel"));
+    titleLabel_->setAttribute(Qt::WA_TransparentForMouseEvents);
+    titleLabel_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
 
     auto *surfaceLayout = new QVBoxLayout(videoSurface_);
-    surfaceLayout->setContentsMargins(12, 12, 12, 12);
+    surfaceLayout->setContentsMargins(6, 6, 6, 6);
 
     statusLabel_ = new QLabel(videoSurface_);
     statusLabel_->setObjectName(QStringLiteral("statusLabel"));
@@ -127,16 +93,18 @@ VideoWidget::VideoWidget(QWidget *parent)
     statusLabel_->setAttribute(Qt::WA_TransparentForMouseEvents);
 
     surfaceLayout->addWidget(statusLabel_);
-    layout->addWidget(titleLabel_);
-    layout->addWidget(videoSurface_, 1);
+    rootLayout_->addWidget(videoSurface_, 1);
 
     setDeviceName(tr("未命名设备"));
     setStatusText(tr("未连接"));
+    updateMonitoringMinimumSize();
 }
 
 void VideoWidget::setDeviceName(const QString &deviceName)
 {
-    titleLabel_->setText(deviceName);
+    deviceName_ = deviceName;
+    titleLabel_->setToolTip(deviceName);
+    updateTitleOverlay();
 }
 
 void VideoWidget::setStatusText(const QString &statusText)
@@ -147,7 +115,7 @@ void VideoWidget::setStatusText(const QString &statusText)
 
 QString VideoWidget::deviceName() const
 {
-    return titleLabel_->text();
+    return deviceName_;
 }
 
 QString VideoWidget::statusText() const
@@ -160,19 +128,110 @@ bool VideoWidget::isDragEnabled() const noexcept
     return dragEnabled_;
 }
 
-void VideoWidget::displayFrame(const QImage &image)
+void VideoWidget::bindRenderSource(
+    StreamId streamId,
+    std::shared_ptr<LatestFrameMailbox> mailbox
+)
 {
-    if (image.isNull()) {
+    streamId_ = streamId;
+    frameMailbox_ = std::move(mailbox);
+    frameVisible_ = false;
+    emit renderStateChanged(this);
+}
+
+void VideoWidget::unbindRenderSource()
+{
+    streamId_ = kInvalidStreamId;
+    frameMailbox_.reset();
+    frameVisible_ = false;
+    emit renderStateChanged(this);
+}
+
+StreamId VideoWidget::streamId() const noexcept
+{
+    return streamId_;
+}
+
+std::shared_ptr<LatestFrameMailbox> VideoWidget::frameMailbox() const
+{
+    return frameMailbox_;
+}
+
+QRect VideoWidget::videoViewportRect(const QWidget *ancestor) const
+{
+    if (ancestor == nullptr || videoSurface_ == nullptr) {
+        return {};
+    }
+    const QPoint topLeft = videoSurface_->mapTo(
+        const_cast<QWidget *>(ancestor), QPoint(0, 0)
+    );
+    return QRect(topLeft, videoSurface_->size());
+}
+
+QSize VideoWidget::videoChromeSizeHint() const
+{
+    if (rootLayout_ == nullptr) {
+        return {};
+    }
+    const QMargins margins = rootLayout_->contentsMargins();
+    const int frameChrome = frameWidth() * 2;
+    return {
+        margins.left() + margins.right() + frameChrome,
+        margins.top() + margins.bottom() + frameChrome,
+    };
+}
+
+bool VideoWidget::isFrameVisible() const noexcept
+{
+    return frameVisible_;
+}
+
+VideoDisplayMode VideoWidget::displayMode() const noexcept
+{
+    return displayMode_;
+}
+
+void VideoWidget::setDisplayMode(VideoDisplayMode mode)
+{
+    if (displayMode_ == mode) {
         return;
     }
-    static_cast<VideoSurface *>(videoSurface_)->setFrame(image);
+    displayMode_ = mode;
+    emit renderStateChanged(this);
+}
+
+void VideoWidget::changeEvent(QEvent *event)
+{
+    QFrame::changeEvent(event);
+    if (event != nullptr &&
+        (event->type() == QEvent::FontChange ||
+         event->type() == QEvent::StyleChange)) {
+        updateMonitoringMinimumSize();
+        updateTitleOverlay();
+    }
+}
+
+void VideoWidget::resizeEvent(QResizeEvent *event)
+{
+    QFrame::resizeEvent(event);
+    updateTitleOverlay();
+}
+
+void VideoWidget::showFrame()
+{
+    frameVisible_ = true;
     statusLabel_->setVisible(false);
+    emit renderStateChanged(this);
 }
 
 void VideoWidget::clearFrame()
 {
-    static_cast<VideoSurface *>(videoSurface_)->clearFrame();
+    frameVisible_ = false;
+    if (frameMailbox_ != nullptr) {
+        frameMailbox_->clear();
+    }
     statusLabel_->setVisible(true);
+    emit renderStateChanged(this);
 }
 
 void VideoWidget::mousePressEvent(QMouseEvent *event)
@@ -282,25 +341,41 @@ void VideoWidget::contextMenuEvent(QContextMenuEvent *event)
     }
 
     QMenu menu(this);
+    QMenu *displayModeMenu = menu.addMenu(tr("显示方式"));
+    QActionGroup displayModeGroup(&menu);
+    displayModeGroup.setExclusive(true);
+    QAction *containAction = displayModeMenu->addAction(
+        tr("完整显示（默认，标准 16:9 铺满）")
+    );
+    containAction->setCheckable(true);
+    containAction->setChecked(displayMode_ == VideoDisplayMode::Contain);
+    containAction->setToolTip(
+        tr("保持原始比例并显示完整画面，比例不同时会保留黑边。")
+    );
+    displayModeGroup.addAction(containAction);
+    QAction *coverAction = displayModeMenu->addAction(
+        tr("裁剪铺满（可能丢失边缘）")
+    );
+    coverAction->setCheckable(true);
+    coverAction->setChecked(displayMode_ == VideoDisplayMode::Cover);
+    coverAction->setToolTip(
+        tr("保持原始比例并铺满视频区域，比例不同时会从中心裁剪画面。")
+    );
+    displayModeGroup.addAction(coverAction);
+    menu.addSeparator();
     QAction *reconnectAction = menu.addAction(tr("重新连接"));
     QAction *removeAction = menu.addAction(tr("断开并移除"));
     QAction *selected = menu.exec(event->globalPos());
-    if (selected == reconnectAction) {
+    if (selected == coverAction) {
+        setDisplayMode(VideoDisplayMode::Cover);
+    } else if (selected == containAction) {
+        setDisplayMode(VideoDisplayMode::Contain);
+    } else if (selected == reconnectAction) {
         emit reconnectRequested(this);
     } else if (selected == removeAction) {
         emit removeRequested(this);
     }
     event->accept();
-}
-
-bool VideoWidget::eventFilter(QObject *watched, QEvent *event)
-{
-    if (watched == videoSurface_ && event->type() == QEvent::Resize) {
-        emit presentationTargetChanged(
-            this, videoSurface_->size(), fullscreenSurfaceMode_
-        );
-    }
-    return QFrame::eventFilter(watched, event);
 }
 
 void VideoWidget::startDrag()
@@ -371,20 +446,40 @@ void VideoWidget::refreshStyle()
     update();
 }
 
-QFrame *VideoWidget::videoSurfaceForFullscreen() const noexcept
+void VideoWidget::updateMonitoringMinimumSize()
 {
-    return videoSurface_;
+    constexpr QSize kMinimumVideoViewport(144, 81);
+    const QSize chrome = videoChromeSizeHint();
+    setMinimumSize(kMinimumVideoViewport.width() + chrome.width(),
+                   kMinimumVideoViewport.height() + chrome.height());
 }
 
-bool VideoWidget::isStatusLabelVisible() const noexcept
+void VideoWidget::updateTitleOverlay()
 {
-    return statusLabel_->isVisible();
-}
+    if (titleLabel_ == nullptr || videoSurface_ == nullptr) {
+        return;
+    }
 
-void VideoWidget::setFullscreenSurfaceMode(bool active, bool restoreStatusLabelVisible)
-{
-    // 状态标签位于真实视频区域内；全屏时隐藏它，避免占用未来实际画面。
-    statusLabel_->setVisible(active ? false : restoreStatusLabelVisible);
-    fullscreenSurfaceMode_ = active;
-    emit presentationTargetChanged(this, videoSurface_->size(), active);
+    const int availableWidth = std::max(
+        0, videoSurface_->width() - kTitleOverlayInset * 2
+    );
+    if (availableWidth <= 0) {
+        titleLabel_->hide();
+        return;
+    }
+
+    titleLabel_->setText(
+        titleLabel_->fontMetrics().elidedText(
+            deviceName_, Qt::ElideRight, availableWidth
+        )
+    );
+    titleLabel_->adjustSize();
+    titleLabel_->setGeometry(
+        kTitleOverlayInset,
+        kTitleOverlayInset,
+        std::min(availableWidth, titleLabel_->sizeHint().width()),
+        titleLabel_->sizeHint().height()
+    );
+    titleLabel_->show();
+    titleLabel_->raise();
 }

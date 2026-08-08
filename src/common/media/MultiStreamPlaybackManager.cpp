@@ -26,6 +26,7 @@ qint64 monotonicMilliseconds()
            )
         .count();
 }
+
 int resolveWorkerCount(const PlaybackPerformanceOptions &options)
 {
     if (options.decodeWorkerCount > 0) {
@@ -54,6 +55,16 @@ QJsonObject metricsToJson(const StreamMetrics &metrics)
                   static_cast<qint64>(metrics.convertedFrames));
     object.insert(QStringLiteral("presentedFrames"),
                   static_cast<qint64>(metrics.presentedFrames));
+    object.insert(QStringLiteral("submittedFrames"),
+                  static_cast<qint64>(metrics.submittedFrames));
+    object.insert(QStringLiteral("mailboxOverwrittenFrames"),
+                  static_cast<qint64>(metrics.mailboxOverwrittenFrames));
+    object.insert(QStringLiteral("unsupportedFrames"),
+                  static_cast<qint64>(metrics.unsupportedFrames));
+    object.insert(QStringLiteral("uploadedFrames"),
+                  static_cast<qint64>(metrics.uploadedFrames));
+    object.insert(QStringLiteral("renderedFrames"),
+                  static_cast<qint64>(metrics.renderedFrames));
     object.insert(QStringLiteral("reconnectCount"),
                   static_cast<qint64>(metrics.reconnectCount));
     object.insert(QStringLiteral("queuePackets"), metrics.queuePackets);
@@ -71,6 +82,14 @@ QJsonObject metricsToJson(const StreamMetrics &metrics)
                   metrics.sourceLatencyMaxMs);
     object.insert(QStringLiteral("sourceLatencySamples"),
                   static_cast<qint64>(metrics.sourceLatencySamples));
+    object.insert(QStringLiteral("uploadCpuUs"), metrics.uploadCpuUs);
+    object.insert(QStringLiteral("paintCpuUs"), metrics.paintCpuUs);
+    object.insert(QStringLiteral("gpuTimeUs"), metrics.gpuTimeUs);
+    object.insert(QStringLiteral("dirtyMerges"),
+                  static_cast<qint64>(metrics.dirtyMerges));
+    object.insert(QStringLiteral("scheduleChecks"),
+                  static_cast<qint64>(metrics.scheduleChecks));
+    object.insert(QStringLiteral("textureBytes"), metrics.textureBytes);
     return object;
 }
 
@@ -80,7 +99,6 @@ struct MultiStreamPlaybackManager::Entry
 {
     StreamConnection connection;
     std::unique_ptr<FFmpegPlayer> player;
-    std::uint64_t lastPresentedSequence = 0;
 };
 
 MultiStreamPlaybackManager::MultiStreamPlaybackManager(
@@ -92,22 +110,11 @@ MultiStreamPlaybackManager::MultiStreamPlaybackManager(
     , decodeWorkerPool_(
           std::make_unique<DecodeWorkerPool>(resolveWorkerCount(options_))
       )
-    , presentationTimer_(std::make_unique<QTimer>())
     , metricsTimer_(std::make_unique<QTimer>())
+    , uiWatchdogTimer_(std::make_unique<QTimer>())
 {
     qRegisterMetaType<StreamMetrics>();
-    qRegisterMetaType<PresentableVideoFrame>();
     qRegisterMetaType<PlaybackError>();
-
-    presentationTimer_->setTimerType(Qt::PreciseTimer);
-    presentationTimer_->setInterval(33);
-    connect(
-        presentationTimer_.get(),
-        &QTimer::timeout,
-        this,
-        &MultiStreamPlaybackManager::presentLatestFrames
-    );
-    presentationTimer_->start();
 
     metricsTimer_->setInterval(1'000);
     connect(
@@ -117,6 +124,16 @@ MultiStreamPlaybackManager::MultiStreamPlaybackManager(
         &MultiStreamPlaybackManager::publishMetrics
     );
     metricsTimer_->start();
+
+    uiWatchdogTimer_->setTimerType(Qt::CoarseTimer);
+    uiWatchdogTimer_->setInterval(33);
+    connect(
+        uiWatchdogTimer_.get(),
+        &QTimer::timeout,
+        this,
+        &MultiStreamPlaybackManager::observeUiTimer
+    );
+    uiWatchdogTimer_->start();
 }
 
 MultiStreamPlaybackManager::MultiStreamPlaybackManager(
@@ -138,7 +155,7 @@ MultiStreamPlaybackManager::MultiStreamPlaybackManager(
 
 MultiStreamPlaybackManager::~MultiStreamPlaybackManager()
 {
-    presentationTimer_->stop();
+    uiWatchdogTimer_->stop();
     metricsTimer_->stop();
     stopAll();
     entries_.clear();
@@ -190,8 +207,6 @@ StreamId MultiStreamPlaybackManager::addStream(
     entry->player->setObjectName(
         QStringLiteral("streamPlayer%1").arg(entry->connection.id)
     );
-    entry->player->setAutomaticFrameSignalsEnabled(false);
-
     const StreamId streamId = entry->connection.id;
     connect(
         entry->player.get(),
@@ -250,7 +265,6 @@ bool MultiStreamPlaybackManager::restartStream(StreamId streamId)
         return false;
     }
     entry->player->stop();
-    entry->lastPresentedSequence = 0;
     return entry->player->start(entry->connection.url);
 }
 
@@ -299,14 +313,55 @@ bool MultiStreamPlaybackManager::isStreamRunning(StreamId streamId) const noexce
     return entry != nullptr && entry->player->isRunning();
 }
 
-void MultiStreamPlaybackManager::setPresentationTarget(
-    StreamId streamId,
-    const PresentationTarget &target
-)
+std::shared_ptr<LatestFrameMailbox>
+MultiStreamPlaybackManager::frameMailbox(StreamId streamId) const
 {
-    if (Entry *entry = entryFor(streamId); entry != nullptr) {
-        entry->player->setPresentationTarget(target);
-    }
+    const Entry *entry = entryFor(streamId);
+    return entry != nullptr ? entry->player->frameMailbox() : nullptr;
+}
+
+QJsonObject rendererToJson(const RenderRuntimeMetrics &metrics)
+{
+    QJsonObject object;
+    object.insert(QStringLiteral("requestedBackend"), metrics.requestedBackend);
+    object.insert(QStringLiteral("activeBackend"), metrics.activeBackend);
+    object.insert(QStringLiteral("fallbackOccurred"), metrics.fallbackOccurred);
+    object.insert(QStringLiteral("fallbackReason"), metrics.fallbackReason);
+    object.insert(QStringLiteral("graphicsApi"), metrics.graphicsApi);
+    object.insert(QStringLiteral("vendor"), metrics.openGlVendor);
+    object.insert(QStringLiteral("renderer"), metrics.openGlRenderer);
+    object.insert(QStringLiteral("version"), metrics.openGlVersion);
+    return object;
+}
+
+QJsonObject renderStatisticsToJson(const RenderRuntimeMetrics &metrics)
+{
+    QJsonObject object;
+    object.insert(QStringLiteral("scheduleChecks"),
+                  static_cast<qint64>(metrics.scheduleChecks));
+    object.insert(QStringLiteral("updateRequests"),
+                  static_cast<qint64>(metrics.updateRequests));
+    object.insert(QStringLiteral("dirtyMerges"),
+                  static_cast<qint64>(metrics.dirtyMerges));
+    object.insert(QStringLiteral("paintCalls"),
+                  static_cast<qint64>(metrics.paintCalls));
+    object.insert(QStringLiteral("uploadedFrames"),
+                  static_cast<qint64>(metrics.uploadedFrames));
+    object.insert(QStringLiteral("renderedFrames"),
+                  static_cast<qint64>(metrics.renderedFrames));
+    object.insert(QStringLiteral("unsupportedFrames"),
+                  static_cast<qint64>(metrics.unsupportedFrames));
+    object.insert(QStringLiteral("paintCpuUs"), metrics.paintCpuUs);
+    object.insert(QStringLiteral("uploadCpuUs"), metrics.uploadCpuUs);
+    object.insert(QStringLiteral("gpuTimeUs"), metrics.gpuTimeUs);
+    object.insert(QStringLiteral("latestFrameAgeMs"), metrics.latestFrameAgeMs);
+    object.insert(QStringLiteral("textureBytes"), metrics.textureBytes);
+    object.insert(QStringLiteral("renderItemCount"), metrics.renderItemCount);
+    object.insert(QStringLiteral("visibleRenderItemCount"),
+                  metrics.visibleRenderItemCount);
+    object.insert(QStringLiteral("boundMailboxCount"),
+                  metrics.boundMailboxCount);
+    return object;
 }
 
 StreamMetrics MultiStreamPlaybackManager::streamMetrics(StreamId streamId)
@@ -363,28 +418,6 @@ MultiStreamPlaybackManager::entryFor(StreamId streamId) const noexcept
     return iterator != entries_.end() ? iterator->get() : nullptr;
 }
 
-void MultiStreamPlaybackManager::presentLatestFrames()
-{
-    const qint64 now = monotonicMilliseconds();
-    if (lastPresentationTickMs_ > 0) {
-        maximumUiTimerGapMs_ = std::max(
-            maximumUiTimerGapMs_, now - lastPresentationTickMs_
-        );
-    }
-    lastPresentationTickMs_ = now;
-
-    for (const auto &entry : entries_) {
-        const PresentableVideoFrame frame = entry->player->latestFrame();
-        if (frame.image.isNull() ||
-            frame.sequence == entry->lastPresentedSequence) {
-            continue;
-        }
-        entry->lastPresentedSequence = frame.sequence;
-        entry->player->markFramePresented(frame);
-        emit frameReady(entry->connection.id, frame);
-    }
-}
-
 void MultiStreamPlaybackManager::publishMetrics()
 {
     const QList<StreamMetrics> metrics = metricsSnapshot();
@@ -394,6 +427,24 @@ void MultiStreamPlaybackManager::publishMetrics()
     if (!metricsOutputPath_.isEmpty()) {
         writeMetricsFile(metrics);
     }
+}
+
+void MultiStreamPlaybackManager::setRenderMetricsProvider(
+    std::function<RenderRuntimeMetrics()> provider
+)
+{
+    renderMetricsProvider_ = std::move(provider);
+}
+
+void MultiStreamPlaybackManager::observeUiTimer()
+{
+    const qint64 now = monotonicMilliseconds();
+    if (lastUiWatchdogTickMs_ > 0) {
+        maximumUiTimerGapMs_ = std::max(
+            maximumUiTimerGapMs_, now - lastUiWatchdogTickMs_
+        );
+    }
+    lastUiWatchdogTickMs_ = now;
 }
 
 void MultiStreamPlaybackManager::writeMetricsFile(
@@ -411,7 +462,7 @@ void MultiStreamPlaybackManager::writeMetricsFile(
     }
 
     QJsonObject root;
-    root.insert(QStringLiteral("schemaVersion"), 1);
+    root.insert(QStringLiteral("schemaVersion"), 3);
     root.insert(
         QStringLiteral("generatedAtUtc"),
         QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)
@@ -423,6 +474,14 @@ void MultiStreamPlaybackManager::writeMetricsFile(
     root.insert(QStringLiteral("decodeWorkerCount"), decodeWorkerCount());
     root.insert(QStringLiteral("streamCount"), streamCount());
     root.insert(QStringLiteral("maximumUiTimerGapMs"), maximumUiTimerGapMs_);
+    const RenderRuntimeMetrics renderMetrics = renderMetricsProvider_
+                                                   ? renderMetricsProvider_()
+                                                   : RenderRuntimeMetrics {};
+    root.insert(QStringLiteral("renderer"), rendererToJson(renderMetrics));
+    root.insert(
+        QStringLiteral("renderStatistics"),
+        renderStatisticsToJson(renderMetrics)
+    );
     root.insert(QStringLiteral("streams"), streams);
 
     QSaveFile file(metricsOutputPath_);

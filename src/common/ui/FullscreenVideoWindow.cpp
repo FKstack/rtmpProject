@@ -1,5 +1,7 @@
 #include "ui/FullscreenVideoWindow.h"
 
+#include <utility>
+
 #include <QCloseEvent>
 #include <QGuiApplication>
 #include <QKeyEvent>
@@ -14,7 +16,10 @@
 #include "ui/FullscreenControlBar.h"
 #include "ui/VideoWidget.h"
 
-FullscreenVideoWindow::FullscreenVideoWindow(QWidget *parent)
+FullscreenVideoWindow::FullscreenVideoWindow(
+    RendererPreference rendererPreference,
+    QWidget *parent
+)
     : QWidget(parent)
 {
     setObjectName(QStringLiteral("fullscreenVideoWindow"));
@@ -33,6 +38,11 @@ FullscreenVideoWindow::FullscreenVideoWindow(QWidget *parent)
     videoLayout_ = new QVBoxLayout(this);
     videoLayout_->setContentsMargins(0, 0, 0, 0);
     videoLayout_->setSpacing(0);
+
+    canvasHost_ = new VideoCanvasHost(rendererPreference, this);
+    canvasHost_->setObjectName(QStringLiteral("fullscreenVideoCanvas"));
+    canvasHost_->setTargetFps(30);
+    videoLayout_->addWidget(canvasHost_);
 
     controlBar_ = new FullscreenControlBar(this);
     controlBar_->hide();
@@ -72,42 +82,20 @@ FullscreenVideoWindow::~FullscreenVideoWindow()
 bool FullscreenVideoWindow::enterFullscreen(VideoWidget *videoWidget)
 {
     if (transitionState_ != TransitionState::Windowed || videoWidget == nullptr ||
-        !videoWidget->isVisible()) {
+        !videoWidget->isVisible() ||
+        videoWidget->streamId() == kInvalidStreamId ||
+        videoWidget->frameMailbox() == nullptr) {
         return false;
     }
 
     transitionState_ = TransitionState::Entering;
 
-    auto *sourceLayout = qobject_cast<QVBoxLayout *>(videoWidget->layout());
-    QFrame *videoSurface = videoWidget->videoSurfaceForFullscreen();
-    if (sourceLayout == nullptr || videoSurface == nullptr) {
-        transitionState_ = TransitionState::Windowed;
-        return false;
-    }
-
-    const int layoutIndex = sourceLayout->indexOf(videoSurface);
-    if (layoutIndex < 0) {
-        transitionState_ = TransitionState::Windowed;
-        return false;
-    }
-
     QScreen *targetScreen = screenForVideoWidget(videoWidget);
 
     restoreState_.videoWidget = videoWidget;
-    restoreState_.originalParent = videoSurface->parentWidget();
-    restoreState_.originalLayout = sourceLayout;
-    restoreState_.layoutIndex = layoutIndex;
-    restoreState_.layoutStretch = sourceLayout->stretch(layoutIndex);
-    restoreState_.sizePolicy = videoSurface->sizePolicy();
-    restoreState_.surfaceWasVisible = videoSurface->isVisible();
-    restoreState_.statusLabelWasVisible = videoWidget->isStatusLabelVisible();
-
-    sourceLayout->removeWidget(videoSurface);
-    videoWidget->setFullscreenSurfaceMode(true);
-    videoSurface->setParent(this);
-    videoSurface->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    videoLayout_->addWidget(videoSurface);
-    activeVideoSurface_ = videoSurface;
+    canvasHost_->registerStream(
+        videoWidget->streamId(), videoWidget->frameMailbox()
+    );
 
     controlBar_->setDeviceName(videoWidget->deviceName());
     controlBar_->setStreamInfo(videoWidget->statusText());
@@ -117,14 +105,13 @@ bool FullscreenVideoWindow::enterFullscreen(VideoWidget *videoWidget)
         setGeometry(targetScreen->geometry());
     }
 
-    // setParent() 会使控件暂时隐藏；必须在顶层窗口出现前完成可见性和布局准备。
-    videoSurface->show();
     videoLayout_->activate();
     controlBar_->show();
     positionControlBar();
     controlBar_->raise();
 
     showFullScreen();
+    refreshRenderSnapshot();
     transitionState_ = TransitionState::Fullscreen;
     raise();
     activateWindow();
@@ -142,9 +129,7 @@ void FullscreenVideoWindow::exitFullscreen()
 
     transitionState_ = TransitionState::Exiting;
 
-    auto *videoSurface = activeVideoSurface_;
     QPointer<VideoWidget> videoWidget = restoreState_.videoWidget;
-    const VideoSurfaceRestoreState restoreState = restoreState_;
 
     // 动态网格先进入退出互斥状态，避免恢复 parent 和布局时启动新的布局动画。
     emit fullscreenExitStarted(videoWidget);
@@ -153,30 +138,9 @@ void FullscreenVideoWindow::exitFullscreen()
     controlBar_->hide();
     unsetCursor();
 
-    videoSurface->hide();
-    videoLayout_->removeWidget(videoSurface);
-    if (restoreState.originalParent != nullptr && restoreState.originalLayout != nullptr &&
-        restoreState.layoutIndex >= 0) {
-        videoSurface->setParent(restoreState.originalParent);
-        restoreState.originalLayout->insertWidget(
-            restoreState.layoutIndex, videoSurface, restoreState.layoutStretch
-        );
-        videoSurface->setSizePolicy(restoreState.sizePolicy);
-    } else {
-        // 原窗口提前销毁时不能安全恢复布局，交由当前窗口的父子关系完成资源释放。
-        videoSurface->hide();
+    if (videoWidget != nullptr && videoWidget->streamId() != kInvalidStreamId) {
+        canvasHost_->unregisterStream(videoWidget->streamId());
     }
-
-    if (videoWidget != nullptr) {
-        videoWidget->setFullscreenSurfaceMode(false, restoreState.statusLabelWasVisible);
-        videoSurface->setVisible(restoreState.surfaceWasVisible);
-        if (restoreState.originalLayout != nullptr) {
-            restoreState.originalLayout->activate();
-        }
-        videoWidget->updateGeometry();
-    }
-
-    activeVideoSurface_ = nullptr;
     clearRestoreState();
 
     // 先让 MainWindow 在仍被黑色全屏窗口覆盖时恢复，最后隐藏顶层窗口，避免暴露桌面中间帧。
@@ -187,7 +151,13 @@ void FullscreenVideoWindow::exitFullscreen()
 
 bool FullscreenVideoWindow::isFullscreenActive() const noexcept
 {
-    return activeVideoSurface_ != nullptr;
+    return restoreState_.videoWidget != nullptr &&
+           transitionState_ != TransitionState::Windowed;
+}
+
+RenderRuntimeMetrics FullscreenVideoWindow::rendererRuntimeMetrics() const
+{
+    return canvasHost_->runtimeMetrics();
 }
 
 void FullscreenVideoWindow::mouseMoveEvent(QMouseEvent *event)
@@ -232,6 +202,7 @@ void FullscreenVideoWindow::paintEvent(QPaintEvent *event)
 void FullscreenVideoWindow::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
+    refreshRenderSnapshot();
     positionControlBar();
 }
 
@@ -298,6 +269,27 @@ void FullscreenVideoWindow::positionControlBar()
     const int x = (width() - controlBarSize.width()) / 2;
     const int y = height() - controlBarSize.height() - kControlBarBottomMargin;
     controlBar_->setGeometry(x, qMax(0, y), controlBarSize.width(), controlBarSize.height());
+}
+
+void FullscreenVideoWindow::refreshRenderSnapshot()
+{
+    RenderSnapshot snapshot;
+    snapshot.logicalCanvasSize = canvasHost_->size();
+    snapshot.devicePixelRatio = canvasHost_->devicePixelRatioF();
+    VideoWidget *videoWidget = restoreState_.videoWidget;
+    if (videoWidget != nullptr && videoWidget->streamId() != kInvalidStreamId) {
+        RenderItem item;
+        item.streamId = videoWidget->streamId();
+        item.tileRect = canvasHost_->rect();
+        item.videoViewport = canvasHost_->rect();
+        item.displayMode = VideoDisplayMode::Contain;
+        item.title = videoWidget->deviceName();
+        item.status = videoWidget->statusText();
+        item.frameVisible = videoWidget->isFrameVisible();
+        item.fullscreen = true;
+        snapshot.items.push_back(std::move(item));
+    }
+    canvasHost_->setSnapshot(std::move(snapshot));
 }
 
 void FullscreenVideoWindow::clearRestoreState()

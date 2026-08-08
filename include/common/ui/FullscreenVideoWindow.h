@@ -2,11 +2,11 @@
 
 #include <QPointer>
 #include <QPointF>
-#include <QSizePolicy>
 #include <QWidget>
 
+#include "ui/VideoCanvasHost.h"
+
 class QCloseEvent;
-class QFrame;
 class QKeyEvent;
 class QMouseEvent;
 class QPaintEvent;
@@ -36,7 +36,10 @@ public:
      * @param parent Qt 所有者；通常为 MainWindow，窗口仍以独立顶层窗口方式显示。
      * @thread 必须在 Qt UI 线程中调用。
      */
-    explicit FullscreenVideoWindow(QWidget *parent = nullptr);
+    explicit FullscreenVideoWindow(
+        RendererPreference rendererPreference = RendererPreference::Cpu,
+        QWidget *parent = nullptr
+    );
 
     /**
      * @brief 销毁前恢复仍在全屏窗口中的真实视频区域。
@@ -72,6 +75,7 @@ public:
      * @thread 必须在 Qt UI 线程中调用。
      */
     [[nodiscard]] bool isFullscreenActive() const noexcept;
+    [[nodiscard]] RenderRuntimeMetrics rendererRuntimeMetrics() const;
 
 signals:
     /**
@@ -135,13 +139,6 @@ private:
 
     struct VideoSurfaceRestoreState {
         QPointer<VideoWidget> videoWidget;
-        QPointer<QWidget> originalParent;
-        QPointer<QVBoxLayout> originalLayout;
-        int layoutIndex = -1;
-        int layoutStretch = 0;
-        QSizePolicy sizePolicy;
-        bool surfaceWasVisible = false;
-        bool statusLabelWasVisible = false;
     };
 
     static constexpr int kControlBarBottomMargin = 20;
@@ -154,13 +151,14 @@ private:
     void scheduleControlBarHide();
     void hideControlBar();
     void positionControlBar();
+    void refreshRenderSnapshot();
     void clearRestoreState();
     [[nodiscard]] const char *transitionStateName() const noexcept;
 
     QVBoxLayout *videoLayout_ = nullptr;
+    VideoCanvasHost *canvasHost_ = nullptr;
     FullscreenControlBar *controlBar_ = nullptr;
     QTimer *autoHideTimer_ = nullptr;
-    QFrame *activeVideoSurface_ = nullptr;
     VideoSurfaceRestoreState restoreState_;
     TransitionState transitionState_ = TransitionState::Windowed;
 };

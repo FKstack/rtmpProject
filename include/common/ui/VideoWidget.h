@@ -1,10 +1,16 @@
 #pragma once
 
 #include <QFrame>
-#include <QImage>
 #include <QPoint>
+#include <QRect>
 #include <QSize>
 #include <QString>
+
+#include <memory>
+
+#include "media/LatestFrameMailbox.h"
+#include "media/PlaybackTypes.h"
+#include "render/RenderTypes.h"
 
 class QDragEnterEvent;
 class QDragLeaveEvent;
@@ -14,14 +20,15 @@ class QContextMenuEvent;
 class QEvent;
 class QLabel;
 class QMouseEvent;
-class FullscreenVideoWindow;
+class QResizeEvent;
+class QVBoxLayout;
 class VideoGridWidget;
 
 /**
  * @brief 单路设备视频的显示槽位。
  *
- * 该类管理设备名称、状态文本和视频帧绘制，不负责拉流、解码或跨线程帧传递。
- * 播放器通过 UI 线程的信号槽更新该控件。
+ * 该类管理设备名称、状态文本、显示模式和交互，并作为共享画布的视频区域几何
+ * 锚点；实际像素由 VideoCanvasHost 统一合成，不由该控件保存或绘制。
  *
  * @thread 仅允许在 Qt UI 线程中创建和更新。
  */
@@ -82,27 +89,40 @@ public:
      * @thread 必须在 Qt UI 线程中调用。
      */
     [[nodiscard]] bool isDragEnabled() const noexcept;
+    void bindRenderSource(
+        StreamId streamId,
+        std::shared_ptr<LatestFrameMailbox> mailbox
+    );
+    void unbindRenderSource();
+    [[nodiscard]] StreamId streamId() const noexcept;
+    [[nodiscard]] std::shared_ptr<LatestFrameMailbox> frameMailbox() const;
+    [[nodiscard]] QRect videoViewportRect(const QWidget *ancestor) const;
+    /** @brief 返回标题、布局间距和内边距占用的非视频尺寸。 */
+    [[nodiscard]] QSize videoChromeSizeHint() const;
+    [[nodiscard]] bool isFrameVisible() const noexcept;
+    /** @brief 返回该视频格在主网格中的等比显示策略。 */
+    [[nodiscard]] VideoDisplayMode displayMode() const noexcept;
+    /**
+     * @brief 切换该视频格的等比显示策略并请求共享画布刷新。
+     *
+     * Cover 铺满视频区域但可能居中裁剪；Contain 保留完整画面但可能出现黑边。
+     */
+    void setDisplayMode(VideoDisplayMode mode);
 
 public slots:
-    /** @brief 显示一帧视频；图像数据通过 QImage 隐式共享安全持有。 */
-    void displayFrame(const QImage &image);
+    /** @brief 标记该流已有可显示帧；实际像素由共享画布从邮箱读取。 */
+    void showFrame();
 
     /** @brief 清除旧画面并恢复黑色视频区域。 */
     void clearFrame();
 
 signals:
+    void renderStateChanged(VideoWidget *videoWidget);
     /** @brief 用户从右键菜单请求重连当前稳定连接。 */
     void reconnectRequested(VideoWidget *videoWidget);
 
     /** @brief 用户从右键菜单请求断开并移除当前连接。 */
     void removeRequested(VideoWidget *videoWidget);
-
-    /** @brief 视频区域大小或全屏状态变化。 */
-    void presentationTargetChanged(
-        VideoWidget *videoWidget,
-        const QSize &viewportSize,
-        bool fullscreen
-    );
 
     /**
      * @brief 请求将源视频格与当前目标视频格交换。
@@ -127,6 +147,8 @@ signals:
     void fullscreenRequested(VideoWidget *videoWidget);
 
 protected:
+    void changeEvent(QEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
@@ -136,7 +158,6 @@ protected:
     void dragLeaveEvent(QDragLeaveEvent *event) override;
     void dropEvent(QDropEvent *event) override;
     void contextMenuEvent(QContextMenuEvent *event) override;
-    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
     enum class DragState {
@@ -150,19 +171,21 @@ private:
     void setDragEnabled(bool enabled);
     void setDragState(DragState state);
     void refreshStyle();
-    [[nodiscard]] QFrame *videoSurfaceForFullscreen() const noexcept;
-    [[nodiscard]] bool isStatusLabelVisible() const noexcept;
-    void setFullscreenSurfaceMode(bool active, bool restoreStatusLabelVisible = true);
-
+    void updateMonitoringMinimumSize();
+    void updateTitleOverlay();
     friend class VideoGridWidget;
-    friend class FullscreenVideoWindow;
 
     QLabel *titleLabel_ = nullptr;
     QFrame *videoSurface_ = nullptr;
     QLabel *statusLabel_ = nullptr;
+    QVBoxLayout *rootLayout_ = nullptr;
+    QString deviceName_;
     QPoint dragStartPosition_;
     DragState dragState_ = DragState::Idle;
     bool dragEnabled_ = true;
     bool mousePressed_ = false;
-    bool fullscreenSurfaceMode_ = false;
+    bool frameVisible_ = false;
+    VideoDisplayMode displayMode_ = VideoDisplayMode::Contain;
+    StreamId streamId_ = kInvalidStreamId;
+    std::shared_ptr<LatestFrameMailbox> frameMailbox_;
 };

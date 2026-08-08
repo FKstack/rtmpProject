@@ -44,7 +44,7 @@ set(CMAKE_AUTORCC ON)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(ProjectOptions)
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets)
+find_package(Qt6 REQUIRED COMPONENTS Widgets OpenGL OpenGLWidgets)
 
 option(
     RTMP_MONITOR_BUILD_OPENGL_PROTOTYPE
@@ -62,24 +62,24 @@ if(RTMP_MONITOR_BUILD_OPENGL_PROTOTYPE)
             NAMES EGL/egl.h
             REQUIRED
         )
-        find_path(RTMP_MONITOR_GLES2_INCLUDE_DIR
-            NAMES GLES2/gl2.h
+        find_path(RTMP_MONITOR_GLES3_INCLUDE_DIR
+            NAMES GLES3/gl3.h
             REQUIRED
         )
         find_library(RTMP_MONITOR_EGL_LIBRARY
             NAMES EGL
             REQUIRED
         )
-        find_library(RTMP_MONITOR_GLES2_LIBRARY
+        find_library(RTMP_MONITOR_GLES3_LIBRARY
             NAMES GLESv2
             REQUIRED
         )
 
         foreach(arm64_opengl_path IN ITEMS
             "${RTMP_MONITOR_EGL_INCLUDE_DIR}"
-            "${RTMP_MONITOR_GLES2_INCLUDE_DIR}"
+            "${RTMP_MONITOR_GLES3_INCLUDE_DIR}"
             "${RTMP_MONITOR_EGL_LIBRARY}"
-            "${RTMP_MONITOR_GLES2_LIBRARY}"
+            "${RTMP_MONITOR_GLES3_LIBRARY}"
         )
             file(TO_CMAKE_PATH
                 "${arm64_opengl_path}"
@@ -104,14 +104,14 @@ if(RTMP_MONITOR_BUILD_OPENGL_PROTOTYPE)
                 "${RTMP_MONITOR_EGL_LIBRARY}"
         )
 
-        add_library(rtmp_monitor_arm64_gles2 INTERFACE)
-        target_include_directories(rtmp_monitor_arm64_gles2
+        add_library(rtmp_monitor_arm64_gles3 INTERFACE)
+        target_include_directories(rtmp_monitor_arm64_gles3
             INTERFACE
-                "${RTMP_MONITOR_GLES2_INCLUDE_DIR}"
+                "${RTMP_MONITOR_GLES3_INCLUDE_DIR}"
         )
-        target_link_libraries(rtmp_monitor_arm64_gles2
+        target_link_libraries(rtmp_monitor_arm64_gles3
             INTERFACE
-                "${RTMP_MONITOR_GLES2_LIBRARY}"
+                "${RTMP_MONITOR_GLES3_LIBRARY}"
         )
     endif()
 endif()
@@ -210,6 +210,14 @@ target_link_libraries(rtmp_monitor_app
 rtmp_monitor_apply_project_options(rtmp_monitor_app)
 
 set(RTMP_MONITOR_MEDIA_SOURCES
+    include/common/media/VideoFrame.h
+    src/common/media/VideoFrame.cpp
+    include/common/media/LatestFrameMailbox.h
+    src/common/media/LatestFrameMailbox.cpp
+    include/common/media/VideoFrameConverter.h
+    src/common/media/VideoFrameConverter.cpp
+    src/common/media/FfmpegVideoFrameAdapter.h
+    src/common/media/FfmpegVideoFrameAdapter.cpp
     include/common/media/PlaybackTypes.h
     include/common/media/DecodeWorkerPool.h
     src/common/media/DecodeWorkerPool.cpp
@@ -237,6 +245,34 @@ target_link_libraries(rtmp_monitor_media
 
 rtmp_monitor_apply_project_options(rtmp_monitor_media)
 
+set(RTMP_MONITOR_RENDER_SOURCES
+    include/common/render/RenderTypes.h
+    src/common/render/RenderTypes.cpp
+    include/common/render/VideoRenderController.h
+    src/common/render/VideoRenderController.cpp
+    include/common/render/OpenGLGridRenderer.h
+    src/common/render/OpenGLGridRenderer.cpp
+)
+
+qt_add_library(rtmp_monitor_render STATIC
+    ${RTMP_MONITOR_RENDER_SOURCES}
+)
+
+target_include_directories(rtmp_monitor_render
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/common
+)
+
+target_link_libraries(rtmp_monitor_render
+    PUBLIC
+        Qt6::Gui
+        rtmp_monitor_media
+    PRIVATE
+        Qt6::OpenGL
+)
+
+rtmp_monitor_apply_project_options(rtmp_monitor_render)
+
 # UI 作为独立静态库供主程序和测试复用，避免重复编译相同实现。
 set(RTMP_MONITOR_UI_SOURCES
     include/common/ui/ConnectionDialog.h
@@ -253,6 +289,8 @@ set(RTMP_MONITOR_UI_SOURCES
     src/common/ui/MainWindow.cpp
     include/common/ui/LogPanel.h
     src/common/ui/LogPanel.cpp
+    include/common/ui/VideoCanvasHost.h
+    src/common/ui/VideoCanvasHost.cpp
 )
 
 qt_add_library(rtmp_monitor_ui STATIC
@@ -267,7 +305,9 @@ target_include_directories(rtmp_monitor_ui
 target_link_libraries(rtmp_monitor_ui
     PUBLIC
         Qt6::Widgets
+        Qt6::OpenGLWidgets
         rtmp_monitor_logging
+        rtmp_monitor_render
 )
 
 rtmp_monitor_apply_project_options(rtmp_monitor_ui)
@@ -396,6 +436,31 @@ if(BUILD_TESTING)
                     RUN_SERIAL TRUE
                     TIMEOUT 15
             )
+
+            qt_add_executable(rtmp_monitor_opengl_grid_renderer_smoke
+                tests/OpenGLGridRendererSmoke.cpp
+            )
+            set_target_properties(rtmp_monitor_opengl_grid_renderer_smoke
+                PROPERTIES WIN32_EXECUTABLE FALSE)
+            target_link_libraries(rtmp_monitor_opengl_grid_renderer_smoke
+                PRIVATE
+                    rtmp_monitor_ui
+                    Qt6::Test
+            )
+            rtmp_monitor_apply_project_options(
+                rtmp_monitor_opengl_grid_renderer_smoke
+            )
+            add_test(
+                NAME rtmp_monitor_opengl_grid_renderer_smoke
+                COMMAND rtmp_monitor_opengl_grid_renderer_smoke
+            )
+            set_tests_properties(
+                rtmp_monitor_opengl_grid_renderer_smoke
+                PROPERTIES
+                    LABELS "render;opengl"
+                    RUN_SERIAL TRUE
+                    TIMEOUT 60
+            )
         elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
             add_executable(rtmp_monitor_opengl_egl_smoke
                 tests/OpenGLEglSmoke.cpp
@@ -403,7 +468,7 @@ if(BUILD_TESTING)
             target_link_libraries(rtmp_monitor_opengl_egl_smoke
                 PRIVATE
                     rtmp_monitor_arm64_egl
-                    rtmp_monitor_arm64_gles2
+                    rtmp_monitor_arm64_gles3
             )
             rtmp_monitor_apply_project_options(
                 rtmp_monitor_opengl_egl_smoke
@@ -490,6 +555,27 @@ if(BUILD_TESTING)
     add_test(NAME rtmp_monitor_multi_stream_test
         COMMAND rtmp_monitor_multi_stream_test)
     rtmp_monitor_copy_ffmpeg_runtime(rtmp_monitor_multi_stream_test)
+
+    qt_add_executable(rtmp_monitor_video_render_core_test
+        tests/VideoRenderCoreTest.cpp
+    )
+    if(WIN32)
+        set_target_properties(rtmp_monitor_video_render_core_test
+            PROPERTIES WIN32_EXECUTABLE FALSE)
+    endif()
+    target_link_libraries(rtmp_monitor_video_render_core_test
+        PRIVATE
+            rtmp_monitor_render
+            rtmp_monitor_ffmpeg
+            Qt6::Test
+    )
+    target_include_directories(rtmp_monitor_video_render_core_test
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/common/media
+    )
+    rtmp_monitor_apply_project_options(rtmp_monitor_video_render_core_test)
+    add_test(NAME rtmp_monitor_video_render_core_test
+        COMMAND rtmp_monitor_video_render_core_test)
 
     qt_add_executable(rtmp_monitor_logging_test
         tests/LogManagerTest.cpp

@@ -8,10 +8,10 @@ RtmpMonitor 使用同一套 C++17/Qt Widgets 源码生成两个目标：
 
 | 目标 | 编译环境 | 当前验证结论 |
 | --- | --- | --- |
-| Windows x86_64 | Visual Studio 2022、MSVC、Qt 6.6.1、FFmpeg 8.1.2 LGPL、Ninja | 主程序构建成功；2026-07-29 完整 CTest 10/10 通过，WGL 和 Qt OpenGL 冒烟程序实际运行成功。 |
-| Linux ARM64 | WSL2 Ubuntu 22.04、AArch64 GCC 11、Qt 6.2.4、FFmpeg 8.1.2 LGPL | 主程序、测试、EGL/GLES2 冒烟程序和 Qt OpenGL 原型均生成 AArch64 ELF。 |
+| Windows x86_64 | Visual Studio 2022、MSVC、Qt 6.6.1、FFmpeg 8.1.2 LGPL、Ninja | 主程序构建成功；2026-08-04 完整 CTest 12/12 通过，WGL、生产 YUV framebuffer 和 Qt OpenGL 实际运行成功。 |
+| Linux ARM64 | WSL2 Ubuntu 22.04、AArch64 GCC 11、Qt 6.2.4、FFmpeg 8.1.2 LGPL | 主程序、测试、EGL/ES3 冒烟程序和生产 Qt OpenGL 渲染均生成 AArch64 ELF。 |
 
-ARM64 结果证明源码可以通过目标编译器编译并链接目标 Qt、EGL 和 GLES2，不代表程序已在硬件盒子上运行。Wayland、X11、EGLFS、全屏、OpenGL ES、输入事件和性能仍需实机验证。
+ARM64 结果证明源码可以通过目标编译器编译并链接目标 Qt、EGL 和 OpenGL ES 3.0，不代表程序已在硬件盒子上运行。Wayland、X11、EGLFS、全屏、输入事件和性能仍需实机验证。
 
 ## 2. 存储位置
 
@@ -165,12 +165,12 @@ OpenGL 环境、交叉构建和动态依赖的一键门禁：
 bash scripts/verify_opengl_arm64_env.sh
 ```
 
-该脚本只验证，不自行安装软件。它要求 GL/EGL/GLES2 头文件和库、
+该脚本只验证，不自行安装软件。它要求 GL/EGL/GLES3 头文件和库、
 `Qt6OpenGL`/`Qt6OpenGLWidgets` CMake 模块均位于 ARM64 sysroot，随后构建全部
 目标，并用 `file` 与 `aarch64-linux-gnu-readelf` 检查：
 
 - 纯图形目标依赖 `libEGL.so` 和 `libGLESv2.so`。
-- Qt 原型依赖 `libQt6OpenGLWidgets.so` 和 `libQt6OpenGL.so`。
+- Qt 生产渲染依赖 `libQt6OpenGLWidgets.so` 和 `libQt6OpenGL.so`。
 - 目标为 ELF64/AArch64，且没有 Windows 或 x86_64 库混入。
 
 FFmpeg 环境验证：
@@ -248,4 +248,4 @@ QT_QPA_PLATFORM=eglfs ./rtmp_monitor_qt_opengl_smoke
 
 若设备使用 Wayland 或 X11，应把 `QT_QPA_PLATFORM` 改为实际采用的
 `wayland` 或 `xcb`。详细 Week 6 结果和边界见
-[Windows 与 WSL2 ARM64 OpenGL 环境及原型验证](../../weeks/week6/week6_opengl_environment_and_validation.md)。
+[产品级 OpenGL 视频渲染与验证总览](../../weeks/week6/week6_opengl_environment_and_validation.md)。

@@ -75,7 +75,6 @@ private slots:
 
 void MultiStreamPlaybackManagerTest::initTestCase()
 {
-    qRegisterMetaType<PresentableVideoFrame>();
     qRegisterMetaType<StreamMetrics>();
 }
 
@@ -228,10 +227,23 @@ void MultiStreamPlaybackManagerTest::metricsFileIsAtomicAndOmitsUrls()
     const QByteArray payload = file.readAll();
     const QJsonDocument document = QJsonDocument::fromJson(payload);
     QVERIFY(document.isObject());
+    QCOMPARE(document.object().value(QStringLiteral("schemaVersion")).toInt(), 3);
     QCOMPARE(document.object().value(QStringLiteral("streamCount")).toInt(), 1);
     QCOMPARE(
         document.object().value(QStringLiteral("streams")).toArray().size(), 1
     );
+    const QJsonObject stream = document.object()
+                                   .value(QStringLiteral("streams"))
+                                   .toArray()
+                                   .first()
+                                   .toObject();
+    QVERIFY(stream.contains(QStringLiteral("submittedFrames")));
+    QVERIFY(stream.contains(QStringLiteral("mailboxOverwrittenFrames")));
+    QVERIFY(stream.contains(QStringLiteral("uploadedFrames")));
+    QVERIFY(stream.contains(QStringLiteral("renderedFrames")));
+    QVERIFY(stream.contains(QStringLiteral("textureBytes")));
+    QVERIFY(document.object().value(QStringLiteral("renderer")).isObject());
+    QVERIFY(document.object().value(QStringLiteral("renderStatistics")).isObject());
     QVERIFY(!payload.contains("private-path"));
     QVERIFY(!payload.contains("rtmp://"));
     manager.stopAll();
@@ -251,9 +263,6 @@ void MultiStreamPlaybackManagerTest::decodesConfiguredLiveStreams()
     QCOMPARE(urls.size(), 16);
 
     MultiStreamPlaybackManager manager(urls);
-    QSignalSpy frameSpy(
-        &manager, &MultiStreamPlaybackManager::frameReady
-    );
     QCOMPARE(manager.startAll(), 16);
 
     QSet<StreamId> streamsWithFrames;
@@ -261,16 +270,11 @@ void MultiStreamPlaybackManagerTest::decodesConfiguredLiveStreams()
     timer.start();
     while (streamsWithFrames.size() < 16 && timer.elapsed() < 30'000) {
         QTest::qWait(50);
-        for (const QList<QVariant> &arguments : frameSpy) {
-            if (arguments.size() < 2) {
-                continue;
+        for (const StreamId id : manager.streamIds()) {
+            const auto mailbox = manager.frameMailbox(id);
+            if (mailbox != nullptr && mailbox->latestAfter(0).has_value()) {
+                streamsWithFrames.insert(id);
             }
-            const StreamId id = arguments.at(0).toULongLong();
-            const PresentableVideoFrame frame =
-                arguments.at(1).value<PresentableVideoFrame>();
-            QVERIFY(!frame.image.isNull());
-            QCOMPARE(frame.image.format(), QImage::Format_RGB888);
-            streamsWithFrames.insert(id);
         }
     }
     QCOMPARE(streamsWithFrames.size(), 16);

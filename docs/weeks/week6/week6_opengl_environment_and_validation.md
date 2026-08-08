@@ -1,238 +1,129 @@
-# Week 6：Windows 与 WSL2 ARM64 OpenGL 环境及原型验证
+# Week 6：产品级 OpenGL 视频渲染与验证总览
 
-> 验证日期：2026-07-29
-> 验证边界：Windows 完成编译与真实 GPU 运行；WSL2 完成 ARM64 交叉编译、链接和 ELF 门禁，不代表 ARM GPU 已运行。
+## 1. 当前结论
 
-## 1. 本周结论
+Week 6 已不再是“把 RGB 图片上传到单路 `QOpenGLWidget`”的实验。当前生产代码已经形成一条可切换后端的视频渲染链：FFmpeg 解码得到不可变 YUV 帧，容量为 1 的邮箱保存每路最新帧，主窗口用一个共享画布合成 1～16 路，全屏窗口按需创建临时画布；OpenGL 初始化失败时自动使用 CPU/QPainter 后端。
 
-| 平台 | 结论 | 证据 |
-| --- | --- | --- |
-| Windows x86_64 | 通过 | WGL 隐藏上下文和 Qt `QOpenGLWidget` 纹理原型均实际运行成功；完整 CTest 10/10 通过。 |
-| WSL2 / Linux ARM64 | 交叉构建门禁通过 | 主程序、EGL/GLES2 冒烟程序和 Qt OpenGL 原型均生成 ELF64/AArch64，并链接目标 sysroot 中的 ARM64 库。 |
-| ARM64 真实盒子 | 待验收 | 未在 WSL2/QEMU 中宣称 QPA、EGLFS、Wayland/X11、GPU 或 OpenGL ES 运行成功。 |
-| 生产渲染路径 | 未改变 | `VideoWidget` 的 QPainter/QImage 路径仍为默认；OpenGL 代码是独立、可选原型。 |
-| 600 秒性能测试 | 未执行 | 本周没有改变 Week 4 交接文档中的长测结论，渲染架构决策仍需等待长测数据。 |
+截至 2026-08-04，证据必须分层理解：
 
-## 2. 存储约束与依赖位置
+| 层级 | 已验证事实 | 不能据此宣称 |
+|---|---|---|
+| Windows x86_64 构建/单测 | Debug 完整 CTest 12/12；生产 YUV framebuffer、渲染核心、动态网格和生命周期测试通过 | 不能代替 10 分钟性能资格测试 |
+| Windows 实机 OpenGL | NVIDIA GeForce RTX 3060 Laptop GPU，OpenGL 4.6.0 NVIDIA 591.86；实际创建 Desktop GL 上下文 | 不能推断其他 GPU/驱动同样通过 |
+| Windows 四路 RTMP | 修复后的客户端在不进入全屏的情况下连接即显示 4 路；指标为 4 个可见 RenderItem、4 个绑定邮箱和非零 upload/render | 不是 16 路长稳性能结论 |
+| framebuffer 画质 | YUV420P/NV12、BT.601/709/2020 NCL、Limited/Full 共 8 例通过 | OpenGL 并非“天然更清晰” |
+| Linux ARM64 | Debug 全量交叉构建 94/94；主程序、ES3 EGL smoke 和渲染核心均为 ELF64/AArch64 | 未在真实盒子证明 QPA、GPU、解码或长稳可用 |
 
-本次没有安装 GLAD、GLEW 或新的 Windows vcpkg 包，也没有把下载、缓存或构建输出写到 C 盘。
+2026-08-05 四组 600 秒 A/B 与 Quality 门禁全部通过，因此 CLI 默认值已从 `cpu` 切换为 `auto`。`auto` 先尝试 OpenGL，能力、Context 或 Shader 初始化失败时仍自动回退 CPU；`--renderer=cpu` 保留为诊断和发布回滚路径。
+
+## 2. 从历史原型到当前产品路径
+
+| 项目 | 历史 Week 6 原型 | 当前产品实现 |
+|---|---|---|
+| 输入 | RGB/RGBA `QImage` | YUV420P 或 NV12 `VideoFrame` |
+| 画布 | 单路实验 Widget | 主网格单画布 + 临时全屏画布 |
+| 纹理 | 可能按帧重建 RGBA 纹理 | 尺寸/格式不变时复用 YUV 纹理并 `glTexSubImage2D` |
+| Shader | RGB 复制/Blitter | Desktop 330 与 ES 300 YUV→RGB Shader |
+| 调度 | UI 信号驱动图片更新 | Dirty 位 + 15/30 FPS 有界调度 |
+| 队列 | 图片进入 UI 事件队列 | 每路容量 1 最新帧邮箱 |
+| 回退 | 原型失败即不可用 | `VideoCanvasHost` 自动选择 CPU 后端 |
+| 指标 | 测试是否启动 | schema v3 记录请求/实际后端、GL 身份、上传、绘制和纹理 |
+
+旧 `VideoRenderWidget` 只保留为历史 RGB 上下文/析构烟测，不是生产数据路径。ARM64 基线是 OpenGL ES 3.0，不再用 GLES2 描述生产承诺。
+
+## 3. 本轮首帧黑屏故障及修复
+
+用户提供的两段录像显示：四路 RTMP 已连接，主网格仍为黑屏；进入一次全屏后，四路一起出现。录像排除了“nginx 未发布”“四路都未解码”和“某一路纹理坏掉”，把范围缩小到主画布的低频 Snapshot 更新。
+
+根因是下面这种连接方式：信号连接到 lambda，同时要求 `Qt::UniqueConnection`。Qt 6 不能为该 lambda 建立唯一连接，运行时拒绝连接，所以首帧 `showFrame()` 没有驱动 `refreshRenderSnapshot()`。全屏生命周期走了另一条 Snapshot 刷新路径，看起来像“全屏修好了画面”。
+
+修复包含两部分：
+
+1. 将连接目标改为 `VideoGridWidget::handleRenderStateChanged` 成员函数，使 `Qt::UniqueConnection` 有合法、可比较的接收端。
+2. `RenderItem::frameVisible` 只表达业务帧是否可显示，不再混入 `QWidget::isVisibleTo()` 的瞬时状态；隐藏/最小化由画布调度器停止 `update()`。
+
+新增回归不手工刷新 Snapshot，而是让隐藏锚点收到首帧并验证信号链自动更新。结果为动态网格测试 29/29、完整 CTest 12/12；四路实机验证没有进行任何双击，连接后立即显示。
+
+## 4. 画质证据
+
+生产 framebuffer 测试先由 CPU 公式生成参考 RGB，再让实际 OpenGL Shader 渲染到 framebuffer 并读回像素。门槛为每例 PSNR ≥35 dB、平均绝对误差（MAE）≤3、P99 通道误差≤8。
+
+| 格式 | 矩阵/范围 | PSNR dB | MAE | P99 | 结果 |
+|---|---|---:|---:|---:|---|
+| YUV420P | BT.601 Limited | 55.6320 | 0.1778 | 1 | 通过 |
+| YUV420P | BT.709 Limited | 52.6217 | 0.3556 | 1 | 通过 |
+| YUV420P | BT.2020 NCL Limited | 50.8608 | 0.5333 | 1 | 通过 |
+| YUV420P | BT.709 Full | ∞ | 0 | 0 | 通过 |
+| NV12 | BT.601 Limited | 49.6114 | 0.3556 | 2 | 通过 |
+| NV12 | BT.709 Limited | 48.6423 | 0.5333 | 2 | 通过 |
+| NV12 | BT.2020 NCL Limited | 46.0896 | 0.8889 | 2 | 通过 |
+| NV12 | BT.709 Full | ∞ | 0 | 0 | 通过 |
+
+这组数据证明颜色矩阵、range、plane、stride 和 Shader 路径相对 CPU 参考没有可见退化。它不证明 OpenGL 比 CPU 更清晰；两条路径的目标本来就是得到同样的画面。
+
+## 5. 性能证据怎样才成立
+
+OpenGL 的预期收益是把 YUV→RGB、缩放和 16 路合成交给 GPU，并避免解码线程生成/缩放 RGB `QImage`。是否真的更好，必须由同机 A/B 决定：
 
 ```text
-E:\rtmpProject
-  源码、Windows 构建、ARM64 交叉构建和 Week 6 日志
-
-E:\QT6\6.6.1\msvc2019_64
-  Windows Qt 6.6.1 MSVC x64
-
-E:\C
-  MSVC 14.41 工具链
-
-F:\DevTools\vcpkg
-  Windows FFmpeg 8.1.2 开发库
-
-G:\WSL\Ubuntu-22.04-New\ext4.vhdx
-  WSL2 系统、交叉编译器和 ARM64 sysroot
-
-F:\WSL\wsl-swap.vhdx
-  WSL2 swap
-
-/opt/rtmp-monitor/sysroots/jammy-arm64
-  Ubuntu 22.04 ARM64 Qt、GL/EGL/GLES 和 FFmpeg sysroot
+同一程序 + 同一批预编码输入 + 同一窗口 + 8 个解码 worker
+CPU 600 s -> 冷却 30 s -> OpenGL 600 s
 ```
 
-Windows 仍只读使用现有 Windows SDK：
+正式硬门槛包括：
 
-```text
-C:\Program Files (x86)\Windows Kits\10\include\10.0.22621.0\um\GL\gl.h
-C:\Program Files (x86)\Windows Kits\10\lib\10.0.22621.0\um\x64\OpenGL32.Lib
-```
+- 采样中的实际后端必须为 `opengl`，GL vendor/renderer/version 非空，纹理字节大于零。
+- 16 路 OpenGL 平均应用 CPU 相对 CPU 至少降低 15%，平均显示 FPS 不低于 14。
+- 源到显示最差流 P95 相对 CPU 不恶化超过 10%，且 P95≤750 ms、最大≤1500 ms。
+- 最新帧年龄和内部延迟 P95 不恶化超过 10%。
+- UI 最大调度间隔小于 500 ms，压缩包队列不超过 45。
+- OpenGL 纹理字节预热后稳定；工作集斜率≤2 MiB/分钟，首末窗口均值增长≤64 MiB。
+- 8 个画质用例全部通过。
 
-`scripts/test_week6_opengl.ps1` 会拒绝解析到 C 盘的可写输出路径，并把
-`TEMP`、`TMP`、`APPDATA`、`LOCALAPPDATA`、日志和报告临时重定向到
-`E:\rtmpProject\out\week6-opengl`。环境变量只在脚本进程内生效。
+只有这些门槛全部通过，才把默认后端改为 `auto` 并重新回归。任一项失败都保留 `cpu` 默认，并记录失败数据，而不是挑选有利指标。
 
-## 3. 实现内容
+## 6. 2026-08-05 正式 600 秒结果
 
-### 3.1 可选 RGB 纹理控件
+四组均使用 16 路、8 个解码 worker、20 秒预热，按 CPU→冷却 30 秒→OpenGL 顺序执行。脱敏机器可审查摘要见 [week6_renderer_comparison_results.json](week6_renderer_comparison_results.json)，完整原始每秒样本保存在被 Git 忽略的 `out/renderer-comparison-formal/`。
 
-新增 `VideoRenderWidget`，继承 `QOpenGLWidget`：
+| 指标 | CPU | OpenGL | 结论 |
+|---|---:|---:|---|
+| 16 路平均应用 CPU | 4.85% | 1.50% | 降低 69.08%，通过≥15%门槛 |
+| 16 路平均显示 FPS | 12.74 | 14.91 | OpenGL 通过≥14 FPS |
+| 16 路 frame age P95 | 46 ms | 43 ms | 改善 |
+| 16 路内部延迟 P95 | 42 ms | 40 ms | 改善 |
+| 16 路 UI 最大间隔 | 145 ms | 271 ms | OpenGL <500 ms |
+| 16 路最大压缩包队列 | 1 | 1 | 通过≤45 |
+| 双屏最差流源到显示 P95 | 214 ms | 196 ms | 改善，远低于 750 ms |
+| 双屏最差流最大延迟 | 2060 ms | 317 ms | OpenGL 通过≤1500 ms |
+| 双屏 frame age P95 | 45 ms | 43 ms | 改善 |
+| 双屏内部延迟 P95 | 51 ms | 42 ms | 改善 |
+| 双屏 UI 最大间隔 | 1203 ms | 441 ms | OpenGL 通过<500 ms |
+| OpenGL 纹理字节 | 0 | 22,118,400 | 预热基线稳定 |
 
-- `setFrame(const QImage&)` 在 UI 线程保存一份隐式共享图像，并请求下一次绘制。
-- `paintGL()` 将待处理图像转换为 RGBA8888、上传 `QOpenGLTexture`，使用
-  `QOpenGLTextureBlitter` 按宽高比居中绘制。
-- 无画面时使用黑色清屏；窗口缩放时重新计算目标矩形。
-- `clearFrame()` 释放当前帧；`openGLInitialized(...)` 报告 vendor、renderer 和 version；
-  `frameRendered()` 用于确认纹理绘制路径已经执行。
-- OpenGL 资源只在持有当前上下文时创建和销毁，并监听
-  `QOpenGLContext::aboutToBeDestroyed` 处理上下文重建。
+纹理稳定门禁有一个重要细节：Camera 03 计划内断流时有 1 个样本从 22,118,400 降为 20,736,000 字节，说明该路资源被主动释放；其余 599 个样本都处于基线，恢复后的末 60 秒完全回到基线，从未高于基线。门禁因此检查“不得向上增长且末 60 秒完全恢复”，而不是错误要求故障注入期间也不能释放资源。这个规则有固定 SelfTest 覆盖。
 
-该控件没有接入 FFmpeg YUV 数据，没有替换现有 `VideoWidget`，也没有改变网格、拖拽或全屏逻辑。
+正式门禁全部通过后，CLI 默认值切换为 `auto`。切换后重新构建，OpenGL 标签测试 3/3、完整 CTest 12/12（77.13 秒）通过；不传 `--renderer` 的空客户端指标记录 `requestedBackend=auto`、`activeBackend=opengl`、无 fallback。CPU 显式回滚路径继续保留。
 
-### 3.2 CMake 与冒烟目标
+## 7. 如何复现本页证据
 
-`RTMP_MONITOR_BUILD_OPENGL_PROTOTYPE` 控制原型，当前 Windows 和
-`Linux-ARM64-Debug` 验证配置均启用。
-
-| 目标 | 平台 | 作用 |
-| --- | --- | --- |
-| `rtmp_monitor_opengl_windows_smoke` | Windows | 创建隐藏 Win32/WGL 上下文，读取 GL 字符串、清屏并交换缓冲。 |
-| `rtmp_monitor_qt_opengl_smoke` | Windows/ARM64 | 使用 `VideoRenderWidget` 上传测试渐变图；Windows 实际运行，ARM64 只生成目标 ELF。 |
-| `rtmp_monitor_opengl_egl_smoke` | ARM64 | 创建 EGL pbuffer 和 OpenGL ES 2.0 上下文，供交叉链接门禁及以后盒子运行。 |
-
-Windows 链接 `OpenGL::GL`、`Qt6::OpenGL` 和 `Qt6::OpenGLWidgets`。ARM64
-配置只接受位于 `CMAKE_SYSROOT` 内的 EGL/GLES2 头文件和库；若 CMake 查找结果逃出
-sysroot 会直接失败，防止宿主 x86_64 库混入。
-
-## 4. Windows 实测
-
-执行：
+先运行不启动 GUI 的脚本自测，然后运行构建/图形测试：
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass `
-  -File .\scripts\test_week6_opengl.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\compare_renderers.ps1 -Action SelfTest
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test_week6_opengl.ps1 -SkipConfigure
 ```
 
-工具和运行时：
+常规输出位于：
 
-| 项目 | 实测值 |
-| --- | --- |
-| 编译器 | MSVC 14.41，位于 `E:\C` |
-| Qt | 6.6.1 MSVC x64，位于 `E:\QT6\6.6.1\msvc2019_64` |
-| Windows SDK | 10.0.22621.0，只读使用 C 盘现有安装 |
-| OpenGL vendor | NVIDIA Corporation |
-| OpenGL renderer | NVIDIA GeForce RTX 3060 Laptop GPU/PCIe/SSE2 |
-| OpenGL version | 4.6.0 NVIDIA 591.86 |
+- `out/week6-opengl/windows-opengl-validation.json`
+- `out/week6-opengl/framebuffer-quality-results.txt`
+- `out/week6-opengl/quality-artifacts/`
+- `out/renderer-comparison/comparison.json`
+- `out/renderer-comparison/comparison.md`
 
-结果：
+完整 A/B 操作见 [自动化脚本实战篇](week6_renderer_performance_test_guide.md)，框架和 OpenGL 知识见 [产品渲染框架教学篇](week6_product_rendering_framework_tutorial.md)。
 
-```text
-rtmp_monitor_opengl_windows_smoke  Passed
-rtmp_monitor_qt_opengl_smoke       Passed
-完整 Windows Debug CTest            10/10 Passed
-完整 CTest 用时                    75.25 s
-```
+## 8. 平台边界
 
-首次人工观察 Qt 冒烟程序时，Computer Use 捕获到调试断言：
-
-```text
-ASSERT failure in VideoRenderWidget:
-"Called object is not of the correct type (class destructor may have already run)"
-```
-
-原因是派生类析构开始后，`QOpenGLWidget` 基类销毁上下文仍可能通过
-`aboutToBeDestroyed` 调用派生类成员。修复方式是在 `VideoRenderWidget` 析构入口先断开
-保存的 `QMetaObject::Connection`，再在当前上下文中释放纹理和 blitter。修复后窗口正常绘制、
-自动退出，且没有残留断言窗口。
-
-报告保存在被 Git 忽略的：
-
-```text
-out/week6-opengl/windows-opengl-validation.txt
-```
-
-## 5. WSL2 ARM64 环境与门禁
-
-### 5.1 环境修复
-
-`setup_arm64_build_env.sh` 的幂等检查现覆盖：
-
-- `GL/gl.h`、`EGL/egl.h`、`GLES2/gl2.h`
-- `libGL.so`、`libEGL.so`、`libGLESv2.so`
-- `Qt6OpenGL`、`Qt6OpenGLWidgets` CMake 模块和目标库
-
-本机检查发现 sysroot 已有 GL/EGL/GLES 和 `Qt6OpenGLWidgets`，但缺少
-`Qt6OpenGLConfig.cmake`。脚本只在 G 盘 WSL VHDX 的隔离 ARM64 sysroot 中补装：
-
-```text
-libqt6opengl6-dev arm64 6.2.4+dfsg-2ubuntu1.1
-```
-
-已有依赖保持不变：
-
-```text
-libgl-dev arm64 1.4.0-1
-libegl-dev arm64 1.4.0-1
-libgles-dev arm64 1.4.0-1
-qt6-base-dev arm64 6.2.4+dfsg-2ubuntu1.1
-```
-
-安装完成后脚本执行 `apt-get clean` 并删除宿主与 sysroot 的 APT 索引。隔离
-chroot 因未挂载 `/dev/pts` 输出了一条无法写终端日志的提示，但包安装、环境检查和后续
-交叉构建均成功。
-
-修复命令：
-
-```bash
-sudo bash scripts/setup_arm64_build_env.sh
-```
-
-### 5.2 交叉构建与 ELF 检查
-
-执行：
-
-```bash
-bash scripts/verify_opengl_arm64_env.sh
-```
-
-实测工具链：
-
-```text
-aarch64-linux-gnu-g++ 11.4.0
-CMake 3.22.1
-Ninja 1.10.1
-Qt target 6.2.4
-```
-
-门禁结果：
-
-- `rtmp_monitor` 为 ELF64/AArch64。
-- 现有 UI、动态网格、FFmpeg 生命周期、多流、日志、用户消息、连接控制器和日志面板
-  测试目标均逐一通过 ELF64/AArch64 检查。
-- `rtmp_monitor_opengl_egl_smoke` 为 ELF64/AArch64，动态依赖包含
-  `libEGL.so` 和 `libGLESv2.so`。
-- `rtmp_monitor_qt_opengl_smoke` 为 ELF64/AArch64，动态依赖包含
-  `libQt6OpenGLWidgets.so` 和 `libQt6OpenGL.so`。
-- `aarch64-linux-gnu-readelf -h` 的 `Machine` 为 `AArch64`。
-- 三个目标均未发现 Windows、MinGW 或 x86_64 动态依赖。
-- 配置提示缺少可选 XKB/Vulkan 包，但它们不是本次 EGL/GLES2/Qt OpenGL
-  交叉链接目标的必需项，构建和门禁不受影响。
-
-验证脚本不会安装软件，也不会运行 AArch64 图形程序。
-
-## 6. ARM64 真实设备验收命令
-
-先把 ELF 和与目标镜像匹配的 Qt/FFmpeg/GL 运行库部署到真实 ARM64 盒子，再按设备
-实际图形栈选择命令。
-
-纯 EGL/OpenGL ES：
-
-```bash
-./rtmp_monitor_opengl_egl_smoke
-```
-
-Qt EGLFS：
-
-```bash
-QT_QPA_PLATFORM=eglfs ./rtmp_monitor_qt_opengl_smoke
-```
-
-Qt Wayland 或 X11：
-
-```bash
-QT_QPA_PLATFORM=wayland ./rtmp_monitor_qt_opengl_smoke
-QT_QPA_PLATFORM=xcb ./rtmp_monitor_qt_opengl_smoke
-```
-
-设备验收必须记录硬件型号、系统镜像、GPU 驱动、实际 QPA、EGL/GL ES vendor、
-renderer、version、窗口显示和退出码。只有这些命令在真实设备成功后，才能表述为
-“ARM64 OpenGL 运行通过”。
-
-## 7. 后续边界
-
-- 先完成 Week 4 留下的两项 600 秒性能资格测试，再决定是否把生产渲染路径抽象为
-  OpenGL 或继续优化 QPainter/QImage。
-- 若长测证明 RGB 转换或 QImage 拷贝是瓶颈，再设计 FFmpeg YUV 三纹理上传；本原型不能
-  直接作为 YUV 或零拷贝实现。
-- ARM64 侧必须先通过真实 QPA、EGL/OpenGL ES 和一路软件解码，再评估厂商 VPU/GPU
-  互操作。
-- 不使用 WSL2、QEMU 或交叉链接成功替代真实盒子的图形、网络和长期稳定性验收。
+Windows 使用 OpenGL 3.3 Core Shader，当前实机驱动提供 4.6；Linux ARM64 使用 ES 3.0 Shader。交叉构建只证明编译器、ABI、Qt OpenGL 和 FFmpeg 依赖正确，目标板仍需分别验证 QPA 插件、EGL surface、真实 GPU 驱动、软件/硬件解码与长期运行。PBO、共享 Context 上传线程、D3D11VA、DMA-BUF/EGLImage、HDR tone mapping 和 ES2 不在本轮承诺范围。

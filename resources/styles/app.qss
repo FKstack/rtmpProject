@@ -1,6 +1,6 @@
 QFrame[styleRole="videoWidget"] {
-    background-color: #202020;
-    border: 2px solid #4a4a4a;
+    background-color: transparent;
+    border: 1px solid #4a4a4a;
 }
 
 QToolBar#videoToolBar {
@@ -31,12 +31,16 @@ QToolBar#videoToolBar QToolButton:disabled {
 }
 
 QFrame[styleRole="videoWidget"] QLabel#deviceNameLabel {
+    background-color: rgba(0, 0, 0, 160);
+    border: none;
+    border-radius: 3px;
     color: #f0f0f0;
     font-weight: 600;
+    padding: 2px 6px;
 }
 
 QFrame[styleRole="videoSurface"] {
-    background-color: #000000;
+    background-color: transparent;
     border: none;
 }
 

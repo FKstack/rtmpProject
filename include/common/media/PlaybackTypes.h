@@ -1,6 +1,5 @@
 #pragma once
 
-#include <QImage>
 #include <QMetaType>
 #include <QSize>
 #include <QString>
@@ -52,20 +51,6 @@ struct StreamConnection
     QString url;
 };
 
-struct PresentationTarget
-{
-    QSize viewportSize {640, 360};
-    bool fullscreen = false;
-};
-
-struct PresentableVideoFrame
-{
-    QImage image;
-    std::uint64_t sequence = 0;
-    qint64 receivedMonotonicMs = 0;
-    qint64 sourceTimestampMs = -1;
-};
-
 struct StreamMetrics
 {
     StreamId streamId = kInvalidStreamId;
@@ -77,6 +62,11 @@ struct StreamMetrics
     std::uint64_t decodedFrames = 0;
     std::uint64_t convertedFrames = 0;
     std::uint64_t presentedFrames = 0;
+    std::uint64_t submittedFrames = 0;
+    std::uint64_t mailboxOverwrittenFrames = 0;
+    std::uint64_t unsupportedFrames = 0;
+    std::uint64_t uploadedFrames = 0;
+    std::uint64_t renderedFrames = 0;
     std::uint64_t reconnectCount = 0;
     int queuePackets = 0;
     qint64 queueBytes = 0;
@@ -88,6 +78,40 @@ struct StreamMetrics
     qint64 sourceLatencyP95Ms = -1;
     qint64 sourceLatencyMaxMs = -1;
     std::uint64_t sourceLatencySamples = 0;
+    qint64 uploadCpuUs = 0;
+    qint64 paintCpuUs = 0;
+    qint64 gpuTimeUs = -1;
+    std::uint64_t dirtyMerges = 0;
+    std::uint64_t scheduleChecks = 0;
+    qint64 textureBytes = 0;
+};
+
+/** Runtime renderer identity and one-canvas render counters for metrics schema v3. */
+struct RenderRuntimeMetrics
+{
+    QString requestedBackend = QStringLiteral("cpu");
+    QString activeBackend = QStringLiteral("unknown");
+    bool fallbackOccurred = false;
+    QString fallbackReason;
+    QString graphicsApi;
+    QString openGlVendor;
+    QString openGlRenderer;
+    QString openGlVersion;
+    std::uint64_t scheduleChecks = 0;
+    std::uint64_t updateRequests = 0;
+    std::uint64_t dirtyMerges = 0;
+    std::uint64_t paintCalls = 0;
+    std::uint64_t uploadedFrames = 0;
+    std::uint64_t renderedFrames = 0;
+    std::uint64_t unsupportedFrames = 0;
+    qint64 paintCpuUs = 0;
+    qint64 uploadCpuUs = 0;
+    qint64 gpuTimeUs = -1;
+    qint64 latestFrameAgeMs = -1;
+    qint64 textureBytes = 0;
+    int renderItemCount = 0;
+    int visibleRenderItemCount = 0;
+    int boundMailboxCount = 0;
 };
 
 struct PlaybackPerformanceOptions
@@ -107,5 +131,4 @@ struct PlaybackPerformanceOptions
 Q_DECLARE_METATYPE(DeviceStatus)
 Q_DECLARE_METATYPE(PlaybackError)
 Q_DECLARE_METATYPE(StreamConnection)
-Q_DECLARE_METATYPE(PresentableVideoFrame)
 Q_DECLARE_METATYPE(StreamMetrics)

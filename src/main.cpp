@@ -2,6 +2,7 @@
 #include <QCommandLineOption>
 #include <QCommandLineParser>
 #include <QDebug>
+#include <QSurfaceFormat>
 #include <QThread>
 
 #include <algorithm>
@@ -13,6 +14,7 @@
 #include "logging/UserMessageService.h"
 #include "media/MultiStreamPlaybackManager.h"
 #include "ui/MainWindow.h"
+#include "ui/VideoCanvasHost.h"
 
 namespace {
 
@@ -25,6 +27,24 @@ int defaultDecodeWorkerCount()
 
 int main(int argc, char *argv[])
 {
+#if defined(Q_OS_WIN)
+    QCoreApplication::setAttribute(Qt::AA_UseDesktopOpenGL);
+#endif
+    QSurfaceFormat surfaceFormat;
+#if defined(Q_OS_WIN)
+    surfaceFormat.setRenderableType(QSurfaceFormat::OpenGL);
+    surfaceFormat.setVersion(3, 3);
+    surfaceFormat.setProfile(QSurfaceFormat::CoreProfile);
+#else
+    surfaceFormat.setRenderableType(QSurfaceFormat::OpenGLES);
+    surfaceFormat.setVersion(3, 0);
+    surfaceFormat.setProfile(QSurfaceFormat::NoProfile);
+#endif
+    surfaceFormat.setDepthBufferSize(0);
+    surfaceFormat.setStencilBufferSize(0);
+    surfaceFormat.setSwapBehavior(QSurfaceFormat::DoubleBuffer);
+    QSurfaceFormat::setDefaultFormat(surfaceFormat);
+
     QApplication app(argc, argv);
     QApplication::setApplicationName(QStringLiteral("RtmpMonitor"));
     QApplication::setOrganizationName(QStringLiteral("RtmpProject"));
@@ -53,6 +73,12 @@ int main(int argc, char *argv[])
         QStringLiteral("metrics-file"),
         QStringLiteral("每秒原子写入 JSON 指标的本地路径。"),
         QStringLiteral("path")
+    );
+    QCommandLineOption rendererOption(
+        QStringLiteral("renderer"),
+        QStringLiteral("视频渲染后端：auto、opengl 或 cpu。"),
+        QStringLiteral("backend"),
+        QStringLiteral("auto")
     );
     QCommandLineOption latencyMarkerOption(
         QStringLiteral("latency-marker"),
@@ -86,6 +112,7 @@ int main(int argc, char *argv[])
     parser.addOption(urlOption);
     parser.addOption(decodeThreadsOption);
     parser.addOption(metricsFileOption);
+    parser.addOption(rendererOption);
     parser.addOption(latencyMarkerOption);
     parser.addOption(maximumReconnectFailuresOption);
     parser.addOption(logLevelOption);
@@ -96,6 +123,18 @@ int main(int argc, char *argv[])
     const QStringList streamUrls = parser.values(urlOption);
     if (streamUrls.size() > 16) {
         qCritical().noquote() << QStringLiteral("--url 最多只能重复 16 次。");
+        return EXIT_FAILURE;
+    }
+
+    RendererPreference rendererPreference = RendererPreference::Auto;
+    const QString rendererName = parser.value(rendererOption).trimmed().toLower();
+    if (rendererName == QStringLiteral("opengl")) {
+        rendererPreference = RendererPreference::OpenGL;
+    } else if (rendererName == QStringLiteral("cpu")) {
+        rendererPreference = RendererPreference::Cpu;
+    } else if (rendererName != QStringLiteral("auto")) {
+        qCritical().noquote()
+            << QStringLiteral("--renderer 必须是 auto、opengl 或 cpu。");
         return EXIT_FAILURE;
     }
 
@@ -175,7 +214,10 @@ int main(int argc, char *argv[])
     MultiStreamPlaybackManager playbackManager(performanceOptions);
     playbackManager.setMetricsOutputPath(parser.value(metricsFileOption));
 
-    MainWindow mainWindow;
+    MainWindow mainWindow(rendererPreference);
+    playbackManager.setRenderMetricsProvider(
+        [&mainWindow] { return mainWindow.rendererRuntimeMetrics(); }
+    );
     mainWindow.setUserMessageService(&userMessageService);
     StreamConnectionController connectionController(
         &mainWindow,
@@ -228,6 +270,7 @@ int main(int argc, char *argv[])
     mainWindow.show();
     const int exitCode = app.exec();
     playbackManager.stopAll();
+    playbackManager.setRenderMetricsProvider({});
     logManager.logSystem(
         LogLevel::Info,
         QStringLiteral("application"),

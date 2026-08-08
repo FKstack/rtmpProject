@@ -138,30 +138,32 @@ void FFmpegPlayerLifecycleTest::decodesConfiguredLiveStream()
     }
 
     FFmpegPlayer player;
-    QSignalSpy frameSpy(&player, &FFmpegPlayer::frameReady);
     QSignalSpy errorSpy(&player, &FFmpegPlayer::errorOccurred);
+    const auto mailbox = player.frameMailbox();
 
     QVERIFY(player.start(streamUrl));
     QElapsedTimer frameTimer;
     frameTimer.start();
-    while (frameSpy.isEmpty() && frameTimer.elapsed() < 15'000) {
+    while (!mailbox->latestAfter(0).has_value() &&
+           frameTimer.elapsed() < 15'000) {
         QTest::qWait(50);
     }
-    if (frameSpy.isEmpty()) {
+    const auto frame = mailbox->latestAfter(0);
+    if (!frame.has_value()) {
         const QString lastError = errorSpy.isEmpty()
             ? QStringLiteral("No FFmpeg error was reported.")
             : errorSpy.constLast()
                   .constFirst()
                   .value<PlaybackError>()
                   .technicalMessage;
-        QVERIFY2(!frameSpy.isEmpty(), qPrintable(lastError));
+        QVERIFY2(frame.has_value(), qPrintable(lastError));
     }
 
-    const QImage image = qvariant_cast<QImage>(frameSpy.constFirst().constFirst());
-    QVERIFY(!image.isNull());
-    QCOMPARE(image.format(), QImage::Format_RGB888);
-    QVERIFY(image.width() > 0);
-    QVERIFY(image.height() > 0);
+    QVERIFY(frame->isValid());
+    QVERIFY(frame->pixelFormat() == VideoPixelFormat::Yuv420P8 ||
+            frame->pixelFormat() == VideoPixelFormat::Nv12_8);
+    QVERIFY(frame->width() > 0);
+    QVERIFY(frame->height() > 0);
 
     player.stop();
     QVERIFY(!player.isRunning());

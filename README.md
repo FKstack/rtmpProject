@@ -8,7 +8,8 @@ RtmpMonitor 是一个使用 C++17、Qt 6 Widgets 和 FFmpeg 的多路 H.264/RTMP
 完整路线见[项目规划](docs/roadmap/project_plan.md)，四路版本的历史基线见
 [首批四路播放](docs/weeks/week4/week4_multi_stream_playback.md)，当前实现和验收方法见
 [16 路架构与验收](docs/weeks/week4/week4_sixteen_stream_validation.md)，本次变更和实测记录见
-[Week 6 OpenGL 环境与原型验证](docs/weeks/week6/week6_opengl_environment_and_validation.md)。
+[Week 6 产品级 OpenGL 验证总览](docs/weeks/week6/week6_opengl_environment_and_validation.md)，
+生产实现见[产品级视频渲染框架](docs/architecture/video_rendering_framework.md)。
 
 ## 当前状态
 
@@ -20,9 +21,34 @@ RtmpMonitor 是一个使用 C++17、Qt 6 Widgets 和 FFmpeg 的多路 H.264/RTMP
 | Week 4A：四路播放 | 已完成 | 四路独立线程、故障隔离、人工实况验收 |
 | Week 4B：动态 16 路 | 功能回归通过 | 动态连接、网络/解码解耦、8-worker 池、指标与验收脚本 |
 | Week 5：状态与日志 | 已完成 | 统一设备状态、3 秒重连、用户事件、系统日志和独立审计日志 |
-| Week 6：OpenGL 原型 | 双平台门禁通过 | 保留 QPainter/QImage 默认路径；Windows 实际运行，ARM64 完成交叉链接与 ELF 检查 |
-| Windows 16 路验收 | 短窗口通过 | 视频故障隔离与 30 秒双屏实况通过；10 分钟性能资格测试仍需执行 |
-| Linux ARM64 | OpenGL 交叉构建门禁 | 主程序、EGL/GLES2 与 Qt OpenGL 原型均为 AArch64 ELF；真实 QPA/GPU/播放仍需目标盒子 |
+| 产品级视频渲染 | 正式门禁通过 | 单画布 YUV OpenGL、临时全屏画布、CPU 回退；CLI 默认已切换为 `auto` |
+| Windows 16 路验收 | 600 秒 A/B 通过 | OpenGL CPU 降低 69.08%、显示 14.91 FPS；双屏最差流 P95 196 ms |
+| 监控级显示 | 功能回归通过，当前负载待正式复测 | 普通紧凑网格、标题覆盖和 F11 监控墙；最终布局短测有一项 frame age 门禁超出 0.3 ms |
+| Linux ARM64 | OpenGL 交叉构建门禁 | 主程序、EGL/ES3、生产渲染和测试均为 AArch64 ELF；真实 QPA/GPU/播放仍需目标盒子 |
+
+> 2026-08-05 的四组 600 秒结果验证了产品 Renderer，但早于 2026-08-08 的最终
+> 监控墙布局。当前布局已完成 Windows Debug CTest 12/12 和 120 秒快速对照；快速对照
+> 中 OpenGL CPU 降低 91.66%、显示 14.914 FPS，但 latest frame age P95 为 52 ms，
+> 超过 51.7 ms 门槛 0.3 ms，因此不能把旧长测重新表述成当前布局的正式认证。
+
+## Git 与公开内容边界
+
+仓库提交的是可复查、可复现且已经脱敏的项目资产。提交前应按下表区分：
+
+| 可以提交 | 不得提交 |
+|---|---|
+| C++ 源码、头文件、CMake、QSS、测试和不含凭据的自动化脚本 | `out/`、`build/`、Visual Studio/CMake 用户缓存和编译产物 |
+| 架构、指南、路线图、ADR、已验证且脱敏的项目记忆 | `docs/project_handoff.md`、`docs/local/` 和个人工作笔记 |
+| 删除绝对用户目录、URL、PID 和原始日志后的汇总 JSON | 原始性能报告、截图、录屏、日志、dump、抓包和延迟采样 |
+| `.env.example` 或 `*.example.conf` 中的明显占位值 | `.env`、`ov.conf`、`ovcli.conf`、API Key、Token、密码、私钥和客户端数据库 |
+| localhost 测试地址、无鉴权的示例流名和可由参数覆盖的工具路径 | 含用户名、密码、Token 或签名参数的真实 RTMP/HTTP URL |
+| 公开构建所需的小型文本配置和说明 | 测试视频、YUV/RGB 原始帧、FFmpeg/nginx 本机安装目录内容 |
+
+自动化脚本中的 Qt、MSVC、FFmpeg 和 nginx 默认路径只是本机开发示例，均应通过参数覆盖；
+不得把真实鉴权信息写入这些默认值。`docs/memory/` 只保存经源码、配置或测试验证的脱敏
+事实；个人绝对路径、未经验证的推测和大段运行日志不能进入长期记忆。上述禁止项由
+[`.gitignore`](.gitignore) 提供第一层保护，提交前仍必须检查 `git diff --cached`，不能只
+依赖忽略规则。
 
 ## 使用方式
 
@@ -52,6 +78,7 @@ RtmpMonitor 是一个使用 C++17、Qt 6 Widgets 和 FFmpeg 的多路 H.264/RTMP
 - `--decode-threads <1..16>`：共享解码 worker 数；默认取逻辑核心数的一半并限制为
   1～8。
 - `--metrics-file <path>`：每秒原子写入不含 URL 的 JSON 指标。
+- `--renderer <auto|opengl|cpu>`：选择渲染后端；默认 `auto`，GL 初始化失败时自动回退 CPU；可显式 `cpu` 诊断/回滚。
 - `--latency-marker`：仅测试时解析双屏脚本的时间标记；正常运行不要启用。
 - `--max-reconnect-failures <0..1000>`：最大连续失败次数；默认 `0` 表示无限重试。
 - `--log-level <trace|debug|info|warning|error|critical>`：覆盖最低系统日志级别。
@@ -66,6 +93,7 @@ RtmpMonitor 是一个使用 C++17、Qt 6 Widgets 和 FFmpeg 的多路 H.264/RTMP
 - 拖拽移动完整控件对象。播放器、标题、状态、指标和画面通过稳定 `StreamId`
   绑定，不依赖网格位置。
 - 双击任意一路进入全屏；`Esc`、再次双击或控制栏按钮退出。
+- 按 `F11` 进入沉浸式监控墙，隐藏窗口与应用 chrome；`Esc` 或再次按 `F11` 原样恢复。
 - 右键“重新连接”只影响该路；“断开并移除”停止该路后动态重排。
 
 | 路数 | 布局 |
@@ -118,11 +146,12 @@ Disconnected -> Connecting -> Playing
 - 每轮最多处理 4 个包或 5 ms，然后重新排队，防止单路独占。
 - 每路队列上限为 45 包或 4 MiB；溢出时清理积压、flush 解码器并等待下一关键帧。
 
-解码后的 YUV 仅按展示节奏转换为 RGB888：
+解码后的 YUV 不再按 UI 视口缩放或提前转换为 RGB：
 
-- 网格：最高 15 FPS、最大 640×360。
-- 全屏：最高 30 FPS、最大 1280×720，且不超过源分辨率。
-- UI 使用统一定时器轮询每路最新帧邮箱；每路最多保留一张待展示图。
+- `VideoFrame` 保留 YUV420P/NV12 plane、stride、PTS、time base、代次和颜色描述。
+- 每路 `LatestFrameMailbox` 容量固定为 1；新帧覆盖旧帧，不产生逐帧 Qt 事件。
+- 网格由一个画布以 15 FPS 合成；全屏使用不共享 GL 对象的临时画布并以 30 FPS 调度。
+- OpenGL 使用持久 YUV 纹理和 `glTexSubImage2D`；CPU 后端作为自动 fallback 和显式诊断/回滚路径。
 
 关闭时先同时中断全部网络线程和队列，再等待网络和各流解码任务退出，最后关闭共享
 worker；不使用 `QThread::terminate()`。
@@ -179,7 +208,7 @@ aarch64-linux-gnu-readelf -h out/build-linux-arm64/debug/rtmp_monitor
 
 | 目标 | 主要覆盖 |
 |---|---|
-| `rtmp_monitor_ui_smoke_test` | 样式、拖拽对象交换、全屏转移与恢复 |
+| `rtmp_monitor_ui_smoke_test` | 样式、拖拽对象交换、临时全屏画布与恢复 |
 | `rtmp_monitor_dynamic_grid_test` | 空状态、连接对话框、0～16 路、动态移除和右键入口 |
 | `rtmp_monitor_ffmpeg_player_test` | URL、幂等停止、失败重连和有界退出 |
 | `rtmp_monitor_multi_stream_test` | 16 个稳定 ID、解码池分配、故障隔离、批量退出和指标 JSON |
@@ -189,6 +218,8 @@ aarch64-linux-gnu-readelf -h out/build-linux-arm64/debug/rtmp_monitor
 | `rtmp_monitor_log_panel_test` | 用户事件面板、暂停、清空、容量上限和安全状态文本 |
 | `rtmp_monitor_opengl_windows_smoke` | Win32/WGL 隐藏上下文、GL 信息、清屏和缓冲交换 |
 | `rtmp_monitor_qt_opengl_smoke` | `VideoRenderWidget` RGB 纹理上传、绘制和自动退出 |
+| `rtmp_monitor_opengl_grid_renderer_smoke` | 生产 YUV420P Shader、纹理上传与 framebuffer 像素容差 |
+| `rtmp_monitor_video_render_core_test` | 帧所有权、stride、颜色、邮箱并发、Dirty 与 contain/cover |
 
 可选真实流 CTest 使用分号分隔的 16 个地址：
 
@@ -288,18 +319,32 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
   275 ms，应用平均 CPU 43.3%，峰值工作集 194.7 MiB，UI 最大间隔 169 ms。
 - Linux ARM64：主程序和四个测试目标均重新生成 ELF64/AArch64。
 
-### 2026-07-29 Week 6 OpenGL 结果
+### 2026-08-04 Week 6 产品 OpenGL 结果
 
 - Windows WGL 与 Qt OpenGL 冒烟目标均实际运行通过；GPU 为 NVIDIA GeForce
   RTX 3060 Laptop GPU，OpenGL 4.6.0 NVIDIA 591.86。
-- Windows Debug 完整 CTest 10/10 通过，总耗时 75.25 秒。
+- Windows Debug 完整 CTest 12/12 通过，总耗时 75.48 秒；生产 framebuffer 8 个
+  YUV420P/NV12、BT.601/709/2020 NCL、Limited/Full 用例全部通过，最低 PSNR
+  46.0896 dB、最大 MAE 0.8889、最大 P99 通道误差 2。
+- 用户录像所示“4 路已连接但主网格黑屏、进入全屏后才一起显示”已修复。根因是 Qt 6
+  拒绝带 lambda 的 `Qt::UniqueConnection`，首帧没有刷新 Snapshot；现已改为成员槽并通过
+  动态网格 29/29、完整 CTest 和四路无双击实机验证。
 - WSL2 ARM64 sysroot 补齐 `libqt6opengl6-dev:arm64` 后，主程序、
-  EGL/GLES2 冒烟目标与 Qt OpenGL 原型均通过 ELF64/AArch64 和动态依赖门禁。
+  EGL/ES3 冒烟目标与生产 Qt OpenGL 渲染均通过 ELF64/AArch64 和动态依赖门禁。
 - ARM64 结果仅为交叉编译与链接成功；真实 QPA、EGLFS/Wayland/X11、GPU 和视频
   运行仍待目标盒子验收。
 
 这些结果证明当前功能路径和短窗口性能正常，不替代 10 分钟持续门槛，也不替代真实
 ARM64 盒子的 QPA、VPU、网络和长期稳定性测试。
+
+### 2026-08-05 Renderer 正式对照
+
+- 16 路 CPU/OpenGL 各 600 秒：平均应用 CPU 4.85%→1.50%，降低 69.08%；平均显示
+  12.74→14.91 FPS；frame age P95 46→43 ms，内部延迟 P95 42→40 ms。
+- 双屏源到显示 CPU/OpenGL 各 600 秒：最差流 P95 214→196 ms，OpenGL 最大值
+  317 ms；OpenGL UI 最大间隔 441 ms、纹理 22,118,400 字节且末 60 秒稳定。
+- 8 个 framebuffer 质量用例全部通过；完整结果和正确解读见 Week 6 总览。全部硬门槛
+  通过后 CLI 默认已由 `cpu` 切换为 `auto`，显式 CPU 回滚仍保留。
 
 ## 性能验收门槛
 
@@ -336,7 +381,9 @@ git diff --check
 - [用户事件、系统日志与审计日志架构](docs/guides/architecture/logging_architecture.md)
 - [Week 4 新对话公开交接](docs/weeks/week4/week4_conversation_handoff.md)
 - [Week 5 设备状态、日志与重连](docs/weeks/week5/week5_device_status_and_logging.md)
-- [Week 6 OpenGL 环境与原型验证](docs/weeks/week6/week6_opengl_environment_and_validation.md)
+- [Week 6 产品级 OpenGL 渲染与验证总览](docs/weeks/week6/week6_opengl_environment_and_validation.md)
+- [Week 6 产品视频渲染框架教学篇](docs/weeks/week6/week6_product_rendering_framework_tutorial.md)
+- [Week 6 CPU/OpenGL 自动化对照测试实战篇](docs/weeks/week6/week6_renderer_performance_test_guide.md)
 - [16 路动态连接、解码架构与验收](docs/weeks/week4/week4_sixteen_stream_validation.md)
 - [Week 4 模块变更与测试操作记录](docs/weeks/week4/week4_release_test_and_module_changes.md)
 - [四路历史基线](docs/weeks/week4/week4_multi_stream_playback.md)
@@ -345,3 +392,19 @@ git diff --check
 - [桌面端到端延迟基线](docs/weeks/week3/week3_desktop_latency_test.md)
 - [代码规范](docs/guides/development/code_style_guide.md)
 - [注释规范](docs/guides/development/comment_style_guide.md)
+## 产品级视频渲染后端（2026-08-03）
+
+生产显示链路已从解码线程内的 RGB `QImage` 转换切换为不可变 YUV `VideoFrame`、容量 1
+最新帧邮箱和单画布合成。网格目标 15 FPS，全屏使用不共享 GLuint 的临时画布并以 30 FPS
+调度；OpenGL 初始化失败时自动使用 CPU/QPainter 回退。
+
+```powershell
+.\out\build-windows-x64\debug\rtmp_monitor.exe --renderer=auto
+.\out\build-windows-x64\debug\rtmp_monitor.exe --renderer=opengl
+.\out\build-windows-x64\debug\rtmp_monitor.exe --renderer=cpu
+```
+
+Windows 基线为 OpenGL 3.3 Core，Linux ARM64 基线为 OpenGL ES 3.0。架构、PDF 映射、
+Context 生命周期、指标 schema v3 和未完成实机门禁见
+[视频渲染框架](docs/architecture/video_rendering_framework.md)及
+[渲染架构 ADR](docs/architecture/adr/001-video-rendering-architecture.md)。

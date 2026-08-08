@@ -1,13 +1,18 @@
 #include "ui/MainWindow.h"
 
+#include <utility>
+
 #include <QAction>
 #include <QDockWidget>
+#include <QKeyEvent>
+#include <QKeySequence>
 #include <QLabel>
 #include <QMenu>
 #include <QMenuBar>
 #include <QPushButton>
 #include <QStackedWidget>
 #include <QStatusBar>
+#include <QSignalBlocker>
 #include <QToolBar>
 #include <QVBoxLayout>
 
@@ -19,17 +24,25 @@
 #include "ui/VideoWidget.h"
 
 MainWindow::MainWindow(QWidget *parent)
+    : MainWindow(RendererPreference::Cpu, parent)
+{
+}
+
+MainWindow::MainWindow(
+    RendererPreference rendererPreference,
+    QWidget *parent
+)
     : QMainWindow(parent)
 {
     setWindowTitle(tr("PC 端多路 RTMP 视频显示"));
     resize(1280, 720);
 
-    auto *videoToolBar = addToolBar(tr("视频操作"));
-    videoToolBar->setObjectName(QStringLiteral("videoToolBar"));
-    videoToolBar->setMovable(false);
-    videoToolBar->setFloatable(false);
+    videoToolBar_ = addToolBar(tr("视频操作"));
+    videoToolBar_->setObjectName(QStringLiteral("videoToolBar"));
+    videoToolBar_->setMovable(false);
+    videoToolBar_->setFloatable(false);
 
-    addVideoAction_ = videoToolBar->addAction(tr("添加新的连接"));
+    addVideoAction_ = videoToolBar_->addAction(tr("添加新的连接"));
     addVideoAction_->setObjectName(QStringLiteral("addConnectionAction"));
 
     centralStack_ = new QStackedWidget(this);
@@ -45,7 +58,7 @@ MainWindow::MainWindow(QWidget *parent)
     emptyLayout->addWidget(emptyTitle);
     emptyLayout->addWidget(emptyAddButton_, 0, Qt::AlignCenter);
 
-    videoGrid_ = new VideoGridWidget(centralStack_);
+    videoGrid_ = new VideoGridWidget(rendererPreference, centralStack_);
     centralStack_->addWidget(emptyPage_);
     centralStack_->addWidget(videoGrid_);
     setCentralWidget(centralStack_);
@@ -64,8 +77,19 @@ MainWindow::MainWindow(QWidget *parent)
     showLogAction_->setText(tr("事件消息"));
     showLogAction_->setObjectName(QStringLiteral("showLogAction"));
     viewMenu->addAction(showLogAction_);
+    monitoringWallAction_ = viewMenu->addAction(tr("监控墙模式"));
+    monitoringWallAction_->setObjectName(
+        QStringLiteral("monitoringWallAction")
+    );
+    monitoringWallAction_->setCheckable(true);
+    monitoringWallAction_->setShortcut(QKeySequence(Qt::Key_F11));
+    monitoringWallAction_->setShortcutContext(Qt::WindowShortcut);
+    // 监控模式默认优先使用垂直空间；日志继续收集并可从“视图”菜单随时呼出。
+    logDockWidget_->hide();
 
-    fullscreenVideoWindow_ = new FullscreenVideoWindow(this);
+    fullscreenVideoWindow_ = new FullscreenVideoWindow(
+        rendererPreference, this
+    );
 
     connect(
         addVideoAction_, &QAction::triggered,
@@ -74,6 +98,10 @@ MainWindow::MainWindow(QWidget *parent)
     connect(
         emptyAddButton_, &QPushButton::clicked,
         this, &MainWindow::addConnectionRequested
+    );
+    connect(
+        monitoringWallAction_, &QAction::toggled,
+        this, &MainWindow::setMonitoringWallMode
     );
     connect(videoGrid_, &VideoGridWidget::videoWidgetCountChanged,
             this, [this](int) {
@@ -141,9 +169,27 @@ bool MainWindow::removeConnectionWidget(VideoWidget *videoWidget)
     return removed;
 }
 
+void MainWindow::bindVideoStream(
+    VideoWidget *videoWidget,
+    StreamId streamId,
+    std::shared_ptr<LatestFrameMailbox> mailbox
+)
+{
+    videoGrid_->bindVideoStream(videoWidget, streamId, std::move(mailbox));
+}
+
 int MainWindow::videoWidgetCount() const noexcept
 {
     return videoGrid_ != nullptr ? videoGrid_->videoWidgetCount() : 0;
+}
+
+RenderRuntimeMetrics MainWindow::rendererRuntimeMetrics() const
+{
+    if (fullscreenVideoWindow_ != nullptr &&
+        fullscreenVideoWindow_->isFullscreenActive()) {
+        return fullscreenVideoWindow_->rendererRuntimeMetrics();
+    }
+    return videoGrid_->rendererRuntimeMetrics();
 }
 
 void MainWindow::setUserMessageService(UserMessageService *service)
@@ -180,6 +226,7 @@ void MainWindow::updateDeviceStatus(
         break;
     case DeviceStatus::Playing:
         videoWidget->setStatusText(tr("正在播放或等待画面..."));
+        videoWidget->showFrame();
         break;
     case DeviceStatus::Reconnecting:
         videoWidget->clearFrame();
@@ -206,6 +253,93 @@ QDockWidget *MainWindow::logDockWidget() const noexcept
 LogPanel *MainWindow::logPanel() const noexcept
 {
     return logPanel_;
+}
+
+bool MainWindow::isMonitoringWallMode() const noexcept
+{
+    return monitoringWallMode_;
+}
+
+void MainWindow::setMonitoringWallMode(bool enabled)
+{
+    if (monitoringWallMode_ == enabled) {
+        return;
+    }
+
+    monitoringWallMode_ = enabled;
+    if (monitoringWallAction_ != nullptr &&
+        monitoringWallAction_->isChecked() != enabled) {
+        const QSignalBlocker blocker(monitoringWallAction_);
+        monitoringWallAction_->setChecked(enabled);
+    }
+
+    if (enabled) {
+        geometryBeforeMonitoringWall_ = saveGeometry();
+        windowStateBeforeMonitoringWall_ =
+            windowState() & ~Qt::WindowFullScreen;
+        menuVisibleBeforeMonitoringWall_ = menuBar()->isVisible();
+        toolbarVisibleBeforeMonitoringWall_ =
+            videoToolBar_ != nullptr && videoToolBar_->isVisible();
+        QStatusBar *existingStatusBar = findChild<QStatusBar *>(
+            QString(), Qt::FindDirectChildrenOnly
+        );
+        statusBarExistedBeforeMonitoringWall_ = existingStatusBar != nullptr;
+        statusBarVisibleBeforeMonitoringWall_ =
+            existingStatusBar != nullptr && existingStatusBar->isVisible();
+        logVisibleBeforeMonitoringWall_ =
+            logDockWidget_ != nullptr && logDockWidget_->isVisible();
+
+        videoGrid_->setMonitoringWallMode(true);
+        menuBar()->hide();
+        if (videoToolBar_ != nullptr) {
+            videoToolBar_->hide();
+        }
+        if (existingStatusBar != nullptr) {
+            existingStatusBar->hide();
+        }
+        if (logDockWidget_ != nullptr) {
+            logDockWidget_->hide();
+        }
+        showFullScreen();
+        return;
+    }
+
+    videoGrid_->setMonitoringWallMode(false);
+    showNormal();
+    if (!geometryBeforeMonitoringWall_.isEmpty()) {
+        restoreGeometry(geometryBeforeMonitoringWall_);
+    }
+    if (windowStateBeforeMonitoringWall_.testFlag(Qt::WindowMaximized)) {
+        showMaximized();
+    } else {
+        setWindowState(windowStateBeforeMonitoringWall_);
+        show();
+    }
+    menuBar()->setVisible(menuVisibleBeforeMonitoringWall_);
+    if (videoToolBar_ != nullptr) {
+        videoToolBar_->setVisible(toolbarVisibleBeforeMonitoringWall_);
+    }
+    if (statusBarExistedBeforeMonitoringWall_) {
+        if (QStatusBar *existingStatusBar = findChild<QStatusBar *>(
+                QString(), Qt::FindDirectChildrenOnly
+            ); existingStatusBar != nullptr) {
+            existingStatusBar->setVisible(statusBarVisibleBeforeMonitoringWall_);
+        }
+    }
+    if (logDockWidget_ != nullptr) {
+        logDockWidget_->setVisible(logVisibleBeforeMonitoringWall_);
+    }
+}
+
+void MainWindow::keyPressEvent(QKeyEvent *event)
+{
+    if (event != nullptr && event->key() == Qt::Key_Escape &&
+        monitoringWallMode_) {
+        setMonitoringWallMode(false);
+        event->accept();
+        return;
+    }
+    QMainWindow::keyPressEvent(event);
 }
 
 void MainWindow::updateAddVideoAction()
@@ -276,7 +410,11 @@ void MainWindow::restoreAfterFullscreen()
     }
 
     wasVisibleBeforeFullscreen_ = false;
-    show();
+    if (monitoringWallMode_) {
+        showFullScreen();
+    } else {
+        show();
+    }
     raise();
     activateWindow();
 }

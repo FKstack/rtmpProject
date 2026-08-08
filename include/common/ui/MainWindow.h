@@ -1,11 +1,17 @@
 #pragma once
 
+#include <QByteArray>
 #include <QMainWindow>
+
+#include <memory>
+#include <cstdint>
 
 #include "logging/UserMessageTypes.h"
 
 class QAction;
 class QDockWidget;
+class QKeyEvent;
+class QToolBar;
 class FullscreenVideoWindow;
 class LogPanel;
 class UserMessageService;
@@ -14,6 +20,10 @@ class QStackedWidget;
 class VideoGridWidget;
 class VideoWidget;
 enum class DeviceStatus;
+enum class RendererPreference;
+class LatestFrameMailbox;
+struct RenderRuntimeMetrics;
+using StreamId = std::uint64_t;
 
 /**
  * @brief 应用程序的主窗口。
@@ -34,6 +44,10 @@ public:
      * @param parent Qt 父对象；非空时由父对象管理窗口生命周期。
      * @thread 必须在 Qt UI 线程中调用。
      */
+    explicit MainWindow(
+        RendererPreference rendererPreference,
+        QWidget *parent = nullptr
+    );
     explicit MainWindow(QWidget *parent = nullptr);
 
     /**
@@ -61,8 +75,14 @@ public:
 
     /** @brief 从布局移除一个连接显示格。 */
     bool removeConnectionWidget(VideoWidget *videoWidget);
+    void bindVideoStream(
+        VideoWidget *videoWidget,
+        StreamId streamId,
+        std::shared_ptr<LatestFrameMailbox> mailbox
+    );
 
     [[nodiscard]] int videoWidgetCount() const noexcept;
+    [[nodiscard]] RenderRuntimeMetrics rendererRuntimeMetrics() const;
 
     /** @brief 连接普通用户事件源并显示到底部事件面板。 */
     void setUserMessageService(UserMessageService *service);
@@ -76,10 +96,17 @@ public:
 
     [[nodiscard]] QDockWidget *logDockWidget() const noexcept;
     [[nodiscard]] LogPanel *logPanel() const noexcept;
+    [[nodiscard]] bool isMonitoringWallMode() const noexcept;
+
+public slots:
+    void setMonitoringWallMode(bool enabled);
 
 signals:
     /** @brief 中央按钮或工具栏请求打开连接对话框。 */
     void addConnectionRequested();
+
+protected:
+    void keyPressEvent(QKeyEvent *event) override;
 
 private:
     void updateAddVideoAction();
@@ -95,7 +122,17 @@ private:
     QPushButton *emptyAddButton_ = nullptr;
     QDockWidget *logDockWidget_ = nullptr;
     LogPanel *logPanel_ = nullptr;
+    QToolBar *videoToolBar_ = nullptr;
     QAction *showLogAction_ = nullptr;
+    QAction *monitoringWallAction_ = nullptr;
     QMetaObject::Connection logConnection_;
+    QByteArray geometryBeforeMonitoringWall_;
+    Qt::WindowStates windowStateBeforeMonitoringWall_;
+    bool menuVisibleBeforeMonitoringWall_ = true;
+    bool toolbarVisibleBeforeMonitoringWall_ = true;
+    bool statusBarExistedBeforeMonitoringWall_ = false;
+    bool statusBarVisibleBeforeMonitoringWall_ = false;
+    bool logVisibleBeforeMonitoringWall_ = false;
+    bool monitoringWallMode_ = false;
     bool wasVisibleBeforeFullscreen_ = false;
 };

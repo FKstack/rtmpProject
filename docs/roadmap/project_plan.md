@@ -35,6 +35,7 @@
 | 实时预览 | Windows PC 和 ARM64 硬件盒子都能低延迟查看每一路设备画面。 |
 | 同一程序跨平台 | 业务、UI、播放和状态管理共用代码，仅隔离必要的系统、图形和硬件差异。 |
 | 工程可扩展 | 初期先做 Windows 可运行原型，后续增加 Linux ARM64 交叉构建、多路、重连、统计、录像和硬件解码。 |
+| Server 产品化 | 原型和 ARM64 主链路稳定后，由产品管理成熟 RTMP Server 的安装、启停、健康检查和恢复，不要求用户手工维护复杂命令。 |
 | 学习友好 | 对 C++/Qt 开发者逐步引入音视频知识，避免一开始陷入 RTMP Server、H.264 码流细节和 FFmpeg 编译复杂度。 |
 | AI 辅助开发 | 将项目拆成小阶段，让 Codex 可以一次实现一个明确模块。 |
 
@@ -46,6 +47,7 @@
 4. 扩展为 0～16 路动态连接，并把阻塞网络、共享解码池和 UI 展示节奏解耦。
 5. 建立 Linux ARM64 交叉编译门禁，确保同一源码生成 AArch64 Linux ELF。
 6. 在真实 ARM64 盒子验证 QPA、FFmpeg 和长期运行；性能数据不足时再引入硬件解码。
+7. 在独立的 RTMP Server 产品化专项中完成架构选型、进程管理、双平台部署、安全和多设备验收。
 
 ---
 
@@ -128,7 +130,8 @@ Qt 负责“窗口、布局、显示和交互”
 | ARM64 构建版 | WSL2 交叉编译 + ARM64 Qt/FFmpeg + sysroot | 16 路动态源码已接入 | 主程序和测试目标链接 ARM64 FFmpeg；仍需真实设备播放验收。 |
 | ARM64 实机版 | 硬件盒子部署 + QPA/渲染/稳定性验证 | 发布前必做 | 交叉编译成功不能代替真实设备运行验证。 |
 | 优化版 | OpenGL 渲染、硬件解码、低延迟调优 | 后期 | 解决多路性能和延迟问题。 |
-| 高级版 | 内置 RTMP Server | 谨慎后置 | 协议复杂，先不要作为第一目标。 |
+| RTMP Server 产品化版 | 成熟 Server 伴随服务或嵌入式组件 + Qt 管理边界 | ARM64 专项后正式实施 | 先完成架构和选型，再实现安装、启停、健康、恢复和鉴权。 |
+| 自研协议版 | 自行实现 RTMP Server 协议 | 不推荐 | 只有成熟方案无法满足已确认产品约束时才重新评估。 |
 
 ---
 
@@ -264,7 +267,7 @@ MainWindow / UI Thread
 | 日志与状态模块 | 记录拉流、解码、重连、错误信息，展示运行状态。 | 模块日志、错误码、状态事件。 | 日志文件、状态栏、调试面板。 | `LogManager`、`StatusPanel`。 |
 | 配置管理模块 | 保存设备列表、RTMP Server 地址、窗口布局、低延迟参数。 | JSON/INI 配置文件。 | 配置对象、运行参数。 | `AppConfig`、`ConfigManager`。 |
 | 平台适配模块 | 隔离窗口系统、硬件解码、系统路径和厂商 SDK 差异。 | 平台能力查询、统一业务请求。 | 平台无关结果或后端接口。 | `PlatformCapabilities`、`VideoOutputBackend`、`HardwareDecoderBackend`。 |
-| 后期内置 RTMP Server 模块 | 在 RtmpMonitor 内部接收设备 RTMP 推流。 | 设备 RTMP Push。 | 内部流会话、可供解码的数据源。 | `EmbeddedRtmpServer`、`RtmpSession`，后期再做。 |
+| RTMP Server 产品集成模块 | 管理成熟 Server 的配置、启停、健康检查、恢复和部署边界，不在 Qt UI 进程中重新实现协议。 | 产品配置、设备 RTMP Push、Server 状态。 | 本机拉流地址、健康状态、脱敏日志和恢复事件。 | `RtmpServerController`、`RtmpServerHealthMonitor`；具体接口在专项中设计。 |
 
 ### 5.1 推荐类关系
 
@@ -305,7 +308,7 @@ PlatformCapabilities
 
 ### 5.3 后期再实现的模块
 
-- 内置 RTMP Server。
+- RTMP Server 产品化集成；先做选型与伴随进程 PoC，不从零实现协议。
 - OpenGL YUV 纹理渲染。
 - 硬件解码。
 - 复杂设备认证。
@@ -650,6 +653,7 @@ ffplay -fflags nobuffer -flags low_delay rtmp://127.0.0.1/live/camera001
 | 第 5 周 | 设备状态、日志、断线重连 | 状态栏、日志、自动重连。 | 推荐 |
 | 第 6 周 | 性能优化、OpenGL 渲染、项目整理 | 已完成独立 RGB OpenGL 原型、Windows 实机验证和 ARM64 交叉链接门禁；生产渲染替换等待长测数据。 | 原型完成 |
 | 六周后 1～2 周 | Linux ARM64 交叉构建与实机验证 | AArch64 ELF、toolchain、部署脚本和盒子验收记录。 | 工程化必做 |
+| ARM64 专项后 | RTMP Server 产品化集成专项 | 架构选型、伴随服务 PoC、进程管理、双平台部署、安全和多设备验收。 | 产品化必做 |
 
 ### 8.2 第 1 周：跑通 RTMP 推流链路
 
@@ -822,20 +826,20 @@ Disconnected
 
 ### 8.7 第 6 周：性能优化、OpenGL 渲染、项目整理
 
-当前实现状态：已完成独立 `VideoRenderWidget` RGB/RGBA 纹理原型，保留现有
-QPainter/QImage 为默认生产渲染路径。Windows 已实际运行 WGL 与 Qt OpenGL 冒烟
-程序，完整 CTest 10/10 通过；WSL2 已补齐 ARM64 GL/EGL/GLES/Qt OpenGL sysroot，
-并生成通过 ELF 与动态依赖门禁的 AArch64 EGL/GLES2 和 Qt OpenGL 原型。真实 ARM64
-QPA、EGLFS/Wayland/X11 和 GPU 运行仍待目标盒子验收。详细记录见
-[Week 6 OpenGL 环境与原型验证](../weeks/week6/week6_opengl_environment_and_validation.md)。
+当前实现状态：生产显示链已切换到不可变 YUV `VideoFrame`、容量 1 邮箱和单画布合成；
+支持 YUV420P/NV12、Desktop GL 3.3 Core/ES 3.0 Shader、持久纹理、临时全屏 Context 与
+CPU/QPainter 回退。Windows 已实际运行 WGL、生产 framebuffer 和四路 RTMP，完整 CTest
+12/12 通过；WSL2 已生成通过 ELF 与动态依赖门禁的 AArch64 EGL/ES3、主程序和生产
+Qt OpenGL 渲染。真实 ARM64 QPA、EGLFS/Wayland/X11 和 GPU 运行仍待目标盒子验收。
+详细记录见 [Week 6 产品级 OpenGL 验证总览](../weeks/week6/week6_opengl_environment_and_validation.md)。
 
 | 项目 | 内容 |
 | --- | --- |
-| 学习目标 | 理解多路视频性能瓶颈，了解 QLabel/QImage 与 OpenGL 渲染差异，整理工程文档和测试脚本。 |
-| 开发任务 | 已有网格 15 FPS/全屏 30 FPS、最新帧邮箱和 FPS 指标保持不变；新增独立 QOpenGLWidget RGB 纹理原型、双平台图形构建门禁、环境与测试脚本。 |
-| 产出物 | `VideoRenderWidget` 原型；WGL、EGL/GLES2、Qt OpenGL 冒烟目标；Windows/ARM64 验证脚本；Week 6 环境与验收文档。 |
+| 学习目标 | 理解解码/渲染边界、YUV Shader、Qt FBO、Dirty 调度、Context 生命周期，以及如何用同机 A/B 证明收益。 |
+| 开发任务 | 已完成 `VideoFrame + LatestFrameMailbox`、单主画布、临时全屏画布、CPU fallback、schema v3、质量门禁和 CPU/OpenGL 总控；待执行四组 600 秒正式门禁。 |
+| 产出物 | 生产 `rtmp_monitor_render`；WGL、EGL/ES3、YUV framebuffer 和核心测试；三篇 Week 6 教学/验证文档；`compare_renderers.ps1` 及两类 16 路采样脚本。 |
 | AI 编程提示词 | “请分析当前 Qt + FFmpeg 多路视频显示项目的性能瓶颈，并实现一个基础优化版本：每路解码线程可以按原始帧率解码，但 UI 显示限制为最高 25 FPS；新增帧率统计；保留 QLabel/QImage 方案，同时提供一个可选的 QOpenGLWidget VideoRenderWidget 原型用于后续替换。” |
-| 验收标准 | Windows OpenGL 目标实际编译运行且完整回归通过；ARM64 目标严格链接 sysroot 并生成 AArch64 ELF；文档明确交叉构建与实机运行边界。 |
+| 验收标准 | Windows OpenGL 实际后端、完整回归和 framebuffer 质量通过；CPU/OpenGL 四组 600 秒满足 CPU、FPS、延迟、内存、纹理和 UI 门槛；ARM64 严格链接 sysroot 并生成 AArch64 ELF；文档明确交叉构建与实机边界。 |
 | 可能遇到的问题 | OpenGL 上下文只能在特定线程使用；YUV 纹理渲染复杂；硬件解码平台差异大；过早优化导致代码复杂。 |
 
 本周新手可以先做：
@@ -846,7 +850,7 @@ QPA、EGLFS/Wayland/X11 和 GPU 运行仍待目标盒子验收。详细记录见
 
 后期优化再做：
 
-- OpenGL YUV 三纹理渲染。
+- PBO/异步上传及硬件帧导入（仅在性能证据证明需要后）。
 - 统一硬件解码接口，以及 Windows D3D11VA/DXVA2 和 Linux ARM64 厂商后端。
 - 零拷贝或低拷贝渲染链路。
 - 内置 RTMP Server。
@@ -865,6 +869,83 @@ QPA、EGLFS/Wayland/X11 和 GPU 运行仍待目标盒子验收。详细记录见
 | 可能遇到的问题 | 厂商 sysroot 不完整；Qt host/target 工具混淆；glibc 或 libstdc++ 版本不匹配；QPA 插件缺失；OpenGL ES 驱动差异；FFmpeg 配置与设备不一致。 |
 
 本阶段不要直接开始厂商硬件解码。先让同一套软件解码路径在两个平台运行，再把硬件解码放到统一后端接口中逐个平台接入。
+
+### 8.9 RTMP Server 产品化集成专项
+
+本专项在六周原型和 Linux ARM64 专项之后正式实施。本次规划只定义产品目标、架构选型任务和验收标准，不实现 Server 业务代码。
+
+#### 8.9.1 产品目标与使用链路
+
+产品需要让设备把 H.264/RTMP 直接推送到运行 RtmpMonitor 的 Windows PC 或 Linux ARM64 盒子，并由软件管理接收服务。用户不应手工输入复杂 Server 命令，也不应直接维护进程、端口和配置文件。
+
+标准链路为：
+
+```text
+设备
+  -> rtmp://<host>:1935/live/<stream-key>
+  -> 产品管理的 RTMP Server
+  -> rtmp://127.0.0.1:1935/live/<stream-key>
+  -> FFmpegPlayer / MultiStreamPlaybackManager
+  -> Qt 多宫格
+```
+
+`<stream-key>` 代表设备身份或授权凭据。UI、普通日志和错误消息不得打印完整鉴权地址；展示时只保留主机、端口和脱敏后的设备标识。
+
+#### 8.9.2 方案比较与推荐顺序
+
+| 方案 | 进程边界 | 优点 | 主要代价 | 结论 |
+| --- | --- | --- | --- | --- |
+| A：SRS 随软件分发的伴随服务 | 独立进程，由产品控制 | 协议成熟、健康与日志边界清晰、最容易独立升级和回退。 | 需要打包额外可执行文件并管理进程。 | 首选基线 |
+| B：其他成熟 RTMP Server 受控子进程 | 独立进程，由产品控制 | 可按许可证、平台包体或部署能力替代 SRS。 | Windows/ARM64 可用性和运维接口需要重新验证。 | 伴随服务备选 |
+| C：成熟 Server 库嵌入当前应用 | 同一进程或进程内组件 | 可能简化单进程交付和本机通信。 | 崩溃域、线程、许可证、升级和 ABI 与 Qt 客户端耦合。 | 只有明确单进程约束时评估 |
+| D：自行实现 RTMP Server 协议 | 同一产品代码 | 理论上完全可控。 | 握手、chunk、流控、时间戳、FLV、鉴权和异常处理成本最高。 | 不推荐 |
+
+推荐顺序：
+
+```text
+成熟伴随服务（A/B）
+> 成熟嵌入式组件（C）
+> 自行实现协议（D）
+```
+
+“随产品分发的伴随服务”仍然是外部进程；“真正进程内嵌入”会进入 Qt 客户端的地址空间和故障域。两者不能都称为内置 Server，也不能用单 EXE 的表象掩盖进程边界。
+
+#### 8.9.3 架构与选型任务
+
+1. 确认产品是否必须单 EXE；若安装包可包含受控服务，默认选择伴随进程。
+2. 比较 SRS 与至少一个成熟替代 Server 的 Windows x86_64、Linux ARM64、许可证、包体、配置和健康接口。
+3. 定义 `RtmpServerController` 与 Qt 客户端边界：客户端只管理生命周期和状态，不承载 RTMP 协议实现。
+4. 定义启动、优雅停止、超时终止、健康检查、版本检查和异常退出后的有界重启。
+5. 区分 Server 日志、Qt 客户端系统日志、用户事件和安全审计日志；所有层级统一脱敏。
+6. 定义受版本管理的默认配置、用户可写覆盖配置及配置迁移，禁止把凭据写入默认模板。
+7. 定义安装、升级、卸载和回退；升级失败必须能恢复到已验证的伴随服务版本。
+
+#### 8.9.4 双平台、网络与安全
+
+- Windows x86_64：明确 Server 二进制、配置、数据、日志和服务控制落点；安装器按需创建 1935 入站防火墙规则，卸载时可移除。
+- Linux ARM64：使用与目标镜像 ABI 匹配的 Server 构建；由 systemd 或等价监督器管理，不与 Qt QPA/GPU 进程生命周期耦合。
+- 默认只开放业务需要的 1935 端口；管理和健康端点优先限制为本机。
+- Stream Key 与设备身份分离设计，支持吊销、轮换和单设备禁用；禁止依赖可预测的设备序号作为唯一鉴权。
+- 配置文件采用最小权限；日志不得记录完整 URL、Stream Key、Token 或请求头。
+- Server 异常退出时，Qt 客户端显示明确状态并按有界退避恢复；重启风暴必须熔断并给出可诊断错误。
+
+#### 8.9.5 多设备测试与验收标准
+
+- 软件能够自动启动 Server，并通过明确的健康接口确认可用状态。
+- 设备能够向本机产品实例推送 RTMP；Qt 客户端能够从本机 Server 拉取并显示。
+- Server 重启后客户端能够自动重连恢复，不要求用户重启整个 Qt 应用。
+- 单路错误、鉴权失败或异常断流不影响其他设备流。
+- Windows x86_64 与 Linux ARM64 的二进制、配置、数据、日志、端口和服务管理边界均有部署清单。
+- 多设备并发测试至少覆盖目标路数、重复 Stream Key、错误凭据、断网、Server 崩溃、磁盘不足和升级回退。
+- 日志、UI 和错误报告均不泄露完整鉴权地址。
+- 安装、运行、升级和卸载不要求用户手工执行复杂 Server 命令。
+- 最终形成是否必须单 EXE 的产品决策，并用验证数据说明伴随服务或嵌入式组件的选择。
+
+#### 8.9.6 风险与回退
+
+- 首个可交付版本以成熟伴随服务为回退基线；嵌入式 PoC 失败时不得阻塞客户端发布。
+- Server 升级与 Qt 客户端升级解耦并维护兼容矩阵；新版本健康或回归失败时回退到已验证版本。
+- 许可证、二进制供应链、ARM64 可用性或安全审计不满足要求时，切换成熟替代 Server，而不是立即转向自研协议。
 
 ---
 
@@ -918,7 +999,7 @@ SRS + ffmpeg 推流
 
 | 增强方向 | 价值 | 实现建议 | 优先级 |
 | --- | --- | --- | --- |
-| 内置 RTMP Server | 让设备直接推到 RtmpMonitor，减少外部依赖。 | 先调研两个平台均可维护的成熟库或伴随服务，不建议从零写协议。 | 中后期 |
+| RTMP Server 产品化集成 | 让设备直接推到产品管理的接收服务，减少用户手工部署。 | 按 8.9 专项优先评估 SRS 伴随服务，再评估其他成熟子进程或嵌入式组件。 | ARM64 专项后 |
 | OpenGL 渲染 | 降低多路显示时 CPU 压力，提高渲染效率。 | 从 RGB 纹理开始，再做 YUV 纹理。 | 中期 |
 | 硬件解码 | 多路高清视频时显著降低 CPU 占用。 | 统一能力探测与软件回退；Windows 研究 D3D11VA/DXVA2，Linux ARM64 按硬件 SDK 选择后端。 | 后期 |
 | 多设备认证 | 防止未授权设备推流。 | 可先在 RTMP URL 中使用 token，后期接入鉴权服务。 | 后期 |
@@ -936,11 +1017,12 @@ SRS + ffmpeg 推流
 ```text
 第一阶段：外部 SRS/nginx-rtmp
 第二阶段：Qt 客户端稳定多路播放
-第三阶段：研究是否嵌入成熟 RTMP server 组件
-第四阶段：如确实必要，再设计内置服务端模块
+第三阶段：完成 RTMP Server 产品化专项和成熟伴随服务 PoC
+第四阶段：只有产品约束要求时再评估成熟嵌入式组件
+第五阶段：成熟方案均不能满足已确认需求时，才重新评估自研协议
 ```
 
-除非项目明确要求“单个 exe 内完成接收 RTMP 推流”，否则外部 RTMP Server 是更稳妥的工程方案。
+除非产品明确要求“单个 exe 内完成接收 RTMP 推流”，否则受产品控制的成熟伴随服务是更稳妥的工程方案。详细任务、双平台边界和验收标准见 [8.9 RTMP Server 产品化集成专项](#89-rtmp-server-产品化集成专项)。
 
 ---
 
@@ -993,6 +1075,9 @@ SRS + ffmpeg 推流
 | 风险 | 具体表现 | 影响 | 规避方案 |
 | --- | --- | --- | --- |
 | 从零写 RTMP Server 风险 | 握手、chunk、时间戳、异常连接处理复杂。 | 项目长期卡住，难以完成 MVP。 | 初期使用 SRS/nginx-rtmp；内置 RTMP Server 放到后期。 |
+| 伴随服务生命周期风险 | Server 启停、崩溃重启或版本不匹配时客户端不可用。 | 产品启动失败或形成重启风暴。 | 独立控制器、健康检查、有界退避、熔断和版本兼容矩阵。 |
+| RTMP 端口与鉴权风险 | 1935 暴露、弱 Stream Key 或日志记录完整 URL。 | 未授权推流、凭据泄露或现场网络故障。 | 最小防火墙规则、可轮换设备身份、配置最小权限和统一脱敏。 |
+| Server 供应链与许可证风险 | Windows/ARM64 二进制来源、许可证或升级路径不清。 | 无法分发、审计或及时修复漏洞。 | 专项中完成许可证与制品验证，保留成熟替代 Server 和版本回退。 |
 | 多路视频解码性能风险 | 4 路以上 CPU 飙高，画面卡顿。 | 多路显示不可用。 | 先限制分辨率和帧率；后期使用 OpenGL 和硬件解码。 |
 | Qt 主线程卡顿风险 | UI 无响应，窗口拖动卡死。 | 用户体验差，程序像崩溃。 | 拉流解码必须放到 QThread；UI 只显示最后一帧。 |
 | FFmpeg 编译和链接风险 | Windows 与 ARM64 头文件、库或运行时版本混用。 | 链接失败，或只在目标设备启动时暴露 ABI 错误。 | 按目标平台隔离依赖；Windows 使用 MSVC 库，Linux 使用 AArch64 `.so`；记录版本和构建选项。 |
@@ -1078,6 +1163,8 @@ UI 线程只接收已经准备好的图像，并尽快刷新。
 | 12 | OpenGL 原型 | “请新增一个可选的 QOpenGLWidget 视频渲染控件，先支持上传 RGB QImage 为纹理显示。保留原 QLabel 方案，不要一次替换全部逻辑。” |
 | 13 | ARM64 交叉构建 | “请阅读代码规范和当前 CMake，保持 Windows MSVC 构建可用，为 Linux ARM64 增加 `aarch64-linux-gnu-g++` toolchain 和独立 Preset。sysroot、ARM64 Qt 与 FFmpeg 路径通过环境变量注入；构建后用 file/readelf 验证 AArch64 ELF。” |
 | 14 | ARM64 实机部署 | “请根据目标盒子的系统镜像生成部署清单和脚本，检查 Qt 平台插件、FFmpeg `.so`、动态库路径和软件解码。先验证 UI、拖拽、全屏和一路 RTMP，不接入厂商硬件解码。” |
+| 15 | RTMP Server 架构选型 | “请只执行 RTMP Server 产品化架构调研，不实现协议代码。比较 SRS 伴随服务、其他成熟 Server 子进程、成熟嵌入式组件和自研协议，核对许可证、Windows x86_64、Linux ARM64、健康检查、升级与回退，并输出 ADR 和 PoC 验收矩阵。” |
+| 16 | 伴随服务 PoC | “请基于已确认的成熟 RTMP Server 实现最小产品集成 PoC：只做进程启停、健康检查、异常恢复、脱敏日志和本机推拉流验收；不要修改 FFmpegPlayer 解码架构，不要自行实现 RTMP 协议。” |
 
 ### 13.2 使用 Codex 时的建议
 
@@ -1122,6 +1209,9 @@ UI 线程只接收已经准备好的图像，并尽快刷新。
 | 示例 RTMP 地址 | 如 `rtmp://127.0.0.1/live/camera001`。 | 是 |
 | 问题排查文档 | 记录黑屏、断流、DLL/`.so` 缺失、QPA 插件、ABI 和延迟问题。 | 推荐 |
 | SRS/nginx-rtmp 配置 | 外部 RTMP Server 的启动和配置方式。 | 是 |
+| RTMP Server 产品化 ADR 与 PoC 报告 | 记录 A～D 方案比较、单 EXE 决策、进程边界、许可证和回退结论。 | 产品化阶段必需 |
+| RTMP Server 双平台部署清单 | Windows/ARM64 二进制、配置、数据、日志、端口、健康检查和服务管理边界。 | 产品化阶段必需 |
+| RTMP Server 并发与恢复测试记录 | 设备推流、本机拉流、重启恢复、故障隔离、鉴权、脱敏和升级回退证据。 | 产品化发布必需 |
 | 设备配置示例 | JSON/INI 形式保存设备名和 RTMP URL。 | 推荐 |
 | 日志文件 | 程序运行日志，便于排查现场问题。 | 推荐 |
 | 性能测试记录 | 多路播放时 CPU、内存、帧率、延迟记录。 | 后期 |
@@ -1157,15 +1247,55 @@ MVP 交付：
   - OpenGL 渲染
   - 硬件解码
   - 录像截图
-  - 内置 RTMP Server 可行性方案或实现
+  - RTMP Server 产品化 ADR
+  - 成熟伴随服务 PoC、双平台部署清单和验收证据
 ```
 
 ---
 
 ## 结论
 
-本项目最稳妥的实现路径是：先把 RTMP Server 当成外部基础设施，使用 SRS 或 nginx-rtmp 跑通推流链路；再用 Windows x86_64 + MSVC 完成 Qt + FFmpeg 一路视频播放 MVP；随后扩展到 4 路真实播放，并保持业务和 UI 代码跨平台；功能主链路稳定后，在 WSL2 中使用 AArch64 G++、目标 sysroot、ARM64 Qt 和 FFmpeg 建立 Linux ARM64 交叉构建；最后在真实硬件盒子上验证 QPA、OpenGL ES、软件解码、全屏和长期稳定性，再按设备能力接入硬件解码。
+本项目最稳妥的实现路径是：先把 RTMP Server 当成外部基础设施，使用 SRS 或 nginx-rtmp 跑通推流链路；再用 Windows x86_64 + MSVC 完成 Qt + FFmpeg 一路视频播放 MVP；随后扩展到 4 路真实播放，并保持业务和 UI 代码跨平台；功能主链路稳定后，在 WSL2 中使用 AArch64 G++、目标 sysroot、ARM64 Qt 和 FFmpeg 建立 Linux ARM64 交叉构建；在真实硬件盒子上验证 QPA、OpenGL ES、软件解码、全屏和长期稳定性；最后进入独立的 RTMP Server 产品化专项，优先把成熟 Server 作为随产品分发和受控的伴随服务，再按明确的单进程约束评估嵌入式组件。
 
 因此，应该增加 G++，但准确说是增加 `aarch64-linux-gnu-g++` 或硬件厂商 SDK 中的 ARM64 Linux 交叉编译器，而不是用普通 MinGW G++ 替代 MSVC。Windows 侧负责两个独立流程：MSVC 构建 Windows 程序，WSL2 交叉生成 ARM64 Linux ELF。交叉生成、模拟执行和真实盒子验收是三个不同层级，只有三层结果都记录清楚，才能对 Linux ARM64 支持作出可靠结论。
 
-对新手来说，第一阶段的核心不是理解所有音视频底层细节，而是建立一条能跑通、能观察、能逐步扩展的工程链路。只要先把“推流 -> 收流 -> 解码 -> 显示”跑通，后续每个优化点都可以拆成小任务，逐步交给 Codex 辅助实现。
+对新手来说，第一阶段的核心不是理解所有音视频底层细节，而是建立一条能跑通、能观察、能逐步扩展的工程链路。只要先把“推流 -> 收流 -> 解码 -> 显示”跑通，后续的性能优化、ARM64 实机验收和 Server 产品化都可以拆成有独立验收标准的小任务，逐步交给 Codex 辅助实现。
+## 15. 产品级 OpenGL 视频渲染框架（2026-08-03）
+
+当前代码已完成以下工程交付：
+
+- `VideoFrame + LatestFrameMailbox(capacity=1)` 成为解码与渲染的稳定边界。
+- 解码器不再根据 UI 视口缩放或转 RGB；YUV420P/NV12、stride、PTS、代次和颜色描述被保留。
+- 单主 OpenGL 画布合成 0～16 路，临时全屏画布不共享 GLuint，CPU 后端可自动回退。
+- Desktop GL 3.3 Core、OpenGL ES 3.0 Shader、纹理复用、row-length/staging 上传均进入生产 target。
+- `--renderer=auto|opengl|cpu`、指标 schema v3、YUV framebuffer 像素质量门禁和渲染核心测试已接入。
+- 已修复四路连接后主网格黑屏、进入全屏才显示的问题：Qt 6 拒绝 lambda 形式的
+  `Qt::UniqueConnection`，现改为成员槽并通过动态网格、完整 CTest 和四路实机回归。
+- 已增加同机同输入 CPU/OpenGL A/B 总控、独立流名前缀、每秒原始采样、报告脱敏和
+  `SelfTest/Check/Status/Stop`，三篇 Week 6 教学与实战文档已补齐。
+
+2026-08-05 Windows 16 路预录与双屏延迟 CPU/OpenGL 四组 600 秒、framebuffer Quality
+和全部硬门槛已通过：16 路 OpenGL 平均 CPU 相对降低 69.08%，显示 14.91 FPS；双屏
+最差流 P95 196 ms、最大 317 ms。CLI 默认已切换为 `auto`，仍保留显式 CPU 回滚。
+Linux ARM64 当前只承诺交叉构建和 AArch64 ELF，真实 QPA/GPU/播放仍需目标板验收。
+
+架构依据和边界见：
+
+- `docs/architecture/current_rendering_architecture_review.md`
+- `docs/architecture/pdf_rendering_framework_mapping.md`
+- `docs/architecture/adr/001-video-rendering-architecture.md`
+- `docs/architecture/video_rendering_framework.md`
+
+## 16. 监控级完整显示与沉浸式监控墙（2026-08-08）
+
+当前产品显示策略已从“用 Cover 裁剪来填满超宽格子”调整为几何层修复：
+
+- 每路默认 `Contain`，标准 16:9 源完整、铺满且不变形；异常比例优先完整和不变形。
+- `MonitoringGridGeometry` 在整数像素约束中选择最大面积的近似 16:9 统一格子；普通窗口使用 4px 外边距/4px 格间距。
+- 设备名称改为视频左上角半透明覆盖标签，不再占用标题行；完整名称仍保存在业务数据、tooltip 和 Snapshot 中。
+- F11 监控墙隐藏窗口与应用 chrome，网格切换为 0px/0px；Esc/F11 原样恢复。监控墙临时强制有效 `Contain`，不丢失异常比例视频的边缘。
+- 不引入 Stretch、默认裁剪、滚动或非等尺寸马赛克。非 16:9 屏幕无法在数学上同时满足完整、无变形、无裁剪和零留白时，仍以画面内容完整为第一优先级。
+
+自动回归已覆盖 1～16 路、四种窗口尺寸、F11/Esc、标题覆盖、日志 Dock、单路全屏往返，以及 CPU/OpenGL 的 16:9/4:3/竖屏四边 framebuffer。最终 Windows Debug 构建和 CTest 12/12 通过。用户确认 Visual Studio 生成的程序显示正常；自动化账户使用不同启动环境拉起的窗口不作为可比视觉证据。
+
+性能发布边界保持诚实：2026-08-05 的四组 600 秒正式结果早于本布局。最终监控墙版本的 120 秒快速对照显示 OpenGL CPU 降低 91.66%、显示 14.914 FPS，但 latest frame age P95 由 47 ms 到 52 ms，超过相对门槛 0.3 ms，因此短测总控为失败。要认证当前布局，仍需重新执行 Video、LiveLatency 和 Quality 正式套件。

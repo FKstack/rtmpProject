@@ -1,6 +1,5 @@
 #pragma once
 
-#include <QImage>
 #include <QObject>
 #include <QString>
 
@@ -11,6 +10,7 @@
 #include <mutex>
 
 #include "media/DecodeWorkerPool.h"
+#include "media/LatestFrameMailbox.h"
 #include "media/PlaybackTypes.h"
 
 class QThread;
@@ -48,20 +48,16 @@ public:
     void stop();
     [[nodiscard]] bool isRunning() const noexcept;
 
-    void setAutomaticFrameSignalsEnabled(bool enabled) noexcept;
-    void setPresentationTarget(const PresentationTarget &target);
+    [[nodiscard]] std::shared_ptr<LatestFrameMailbox> frameMailbox() const;
 
     /** @brief 复制最新帧；调用方用 sequence 判断是否已经展示。 */
-    [[nodiscard]] PresentableVideoFrame latestFrame() const;
 
     /** @brief 在 UI 接收最新帧时更新展示与延迟统计。 */
-    void markFramePresented(const PresentableVideoFrame &frame);
 
     /** @brief 生成当前累计计数和最近采样速率。 */
     StreamMetrics metricsSnapshot();
 
 signals:
-    void frameReady(const QImage &image);
     void stateChanged(DeviceStatus state);
     void errorOccurred(const PlaybackError &error);
     void reconnectScheduled(int consecutiveFailures, int delayMs);
@@ -83,7 +79,6 @@ private:
         std::uint64_t sessionId
     );
     void scheduleDecodeLocked(const std::shared_ptr<SharedState> &state);
-    void deliverLatestFrame(std::uint64_t sessionId);
     void postState(DeviceStatus state, std::uint64_t sessionId);
     void postError(PlaybackError error, std::uint64_t sessionId);
     void postReconnectScheduled(
@@ -110,10 +105,9 @@ private:
     std::condition_variable reconnectCondition_;
 
     DeviceStatus state_ = DeviceStatus::Disconnected;
-    std::uint64_t lastAutomaticSequence_ = 0;
     qint64 lastMetricsSampleMs_ = 0;
     std::uint64_t lastDecodedSample_ = 0;
-    std::uint64_t lastPresentedSample_ = 0;
+    std::uint64_t lastRenderedSample_ = 0;
     double decodeFps_ = 0.0;
     double displayFps_ = 0.0;
 };

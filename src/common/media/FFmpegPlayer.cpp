@@ -1,7 +1,9 @@
 #include "media/FFmpegPlayer.h"
+#include "FfmpegVideoFrameAdapter.h"
 
 #include <QByteArray>
 #include <QDateTime>
+#include <QDebug>
 #include <QMetaObject>
 #include <QThread>
 #include <QUrl>
@@ -10,7 +12,6 @@
 #include <array>
 #include <chrono>
 #include <cerrno>
-#include <cmath>
 #include <deque>
 #include <optional>
 #include <utility>
@@ -28,7 +29,6 @@ namespace {
 constexpr int kNetworkTimeoutMicroseconds = 3'000'000;
 constexpr int kDecodeBatchPackets = 4;
 constexpr qint64 kDecodeBatchMilliseconds = 5;
-constexpr std::size_t kMaximumLatencySamples = 20'000;
 
 qint64 monotonicMilliseconds()
 {
@@ -139,11 +139,14 @@ struct DecoderRuntime
 {
     AVCodecContext *codecContext = nullptr;
     AVFrame *frame = nullptr;
-    SwsContext *swsContext = nullptr;
-    int outputWidth = 0;
-    int outputHeight = 0;
-    qint64 lastConvertedMs = 0;
+    AVFrame *normalizationFrame = nullptr;
+    SwsContext *normalizationContext = nullptr;
     std::uint64_t sessionId = 0;
+    int diagnosticWidth = 0;
+    int diagnosticHeight = 0;
+    int diagnosticFormat = -1;
+    bool metadataFallbackReported = false;
+    bool unsupportedTransferReported = false;
 
     ~DecoderRuntime()
     {
@@ -152,9 +155,12 @@ struct DecoderRuntime
 
     void reset()
     {
-        if (swsContext != nullptr) {
-            sws_freeContext(swsContext);
-            swsContext = nullptr;
+        if (normalizationContext != nullptr) {
+            sws_freeContext(normalizationContext);
+            normalizationContext = nullptr;
+        }
+        if (normalizationFrame != nullptr) {
+            av_frame_free(&normalizationFrame);
         }
         if (frame != nullptr) {
             av_frame_free(&frame);
@@ -162,12 +168,76 @@ struct DecoderRuntime
         if (codecContext != nullptr) {
             avcodec_free_context(&codecContext);
         }
-        outputWidth = 0;
-        outputHeight = 0;
-        lastConvertedMs = 0;
         sessionId = 0;
+        diagnosticWidth = 0;
+        diagnosticHeight = 0;
+        diagnosticFormat = -1;
+        metadataFallbackReported = false;
+        unsupportedTransferReported = false;
     }
 };
+
+AVFrame *normalizeForRendering(DecoderRuntime &decoder, AVFrame *source)
+{
+    if (source == nullptr) {
+        return nullptr;
+    }
+    const auto sourceFormat = static_cast<AVPixelFormat>(source->format);
+    if (sourceFormat == AV_PIX_FMT_YUV420P ||
+        sourceFormat == AV_PIX_FMT_YUVJ420P ||
+        sourceFormat == AV_PIX_FMT_NV12) {
+        return source;
+    }
+
+    if (decoder.normalizationFrame == nullptr) {
+        decoder.normalizationFrame = av_frame_alloc();
+    }
+    AVFrame *destination = decoder.normalizationFrame;
+    if (destination == nullptr) {
+        return nullptr;
+    }
+    av_frame_unref(destination);
+    destination->format = AV_PIX_FMT_YUV420P;
+    destination->width = source->width;
+    destination->height = source->height;
+    if (av_frame_get_buffer(destination, 32) < 0 ||
+        av_frame_make_writable(destination) < 0) {
+        av_frame_unref(destination);
+        return nullptr;
+    }
+
+    decoder.normalizationContext = sws_getCachedContext(
+        decoder.normalizationContext,
+        source->width,
+        source->height,
+        sourceFormat,
+        source->width,
+        source->height,
+        AV_PIX_FMT_YUV420P,
+        SWS_BILINEAR,
+        nullptr,
+        nullptr,
+        nullptr
+    );
+    if (decoder.normalizationContext == nullptr ||
+        sws_scale(
+            decoder.normalizationContext,
+            source->data,
+            source->linesize,
+            0,
+            source->height,
+            destination->data,
+            destination->linesize
+        ) <= 0) {
+        av_frame_unref(destination);
+        return nullptr;
+    }
+    if (av_frame_copy_props(destination, source) < 0) {
+        av_frame_unref(destination);
+        return nullptr;
+    }
+    return destination;
+}
 
 std::uint8_t markerCrc(std::uint32_t value)
 {
@@ -183,47 +253,47 @@ std::uint8_t markerCrc(std::uint32_t value)
     return crc;
 }
 
-std::optional<qint64> decodeLatencyMarker(const QImage &image)
+std::optional<qint64> decodeLatencyMarker(const AVFrame *frame)
 {
-    if (image.isNull() || image.width() < 240 || image.height() < 120) {
+    if (frame == nullptr || frame->data[0] == nullptr ||
+        frame->width < 240 || frame->height < 120) {
         return std::nullopt;
     }
-
     constexpr double referenceWidth = 1280.0;
     constexpr double referenceHeight = 720.0;
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
-
-    auto decodeGeometry =
-        [&image, now](double startX, double cellPitch, double centerOffset)
-        -> std::optional<qint64> {
-        constexpr double sampleY = 30.0;
+    auto decodeGeometry = [frame, now](
+                              double startX,
+                              double cellPitch,
+                              double centerOffset
+                          ) -> std::optional<qint64> {
         const int y = std::clamp(
-            qRound((sampleY / referenceHeight) * image.height()),
+            qRound((30.0 / referenceHeight) * frame->height),
             0,
-            image.height() - 1
+            frame->height - 1
         );
-        auto sampleBit = [&image, y, startX, cellPitch, centerOffset](
+        const std::uint8_t *row = frame->data[0] +
+                                  static_cast<std::ptrdiff_t>(y) *
+                                      frame->linesize[0];
+        auto sampleBit = [frame, row, startX, cellPitch, centerOffset](
                              int bitIndex
                          ) {
             const int x = std::clamp(
                 qRound(
                     ((startX + bitIndex * cellPitch + centerOffset) /
-                     referenceWidth) *
-                    image.width()
+                     referenceWidth) * frame->width
                 ),
                 0,
-                image.width() - 1
+                frame->width - 1
             );
-            return qGray(image.pixelColor(x, y).rgb()) >= 160;
+            return row[x] >= 160;
         };
-
         std::uint32_t timestamp = 0;
         for (int bit = 0; bit < 32; ++bit) {
             timestamp = static_cast<std::uint32_t>(
                 (timestamp << 1U) | (sampleBit(bit) ? 1U : 0U)
             );
         }
-
         std::uint8_t expectedCrc = 0;
         for (int bit = 32; bit < 40; ++bit) {
             expectedCrc = static_cast<std::uint8_t>(
@@ -233,54 +303,30 @@ std::optional<qint64> decodeLatencyMarker(const QImage &image)
         if (markerCrc(timestamp) != expectedCrc) {
             return std::nullopt;
         }
-
-        const std::uint32_t nowLow = static_cast<std::uint32_t>(now);
-        const std::uint32_t elapsed = nowLow - timestamp;
-        if (elapsed > 10'000U) {
-            return std::nullopt;
-        }
-        return now - static_cast<qint64>(elapsed);
+        const std::uint32_t elapsed = static_cast<std::uint32_t>(now) - timestamp;
+        return elapsed <= 10'000U
+                   ? std::optional<qint64>(now - static_cast<qint64>(elapsed))
+                   : std::nullopt;
     };
-
-    // Mixed-DPI WPF layout can round the 28 px design pitch to a 29 px pitch
-    // in the 1280x720 captured frame. Prefer the two expected layouts, then
-    // perform a small bounded search. CRC plus the ten-second timestamp window
-    // prevents accepting an unrelated bright/dark pattern.
     for (const auto &geometry :
          {std::array<double, 3> {20.0, 29.0, 13.0},
           std::array<double, 3> {20.0, 28.0, 13.0}}) {
-        if (const auto decoded =
-                decodeGeometry(geometry[0], geometry[1], geometry[2]);
-            decoded.has_value()) {
+        if (const auto decoded = decodeGeometry(
+                geometry[0], geometry[1], geometry[2]
+            ); decoded.has_value()) {
             return decoded;
         }
     }
     for (int pitch = 20; pitch <= 32; ++pitch) {
         for (int start = 12; start <= 24; ++start) {
-            if (const auto decoded =
-                    decodeGeometry(start, pitch, pitch / 2.0);
-                decoded.has_value()) {
+            if (const auto decoded = decodeGeometry(
+                    start, pitch, pitch / 2.0
+                ); decoded.has_value()) {
                 return decoded;
             }
         }
     }
     return std::nullopt;
-}
-
-qint64 percentile(std::vector<qint64> values, double fraction)
-{
-    if (values.empty()) {
-        return -1;
-    }
-    std::sort(values.begin(), values.end());
-    const std::size_t index = static_cast<std::size_t>(
-        std::clamp(
-            std::ceil(fraction * static_cast<double>(values.size())) - 1.0,
-            0.0,
-            static_cast<double>(values.size() - 1)
-        )
-    );
-    return values.at(index);
 }
 
 QString stateName(DeviceStatus state)
@@ -314,6 +360,7 @@ struct FFmpegPlayer::SharedState
     DecodeWorkerPool *pool = nullptr;
     int workerIndex = 0;
     PlaybackPerformanceOptions options;
+    StreamId streamId = kInvalidStreamId;
 
     std::mutex queueMutex;
     std::condition_variable idleCondition;
@@ -327,28 +374,20 @@ struct FFmpegPlayer::SharedState
     bool stopping = false;
     DecoderRuntime decoder;
 
-    std::mutex frameMutex;
-    PresentableVideoFrame latestFrame;
+    std::shared_ptr<LatestFrameMailbox> frameMailbox =
+        std::make_shared<LatestFrameMailbox>();
     std::atomic_uint64_t frameSequence {0};
-    std::atomic_bool automaticFrameSignals {true};
-    std::atomic_bool automaticDeliveryScheduled {false};
-
-    std::mutex presentationMutex;
-    PresentationTarget presentationTarget;
 
     std::atomic_uint64_t packetsReceived {0};
     std::atomic_uint64_t packetBytesReceived {0};
     std::atomic_uint64_t packetsDropped {0};
     std::atomic_uint64_t decodedFrames {0};
     std::atomic_uint64_t convertedFrames {0};
-    std::atomic_uint64_t presentedFrames {0};
+    std::atomic_uint64_t unsupportedFrames {0};
     std::atomic_uint64_t reconnectCount {0};
     std::atomic_uint64_t playingSessionId {0};
     std::atomic<qint64> lastFrameMonotonicMs {-1};
 
-    std::mutex latencyMutex;
-    std::vector<qint64> internalLatencySamples;
-    std::vector<qint64> sourceLatencySamples;
 };
 
 FFmpegPlayer::FFmpegPlayer(QObject *parent)
@@ -359,8 +398,8 @@ FFmpegPlayer::FFmpegPlayer(QObject *parent)
     sharedState_->owner = this;
     sharedState_->workerIndex = 0;
     sharedState_->options = options_;
+    sharedState_->streamId = streamId_;
     qRegisterMetaType<DeviceStatus>();
-    qRegisterMetaType<PresentableVideoFrame>();
     qRegisterMetaType<PlaybackError>();
     (void)ffmpegNetworkRuntime();
 }
@@ -392,8 +431,8 @@ FFmpegPlayer::FFmpegPlayer(
     sharedState_->pool = decodeWorkerPool_;
     sharedState_->workerIndex = decodeWorkerPool_->workerIndexFor(streamId_);
     sharedState_->options = options_;
+    sharedState_->streamId = streamId_;
     qRegisterMetaType<DeviceStatus>();
-    qRegisterMetaType<PresentableVideoFrame>();
     qRegisterMetaType<PlaybackError>();
     (void)ffmpegNetworkRuntime();
 }
@@ -463,11 +502,7 @@ bool FFmpegPlayer::start(const QString &rtmpUrl)
         sharedState_->dropUntilKeyframe = false;
         sharedState_->stopping = false;
     }
-    {
-        const std::lock_guard<std::mutex> lock(sharedState_->frameMutex);
-        sharedState_->latestFrame = {};
-    }
-    sharedState_->automaticDeliveryScheduled.store(false, std::memory_order_release);
+    sharedState_->frameMailbox->clear();
 
     networkThread_.reset(QThread::create(
         [this, rtmpUrl, newSessionId] {
@@ -525,10 +560,7 @@ void FFmpegPlayer::stop()
     }
 
     sessionId_.fetch_add(1, std::memory_order_acq_rel);
-    {
-        const std::lock_guard<std::mutex> lock(sharedState_->frameMutex);
-        sharedState_->latestFrame = {};
-    }
+    sharedState_->frameMailbox->clear();
     setStateOnOwnerThread(DeviceStatus::Disconnected);
 }
 
@@ -538,49 +570,9 @@ bool FFmpegPlayer::isRunning() const noexcept
     return networkThread_ != nullptr && networkThread_->isRunning();
 }
 
-void FFmpegPlayer::setAutomaticFrameSignalsEnabled(bool enabled) noexcept
+std::shared_ptr<LatestFrameMailbox> FFmpegPlayer::frameMailbox() const
 {
-    sharedState_->automaticFrameSignals.store(enabled, std::memory_order_release);
-}
-
-void FFmpegPlayer::setPresentationTarget(const PresentationTarget &target)
-{
-    const std::lock_guard<std::mutex> lock(sharedState_->presentationMutex);
-    sharedState_->presentationTarget = target;
-}
-
-PresentableVideoFrame FFmpegPlayer::latestFrame() const
-{
-    const std::lock_guard<std::mutex> lock(sharedState_->frameMutex);
-    return sharedState_->latestFrame;
-}
-
-void FFmpegPlayer::markFramePresented(const PresentableVideoFrame &frame)
-{
-    if (frame.image.isNull()) {
-        return;
-    }
-
-    sharedState_->presentedFrames.fetch_add(1, std::memory_order_relaxed);
-    const qint64 nowMonotonic = monotonicMilliseconds();
-    const qint64 internalLatency =
-        std::max<qint64>(0, nowMonotonic - frame.receivedMonotonicMs);
-
-    const std::lock_guard<std::mutex> lock(sharedState_->latencyMutex);
-    auto appendSample = [](std::vector<qint64> &samples, qint64 value) {
-        if (samples.size() >= kMaximumLatencySamples) {
-            samples.erase(samples.begin(), samples.begin() + samples.size() / 4);
-        }
-        samples.push_back(value);
-    };
-    appendSample(sharedState_->internalLatencySamples, internalLatency);
-    if (frame.sourceTimestampMs >= 0) {
-        const qint64 sourceLatency =
-            QDateTime::currentMSecsSinceEpoch() - frame.sourceTimestampMs;
-        if (sourceLatency >= 0 && sourceLatency <= 10'000) {
-            appendSample(sharedState_->sourceLatencySamples, sourceLatency);
-        }
-    }
+    return sharedState_->frameMailbox;
 }
 
 StreamMetrics FFmpegPlayer::metricsSnapshot()
@@ -590,16 +582,17 @@ StreamMetrics FFmpegPlayer::metricsSnapshot()
     const qint64 now = monotonicMilliseconds();
     const std::uint64_t decoded =
         sharedState_->decodedFrames.load(std::memory_order_relaxed);
-    const std::uint64_t presented =
-        sharedState_->presentedFrames.load(std::memory_order_relaxed);
+    const LatestFrameMailboxStats mailboxStats = sharedState_->frameMailbox->stats();
     if (lastMetricsSampleMs_ > 0 && now > lastMetricsSampleMs_) {
         const double seconds = static_cast<double>(now - lastMetricsSampleMs_) / 1000.0;
         decodeFps_ = static_cast<double>(decoded - lastDecodedSample_) / seconds;
-        displayFps_ = static_cast<double>(presented - lastPresentedSample_) / seconds;
+        displayFps_ = static_cast<double>(
+            mailboxStats.rendered - lastRenderedSample_
+        ) / seconds;
     }
     lastMetricsSampleMs_ = now;
     lastDecodedSample_ = decoded;
-    lastPresentedSample_ = presented;
+    lastRenderedSample_ = mailboxStats.rendered;
 
     StreamMetrics metrics;
     metrics.streamId = streamId_;
@@ -614,7 +607,18 @@ StreamMetrics FFmpegPlayer::metricsSnapshot()
     metrics.decodedFrames = decoded;
     metrics.convertedFrames =
         sharedState_->convertedFrames.load(std::memory_order_relaxed);
-    metrics.presentedFrames = presented;
+    metrics.submittedFrames = mailboxStats.submitted;
+    metrics.mailboxOverwrittenFrames = mailboxStats.overwritten;
+    metrics.unsupportedFrames =
+        sharedState_->unsupportedFrames.load(std::memory_order_relaxed);
+    metrics.uploadedFrames = mailboxStats.uploaded;
+    metrics.renderedFrames = mailboxStats.rendered;
+    metrics.presentedFrames = mailboxStats.rendered;
+    metrics.uploadCpuUs = mailboxStats.uploadCpuUs;
+    metrics.paintCpuUs = mailboxStats.paintCpuUs;
+    metrics.dirtyMerges = mailboxStats.dirtyMerges;
+    metrics.scheduleChecks = mailboxStats.scheduleChecks;
+    metrics.textureBytes = mailboxStats.textureBytes;
     metrics.reconnectCount =
         sharedState_->reconnectCount.load(std::memory_order_relaxed);
     metrics.decodeFps = decodeFps_;
@@ -629,23 +633,11 @@ StreamMetrics FFmpegPlayer::metricsSnapshot()
         sharedState_->lastFrameMonotonicMs.load(std::memory_order_relaxed);
     metrics.lastFrameAgeMs = lastFrame >= 0 ? std::max<qint64>(0, now - lastFrame) : -1;
 
-    {
-        const std::lock_guard<std::mutex> lock(sharedState_->latencyMutex);
-        metrics.internalLatencyP95Ms =
-            percentile(sharedState_->internalLatencySamples, 0.95);
-        metrics.sourceLatencyP50Ms =
-            percentile(sharedState_->sourceLatencySamples, 0.50);
-        metrics.sourceLatencyP95Ms =
-            percentile(sharedState_->sourceLatencySamples, 0.95);
-        metrics.sourceLatencyMaxMs =
-            sharedState_->sourceLatencySamples.empty()
-                ? -1
-                : *std::max_element(
-                      sharedState_->sourceLatencySamples.begin(),
-                      sharedState_->sourceLatencySamples.end()
-                  );
-        metrics.sourceLatencySamples = sharedState_->sourceLatencySamples.size();
-    }
+    metrics.internalLatencyP95Ms = mailboxStats.internalLatencyP95Ms;
+    metrics.sourceLatencyP50Ms = mailboxStats.sourceLatencyP50Ms;
+    metrics.sourceLatencyP95Ms = mailboxStats.sourceLatencyP95Ms;
+    metrics.sourceLatencyMaxMs = mailboxStats.sourceLatencyMaxMs;
+    metrics.sourceLatencySamples = mailboxStats.sourceLatencySamples;
     return metrics;
 }
 
@@ -1030,7 +1022,7 @@ void FFmpegPlayer::drainDecodeState(
         }
 
         auto receiveFrames =
-            [&state, &decodeError](qint64 receivedMonotonicMs) {
+            [&state, &decodeError, &configuration](qint64 receivedMonotonicMs) {
                 while (decodeError.isEmpty()) {
                     const int receiveStatus = avcodec_receive_frame(
                         state->decoder.codecContext, state->decoder.frame
@@ -1049,118 +1041,82 @@ void FFmpegPlayer::drainDecodeState(
                     AVFrame *frame = state->decoder.frame;
                     state->decodedFrames.fetch_add(1, std::memory_order_relaxed);
                     const qint64 now = monotonicMilliseconds();
-
-                    PresentationTarget target;
-                    {
-                        const std::lock_guard<std::mutex> lock(
-                            state->presentationMutex
+                    if (state->decoder.diagnosticWidth != frame->width ||
+                        state->decoder.diagnosticHeight != frame->height ||
+                        state->decoder.diagnosticFormat != frame->format) {
+                        state->decoder.diagnosticWidth = frame->width;
+                        state->decoder.diagnosticHeight = frame->height;
+                        state->decoder.diagnosticFormat = frame->format;
+                        state->decoder.metadataFallbackReported = false;
+                        state->decoder.unsupportedTransferReported = false;
+                    }
+                    const bool missingColorMetadata =
+                        frame->color_primaries == AVCOL_PRI_UNSPECIFIED ||
+                        frame->color_trc == AVCOL_TRC_UNSPECIFIED ||
+                        frame->colorspace == AVCOL_SPC_UNSPECIFIED ||
+                        frame->color_range == AVCOL_RANGE_UNSPECIFIED;
+                    if (missingColorMetadata &&
+                        !state->decoder.metadataFallbackReported) {
+                        qWarning().noquote()
+                            << "Stream" << state->streamId
+                            << "has incomplete color metadata; applying the"
+                               " documented SD/HD limited-range fallback.";
+                        state->decoder.metadataFallbackReported = true;
+                    }
+                    AVFrame *renderFrame = normalizeForRendering(
+                        state->decoder, frame
+                    );
+                    if (renderFrame != frame) {
+                        state->convertedFrames.fetch_add(
+                            1, std::memory_order_relaxed
                         );
-                        target = state->presentationTarget;
                     }
-                    const int maximumFps = std::max(
-                        1,
-                        target.fullscreen
-                            ? state->options.fullscreenFps
-                            : state->options.gridFps
-                    );
-                    const qint64 intervalMs = std::max<qint64>(
-                        1, 1000 / maximumFps
-                    );
-                    if (now - state->decoder.lastConvertedMs < intervalMs) {
-                        av_frame_unref(frame);
-                        continue;
-                    }
-                    state->decoder.lastConvertedMs = now;
-
-                    QSize maximumSize = target.fullscreen
-                                            ? state->options.fullscreenMaximumSize
-                                            : state->options.gridMaximumSize;
-                    QSize viewport = target.viewportSize.isValid()
-                                         ? target.viewportSize
-                                         : maximumSize;
-                    viewport = viewport.boundedTo(maximumSize);
-                    QSize outputSize(frame->width, frame->height);
-                    outputSize.scale(viewport, Qt::KeepAspectRatio);
-                    outputSize.setWidth(std::min(outputSize.width(), frame->width));
-                    outputSize.setHeight(
-                        std::min(outputSize.height(), frame->height)
-                    );
-                    if (!outputSize.isValid()) {
-                        av_frame_unref(frame);
-                        continue;
-                    }
-
-                    state->decoder.swsContext = sws_getCachedContext(
-                        state->decoder.swsContext,
-                        frame->width,
-                        frame->height,
-                        static_cast<AVPixelFormat>(frame->format),
-                        outputSize.width(),
-                        outputSize.height(),
-                        AV_PIX_FMT_RGB24,
-                        SWS_BILINEAR,
-                        nullptr,
-                        nullptr,
-                        nullptr
-                    );
-                    if (state->decoder.swsContext == nullptr) {
-                        av_frame_unref(frame);
-                        decodeError =
-                            QObject::tr("创建 RGB24 转换上下文失败。");
-                        return;
-                    }
-
-                    QImage image(
-                        outputSize.width(),
-                        outputSize.height(),
-                        QImage::Format_RGB888
-                    );
-                    std::array<std::uint8_t *, 4> destinationData {
-                        image.bits(), nullptr, nullptr, nullptr
-                    };
-                    std::array<int, 4> destinationLinesize {
-                        static_cast<int>(image.bytesPerLine()), 0, 0, 0
-                    };
-                    const int convertedRows = sws_scale(
-                        state->decoder.swsContext,
-                        frame->data,
-                        frame->linesize,
-                        0,
-                        frame->height,
-                        destinationData.data(),
-                        destinationLinesize.data()
-                    );
-                    av_frame_unref(frame);
-                    if (convertedRows <= 0) {
-                        decodeError = QObject::tr("YUV 到 RGB888 转换失败。");
-                        return;
-                    }
-
-                    PresentableVideoFrame presentable;
-                    presentable.image = std::move(image);
-                    presentable.sequence =
+                    const std::uint64_t sequence =
                         state->frameSequence.fetch_add(
                             1, std::memory_order_relaxed
                         ) +
                         1;
-                    presentable.receivedMonotonicMs = receivedMonotonicMs;
+                    const VideoRational timeBase {
+                        configuration != nullptr
+                            ? configuration->timeBase.num
+                            : 0,
+                        configuration != nullptr
+                            ? configuration->timeBase.den
+                            : 1
+                    };
+                    qint64 sourceTimestampMs = -1;
                     if (state->options.latencyMarkerEnabled) {
-                        const auto sourceTimestamp =
-                            decodeLatencyMarker(presentable.image);
-                        if (sourceTimestamp.has_value()) {
-                            presentable.sourceTimestampMs =
-                                sourceTimestamp.value();
+                        if (const auto markerTimestamp =
+                                decodeLatencyMarker(renderFrame);
+                            markerTimestamp.has_value()) {
+                            sourceTimestampMs = *markerTimestamp;
                         }
                     }
-                    {
-                        const std::lock_guard<std::mutex> lock(
-                            state->frameMutex
-                        );
-                        state->latestFrame = presentable;
-                    }
-                    state->convertedFrames.fetch_add(
-                        1, std::memory_order_relaxed
+                    const auto videoFrame = FfmpegVideoFrameAdapter::adapt(
+                        renderFrame,
+                        timeBase,
+                        sequence,
+                        state->decoder.sessionId,
+                        receivedMonotonicMs,
+                        sourceTimestampMs
                     );
+                    av_frame_unref(frame);
+                    if (!videoFrame.has_value() ||
+                        !isSupportedSdrTransfer(videoFrame->color().transfer)) {
+                        if (videoFrame.has_value() &&
+                            !state->decoder.unsupportedTransferReported) {
+                            qWarning().noquote()
+                                << "Stream" << state->streamId
+                                << "uses an unsupported HDR transfer; frame"
+                                   " rendering is disabled for this format.";
+                            state->decoder.unsupportedTransferReported = true;
+                        }
+                        state->unsupportedFrames.fetch_add(
+                            1, std::memory_order_relaxed
+                        );
+                        continue;
+                    }
+                    (void)state->frameMailbox->submit(*videoFrame);
                     state->lastFrameMonotonicMs.store(
                         now, std::memory_order_relaxed
                     );
@@ -1173,24 +1129,6 @@ void FFmpegPlayer::drainDecodeState(
                         state->owner->postState(
                             DeviceStatus::Playing,
                             state->decoder.sessionId
-                        );
-                    }
-                    if (state->automaticFrameSignals.load(
-                            std::memory_order_acquire
-                        ) &&
-                        !state->automaticDeliveryScheduled.exchange(
-                            true, std::memory_order_acq_rel
-                        ) &&
-                        state->owner != nullptr) {
-                        FFmpegPlayer *owner = state->owner;
-                        const std::uint64_t session =
-                            state->decoder.sessionId;
-                        QMetaObject::invokeMethod(
-                            owner,
-                            [owner, session] {
-                                owner->deliverLatestFrame(session);
-                            },
-                            Qt::QueuedConnection
                         );
                     }
                 }
@@ -1285,25 +1223,6 @@ void FFmpegPlayer::drainDecodeState(
             state->idleCondition.notify_all();
         }
     }
-}
-
-void FFmpegPlayer::deliverLatestFrame(std::uint64_t sessionId)
-{
-    Q_ASSERT(QThread::currentThread() == thread());
-    sharedState_->automaticDeliveryScheduled.store(
-        false, std::memory_order_release
-    );
-    if (sessionId != sessionId_.load(std::memory_order_acquire)) {
-        return;
-    }
-
-    const PresentableVideoFrame frame = latestFrame();
-    if (frame.image.isNull() || frame.sequence == lastAutomaticSequence_) {
-        return;
-    }
-    lastAutomaticSequence_ = frame.sequence;
-    emit frameReady(frame.image);
-    markFramePresented(frame);
 }
 
 void FFmpegPlayer::postState(

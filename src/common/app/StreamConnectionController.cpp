@@ -47,16 +47,6 @@ StreamConnectionController::StreamConnectionController(
         this, &StreamConnectionController::showConnectionDialog
     );
     connect(
-        playbackManager_, &MultiStreamPlaybackManager::frameReady,
-        this,
-        [this](StreamId streamId, const PresentableVideoFrame &frame) {
-            Binding *binding = bindingFor(streamId);
-            if (binding != nullptr && binding->videoWidget != nullptr) {
-                binding->videoWidget->displayFrame(frame.image);
-            }
-        }
-    );
-    connect(
         playbackManager_, &MultiStreamPlaybackManager::stateChanged,
         this,
         [this](StreamId streamId, DeviceStatus state) {
@@ -278,6 +268,11 @@ StreamId StreamConnectionController::addConnection(
         UserFailureReason::None,
         false
     });
+    mainWindow_->bindVideoStream(
+        videoWidget,
+        streamId,
+        playbackManager_->frameMailbox(streamId)
+    );
     connectVideoWidget(bindings_.back());
     if (logManager_ != nullptr) {
         logManager_->logSystem(
@@ -537,22 +532,6 @@ void StreamConnectionController::connectVideoWidget(Binding &binding)
         [this, streamId](VideoWidget *) {
             removeConnection(streamId, true);
         }
-    );
-    connect(
-        videoWidget, &VideoWidget::presentationTargetChanged,
-        this,
-        [this, streamId](
-            VideoWidget *,
-            const QSize &viewportSize,
-            bool fullscreen
-        ) {
-            playbackManager_->setPresentationTarget(
-                streamId, {viewportSize, fullscreen}
-            );
-        }
-    );
-    playbackManager_->setPresentationTarget(
-        streamId, {QSize(640, 360), false}
     );
 }
 

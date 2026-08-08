@@ -1,15 +1,22 @@
 #pragma once
 
 #include <QPointer>
+#include <QMargins>
 #include <QRect>
+#include <QSize>
 #include <QString>
 #include <QVector>
 #include <QWidget>
 
+#include "ui/VideoCanvasHost.h"
+
 class QLabel;
+class QEvent;
 class QGridLayout;
 class QParallelAnimationGroup;
 class QPixmap;
+class QResizeEvent;
+class QShowEvent;
 class VideoWidget;
 
 /**
@@ -19,6 +26,21 @@ struct GridDimensions
 {
     int rows {};
     int columns {};
+};
+
+/** @brief 16:9 监控网格在当前可用区域中的纯几何计算结果。 */
+struct MonitoringGridGeometry
+{
+    QRect gridRect;
+    QSize cellSize;
+    QSize videoViewportSize;
+    QMargins layoutMargins;
+
+    [[nodiscard]] bool isValid() const noexcept
+    {
+        return !gridRect.isEmpty() && cellSize.isValid() &&
+               videoViewportSize.isValid();
+    }
 };
 
 /**
@@ -56,7 +78,10 @@ public:
      * @param parent Qt 父对象；创建的视频格由该网格及其布局管理。
      * @thread 必须在 Qt UI 线程中调用。
      */
-    explicit VideoGridWidget(QWidget *parent = nullptr);
+    explicit VideoGridWidget(
+        RendererPreference rendererPreference = RendererPreference::Cpu,
+        QWidget *parent = nullptr
+    );
 
     /**
      * @brief 计算指定视频数量对应的行列。
@@ -68,6 +93,18 @@ public:
      * @return 对应的网格行列。
      */
     [[nodiscard]] static GridDimensions calculateGridDimensions(int widgetCount) noexcept;
+
+    /**
+     * @brief 计算保持统一视频比例、整体居中的最大监控网格。
+     */
+    [[nodiscard]] static MonitoringGridGeometry calculateMonitoringGridGeometry(
+        QSize availableSize,
+        GridDimensions dimensions,
+        QSize videoChromeSize,
+        QMargins baseMargins = QMargins(4, 4, 4, 4),
+        int spacing = 4,
+        QSize videoAspect = QSize(16, 9)
+    ) noexcept;
 
     /**
      * @brief 获取当前网格实际使用的行列。
@@ -112,6 +149,9 @@ public:
      * @thread 必须在 Qt UI 线程中调用。
      */
     [[nodiscard]] GridInteractionState interactionState() const noexcept;
+    [[nodiscard]] MonitoringGridGeometry monitoringGridGeometry() const noexcept;
+    [[nodiscard]] bool isMonitoringWallMode() const noexcept;
+    void setMonitoringWallMode(bool enabled);
 
     /**
      * @brief 创建并添加一个新的视频格。
@@ -175,6 +215,22 @@ public:
      * @thread 必须在 Qt UI 线程中调用。
      */
     void notifyFullscreenExited(VideoWidget *videoWidget);
+    void bindVideoStream(
+        VideoWidget *videoWidget,
+        StreamId streamId,
+        std::shared_ptr<LatestFrameMailbox> mailbox
+    );
+    void unbindVideoStream(VideoWidget *videoWidget);
+    void refreshRenderSnapshot();
+    [[nodiscard]] QString activeRendererBackend() const;
+    [[nodiscard]] RenderStatistics renderStatistics() const noexcept;
+    [[nodiscard]] RenderRuntimeMetrics rendererRuntimeMetrics() const;
+
+protected:
+    void changeEvent(QEvent *event) override;
+    QSize minimumSizeHint() const override;
+    void resizeEvent(QResizeEvent *event) override;
+    void showEvent(QShowEvent *event) override;
 
 signals:
     /** @brief 视频格逻辑数量发生变化。 */
@@ -215,19 +271,26 @@ private:
 
     VideoWidget *createVideoWidget(const QString &deviceName);
     void connectVideoWidgetSignals(VideoWidget *videoWidget);
+    void handleRenderStateChanged(VideoWidget *videoWidget);
     void handleSwapRequested(VideoWidget *source, VideoWidget *target);
     void handleFullscreenRequested(VideoWidget *videoWidget);
     [[nodiscard]] int indexOf(const VideoWidget *videoWidget) const noexcept;
     void relayoutVideoWidgets();
+    void updateMonitoringGridGeometry();
+    [[nodiscard]] QSize maximumVideoChromeSizeHint() const;
     void setInteractionState(GridInteractionState state);
     void setDragEnabledForAll(bool enabled);
     [[nodiscard]] QLabel *createSnapshotOverlay(const QPixmap &pixmap,
                                                 const QRect &geometry);
+    [[nodiscard]] QPixmap captureWidgetSnapshot(VideoWidget *videoWidget);
 
     QVector<VideoWidget *> videoWidgets_;
+    VideoCanvasHost *canvasHost_ = nullptr;
     QGridLayout *gridLayout_ = nullptr;
     QPointer<QParallelAnimationGroup> interactionAnimation_;
     QPointer<VideoWidget> fullscreenVideoWidget_;
     GridInteractionState interactionState_ = GridInteractionState::Idle;
+    MonitoringGridGeometry monitoringGridGeometry_;
+    bool monitoringWallMode_ = false;
     int nextCameraNumber_ = 1;
 };

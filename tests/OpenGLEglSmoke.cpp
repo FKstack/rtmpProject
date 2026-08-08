@@ -2,7 +2,7 @@
 #include <iostream>
 
 #include <EGL/egl.h>
-#include <GLES2/gl2.h>
+#include <GLES3/gl3.h>
 
 namespace {
 
@@ -26,7 +26,7 @@ int main()
         EGL_SURFACE_TYPE,
         EGL_PBUFFER_BIT,
         EGL_RENDERABLE_TYPE,
-        EGL_OPENGL_ES2_BIT,
+        0x0040, // EGL_OPENGL_ES3_BIT_KHR
         EGL_RED_SIZE,
         8,
         EGL_GREEN_SIZE,
@@ -45,7 +45,7 @@ int main()
             &configurationCount
         ) != EGL_TRUE ||
         configurationCount < 1) {
-        std::cerr << "No EGL OpenGL ES 2 configuration is available.\n";
+        std::cerr << "No EGL OpenGL ES 3 configuration is available.\n";
         eglTerminate(display);
         return EXIT_FAILURE;
     }
@@ -61,7 +61,7 @@ int main()
         eglCreatePbufferSurface(display, configuration, surfaceAttributes);
     const EGLint contextAttributes[] = {
         EGL_CONTEXT_CLIENT_VERSION,
-        2,
+        3,
         EGL_NONE
     };
     EGLContext context =

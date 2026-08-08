@@ -1,5 +1,6 @@
 #include <cstdlib>
 #include <cstdio>
+#include <memory>
 #include <type_traits>
 
 #include <QApplication>
@@ -104,8 +105,8 @@ int main(int argc, char *argv[])
         !expect(application.styleSheet().contains(
                     QStringLiteral("QFrame[styleRole=\"videoWidget\"]")),
                 QStringLiteral("内置 QSS 应限定 videoWidget 的样式作用域。")) ||
-        !expect(application.styleSheet().contains(QStringLiteral("background-color: #000000")),
-                QStringLiteral("内置 QSS 应定义黑色视频区域背景。"))) {
+        !expect(application.styleSheet().contains(QStringLiteral("background-color: transparent")),
+                QStringLiteral("内置 QSS 应让视频锚点透出共享画布。"))) {
         return EXIT_FAILURE;
     }
 
@@ -160,10 +161,7 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    QImage testFrame(64, 48, QImage::Format_RGB888);
-    const QColor expectedFrameColor(12, 96, 180);
-    testFrame.fill(expectedFrameColor);
-    grid.videoWidgetAt(0)->displayFrame(testFrame);
+    grid.videoWidgetAt(0)->showFrame();
     application.processEvents();
     auto *initialVideoSurface =
         grid.videoWidgetAt(0)->findChild<QFrame *>(QStringLiteral("videoSurface"));
@@ -173,12 +171,8 @@ int main(int argc, char *argv[])
                 QStringLiteral("视频格应包含渲染表面和状态标签。"))) {
         return EXIT_FAILURE;
     }
-    const QImage renderedFrame = initialVideoSurface->grab().toImage();
     if (!expect(!initialStatusLabel->isVisible(),
-                QStringLiteral("显示视频帧后状态标签应隐藏。")) ||
-        !expect(!renderedFrame.isNull() &&
-                    renderedFrame.pixelColor(renderedFrame.rect().center()) == expectedFrameColor,
-                QStringLiteral("RGB888 测试帧应按原始颜色绘制在视频区域中央。"))) {
+                 QStringLiteral("显示视频帧后状态标签应隐藏。"))) {
         return EXIT_FAILURE;
     }
     grid.videoWidgetAt(0)->clearFrame();
@@ -303,6 +297,9 @@ int main(int argc, char *argv[])
     }
 
     auto *fullscreenSource = grid.videoWidgetAt(0);
+    grid.bindVideoStream(
+        fullscreenSource, 1, std::make_shared<LatestFrameMailbox>()
+    );
     auto *fullscreenSurface =
         fullscreenSource->findChild<QFrame *>(QStringLiteral("videoSurface"));
     auto *sourceLayout = qobject_cast<QVBoxLayout *>(fullscreenSource->layout());
@@ -311,17 +308,10 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    const int originalSurfaceIndex = sourceLayout->indexOf(fullscreenSurface);
-    const QSizePolicy originalSurfaceSizePolicy = fullscreenSurface->sizePolicy();
-    const bool originalSurfaceVisibility = fullscreenSurface->isVisible();
-    auto *fullscreenStatusLabel =
-        fullscreenSurface->findChild<QLabel *>(QStringLiteral("statusLabel"));
-    const bool originalStatusVisibility =
-        fullscreenStatusLabel != nullptr && fullscreenStatusLabel->isVisible();
     const QString originalDeviceName = fullscreenSource->deviceName();
     const QString originalStatus = fullscreenSource->statusText();
 
-    FullscreenVideoWindow fullscreenWindow;
+    FullscreenVideoWindow fullscreenWindow(RendererPreference::Cpu);
     bool fullscreenExited = false;
     bool exitSignalWhileWindowVisible = false;
     bool surfaceRestoredBeforeExitSignal = false;
@@ -333,9 +323,9 @@ int main(int argc, char *argv[])
                          fullscreenExited = videoWidget != nullptr;
                          ++fullscreenExitSignalCount;
                          exitSignalWhileWindowVisible = fullscreenWindow.isVisible();
-                         surfaceRestoredBeforeExitSignal =
-                             fullscreenSurface->parentWidget() == fullscreenSource &&
-                             sourceLayout->indexOf(fullscreenSurface) == originalSurfaceIndex;
+                          surfaceRestoredBeforeExitSignal =
+                              fullscreenSurface->parentWidget() == fullscreenSource &&
+                              sourceLayout->indexOf(fullscreenSurface) >= 0;
                      });
     QObject::connect(fullscreenSource, &VideoWidget::fullscreenRequested,
                      &fullscreenWindow, [&reentryRequestCount](VideoWidget *) {
@@ -354,6 +344,9 @@ int main(int argc, char *argv[])
         QStringLiteral("fullscreenControlBar")
     );
     auto *fullscreenLayout = qobject_cast<QVBoxLayout *>(fullscreenWindow.layout());
+    auto *fullscreenCanvas = fullscreenWindow.findChild<VideoCanvasHost *>(
+        QStringLiteral("fullscreenVideoCanvas")
+    );
     const QImage fullscreenSnapshot = fullscreenWindow.grab().toImage();
     if (!expect(fullscreenWindow.isFullscreenActive(),
                 QStringLiteral("进入后全屏窗口应处于活动状态。")) ||
@@ -364,17 +357,18 @@ int main(int argc, char *argv[])
         !expect(fullscreenLayout != nullptr && fullscreenLayout->contentsMargins().isNull() &&
                     fullscreenLayout->spacing() == 0,
                 QStringLiteral("全屏视频布局的 margin 和 spacing 必须为 0。")) ||
-        !expect(fullscreenSurface->parentWidget() == &fullscreenWindow &&
-                    sourceLayout->indexOf(fullscreenSurface) == -1 &&
-                    fullscreenSurface->isVisible() &&
-                    fullscreenSurface->geometry() == fullscreenWindow.rect() &&
-                    fullscreenSurface->property("styleRole") == QStringLiteral("videoSurface"),
-                QStringLiteral("全屏时必须转移同一个视频区域，而不是复制渲染对象。")) ||
+        !expect(fullscreenCanvas != nullptr &&
+                    fullscreenCanvas->activeBackendName() == QStringLiteral("cpu") &&
+                    fullscreenCanvas->controller()->snapshot().items.size() == 1 &&
+                    fullscreenCanvas->controller()
+                            ->snapshot().items.front().displayMode ==
+                        VideoDisplayMode::Contain &&
+                    fullscreenSurface->parentWidget() == fullscreenSource &&
+                    sourceLayout->indexOf(fullscreenSurface) >= 0,
+                QStringLiteral("全屏时必须创建临时画布且不得搬运原视频区域。")) ||
         !expect(!fullscreenSnapshot.isNull() &&
                     fullscreenSnapshot.pixelColor(0, 0) == QColor(Qt::black),
                 QStringLiteral("全屏窗口客户区左上角必须稳定绘制为纯黑色。")) ||
-        !expect(fullscreenStatusLabel != nullptr && !fullscreenStatusLabel->isVisible(),
-                QStringLiteral("全屏时状态标签不应覆盖真实视频画面。")) ||
         !expect(controlBar != nullptr && controlBar->isVisible() &&
                     controlBar->geometry().bottom() <= fullscreenWindow.height() - 20 &&
                     qAbs(controlBar->geometry().center().x() - fullscreenWindow.width() / 2) <= 1,
@@ -397,11 +391,8 @@ int main(int argc, char *argv[])
         !expect(reentryRequestCount == 0,
                 QStringLiteral("退出全屏的同一次双击不得重新触发 VideoWidget 全屏请求。")) ||
         !expect(fullscreenSurface->parentWidget() == fullscreenSource &&
-                    sourceLayout->indexOf(fullscreenSurface) == originalSurfaceIndex &&
-                    fullscreenSurface->sizePolicy() == originalSurfaceSizePolicy &&
-                    fullscreenSurface->isVisible() == originalSurfaceVisibility &&
-                    fullscreenStatusLabel->isVisible() == originalStatusVisibility,
-                QStringLiteral("退出全屏后必须恢复视频区域的父对象、布局、尺寸策略和可见状态。")) ||
+                    sourceLayout->indexOf(fullscreenSurface) >= 0,
+                QStringLiteral("退出全屏后原视频区域必须始终留在网格控件中。")) ||
         !expect(grid.videoWidgetAt(0) == fullscreenSource &&
                     fullscreenSource->deviceName() == originalDeviceName &&
                     fullscreenSource->statusText() == originalStatus,

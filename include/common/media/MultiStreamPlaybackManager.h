@@ -4,6 +4,7 @@
 #include <QStringList>
 
 #include <memory>
+#include <functional>
 #include <vector>
 
 #include "media/DecodeWorkerPool.h"
@@ -49,19 +50,20 @@ public:
     void stopAll();
     [[nodiscard]] bool isStreamRunning(StreamId streamId) const noexcept;
 
-    void setPresentationTarget(
-        StreamId streamId,
-        const PresentationTarget &target
-    );
+    [[nodiscard]] std::shared_ptr<LatestFrameMailbox> frameMailbox(
+        StreamId streamId
+    ) const;
     StreamMetrics streamMetrics(StreamId streamId);
     QList<StreamMetrics> metricsSnapshot();
 
     /** @brief 每秒原子写入无 URL 的 JSON 指标；空路径关闭输出。 */
     void setMetricsOutputPath(const QString &path);
     [[nodiscard]] QString metricsOutputPath() const;
+    void setRenderMetricsProvider(
+        std::function<RenderRuntimeMetrics()> provider
+    );
 
 signals:
-    void frameReady(StreamId streamId, const PresentableVideoFrame &frame);
     void stateChanged(StreamId streamId, DeviceStatus state);
     void errorOccurred(StreamId streamId, const PlaybackError &error);
     void reconnectScheduled(
@@ -76,17 +78,18 @@ private:
 
     [[nodiscard]] Entry *entryFor(StreamId streamId) noexcept;
     [[nodiscard]] const Entry *entryFor(StreamId streamId) const noexcept;
-    void presentLatestFrames();
     void publishMetrics();
+    void observeUiTimer();
     void writeMetricsFile(const QList<StreamMetrics> &metrics);
 
     PlaybackPerformanceOptions options_;
     std::unique_ptr<DecodeWorkerPool> decodeWorkerPool_;
     std::vector<std::unique_ptr<Entry>> entries_;
-    std::unique_ptr<QTimer> presentationTimer_;
     std::unique_ptr<QTimer> metricsTimer_;
+    std::unique_ptr<QTimer> uiWatchdogTimer_;
     StreamId nextStreamId_ = 1;
     QString metricsOutputPath_;
-    qint64 lastPresentationTickMs_ = 0;
+    std::function<RenderRuntimeMetrics()> renderMetricsProvider_;
+    qint64 lastUiWatchdogTickMs_ = 0;
     qint64 maximumUiTimerGapMs_ = 0;
 };
