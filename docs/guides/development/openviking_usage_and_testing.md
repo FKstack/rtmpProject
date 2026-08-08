@@ -307,15 +307,18 @@ Windows `ovcli.conf` 不再固定全局 `actor_peer_id`。Codex 插件根据工�
 
 本机当前记录：
 
-- Kimi Code 版本：0.29.1；
+- Kimi Code 版本：0.33.0；
 - 默认模型：`kimi-code/k3`；
-- 当前没有用户级或项目级 `mcp.json`；
-- Kimi 可执行文件：`$env:USERPROFILE\.kimi-code\bin\kimi.exe`。
+- 当前没有用户级 `mcp.json`；项目级 `.kimi-code/mcp.json` 已于 2026-08-08 创建（见下）；
+- Kimi 可执行文件：`$env:USERPROFILE\.kimi-code\bin\kimi.exe`；
+- 2026-08-08 起，`OPENVIKING_API_KEY` 已持久化为 Windows 用户级环境变量（HKCU，
+  值与本机 `ovcli.conf` 的 `api_key` 一致），任意方式启动的 Kimi 新会话均可连接；
+  此前仅在 §5.1.1 启动器进程内设 key，绕开启动器直接启动会 401 连接失败，该问题已根治。
 
-本次只提供配置方法，不创建真实配置。实际启用时，在项目级创建：
+项目级配置（2026-08-08 已创建，内容如下）：
 
 ```text
-<仓库根目录>\.kimi-code\mcp.json
+E:\rtmpProject\.kimi-code\mcp.json
 ```
 
 示例内容：
@@ -344,21 +347,35 @@ Windows `ovcli.conf` 不再固定全局 `actor_peer_id`。Codex 插件根据工�
 - 配置只作用于 `rtmpProject`，不要无意中提升为所有 Kimi 项目共享；
 - `.kimi-code/mcp.json` 必须保持被 Git 忽略。
 
-截至本文更新时，下面的检查尚未命中忽略规则：
+2026-08-08 已在仓库 `.gitignore` 增加精确规则 `/.kimi-code/mcp.json`，并通过以下
+检查确认命中（`.gitignore:174`）：
 
 ```powershell
 git check-ignore --no-index -v -- '.kimi-code/mcp.json'
 ```
 
-因此不要直接创建真实文件。实际启用前，应另行获准为仓库 `.gitignore` 增加精确规则
-`/.kimi-code/mcp.json`，或只在本机 `.git/info/exclude` 增加同一规则；随后再次运行
-上面的命令，只有它输出命中的规则后才创建配置。本指南不会修改真实客户端配置或
-Git 忽略规则。
+随后已按上面的示例创建真实项目级配置。该规则必须保留：若将来移除规则或改为其他
+路径，应先重新运行上面的命令确认新路径仍被忽略，再写配置。
 
-#### 5.1.1 从现有客户端配置安全启动 Kimi
+#### 5.1.1 环境变量注入方式（2026-08-08 起默认：用户级持久化）
 
-在 Windows PowerShell 中运行以下启动器逻辑。它只把 key 放进当前 PowerShell/Kimi
-进程环境，不回显、不复制到命令行参数，也不长期写入系统环境变量：
+`bearerTokenEnvVar` 读取的是 Kimi **进程**的环境变量。当前默认方案是把 key 一次性
+持久化为 Windows 用户级环境变量，之后以任意方式启动 Kimi 都自动携带：
+
+```powershell
+$ov = Get-Content -LiteralPath '<ovcli.conf 的本机绝对路径>' -Raw | ConvertFrom-Json
+[Environment]::SetEnvironmentVariable('OPENVIKING_API_KEY', $ov.api_key, 'User')
+Remove-Variable ov
+```
+
+key 存于 HKCU 注册表，仅当前 Windows 用户可读，与 `ovcli.conf` 落盘的安全级别相当；
+`mcp.json` 中仍只有环境变量名，不含密钥明文。已运行的进程不会看到该变量，需新开
+终端或重新启动 Kimi 生效。若将来轮换 key，必须同步更新该用户变量，否则会出现
+“配置未变但突然 401”的故障。
+
+**可选替代：仅当前进程生效的安全启动器。** 如果不希望在注册表持久保存 key，可改用
+以下启动器逻辑。它只把 key 放进当前 PowerShell/Kimi 进程环境，不回显、不复制到
+命令行参数，也不长期写入系统环境变量：
 
 ```powershell
 $ovConfigPath = '<ovcli.conf 的本机绝对路径>'
@@ -425,13 +442,15 @@ Kimi MCP 方案只有主动工具调用。当前没有 OpenViking 官方 Kimi �
 - 不能把 Kimi `/mcp` 显示 connected 当作记忆抽取完成；
 - 需要明确提示 Kimi 调用工具，并检查工具返回和后台任务终态。
 
-退出 Kimi 时使用 TUI 的正常退出方式或关闭该进程。由前述 PowerShell 启动器启动时，
+退出 Kimi 时使用 TUI 的正常退出方式或关闭该进程。由前述可选 PowerShell 启动器启动时，
 `finally` 会清除当前进程的 `OPENVIKING_API_KEY`。若要回滚 MCP 接入：
 
-1. 退出所有从该启动器打开的 Kimi 进程；
+1. 退出所有 Kimi 进程；
 2. 移除项目级 `.kimi-code/mcp.json` 中的 `openviking` 项，或在确认文件只为本实验
    创建后删除该文件；
-3. 新开 PowerShell，确认未长期设置 `OPENVIKING_API_KEY`；
+3. 若已持久化用户级环境变量，执行
+   `[Environment]::SetEnvironmentVariable('OPENVIKING_API_KEY', $null, 'User')`
+   将其移除，并确认未以其他方式长期设置 `OPENVIKING_API_KEY`；
 4. 再次启动 Kimi，用 `/mcp` 确认 OpenViking 已不再加载。
 
 参考：

@@ -13,6 +13,8 @@
 class QLabel;
 class QEvent;
 class QGridLayout;
+class QKeyEvent;
+class QMouseEvent;
 class QParallelAnimationGroup;
 class QPixmap;
 class QResizeEvent;
@@ -215,6 +217,25 @@ public:
      * @thread 必须在 Qt UI 线程中调用。
      */
     void notifyFullscreenExited(VideoWidget *videoWidget);
+
+    /**
+     * @brief 进入画布内全屏（EGLFS 单窗口平台）：主画布切换为单路 Snapshot。
+     *
+     * 不创建第二个 QOpenGLWidget 或顶层窗口；必须由 MainWindow 在
+     * fullscreenRequested 握手（EnteringFullscreen 状态）期间调用，并通过
+     * notifyFullscreenEntryResult() 回传结果。
+     *
+     * @return 成功切换主画布 Snapshot 时返回 true。
+     */
+    bool enterInCanvasFullscreen(VideoWidget *videoWidget);
+
+    /**
+     * @brief 退出画布内全屏：恢复网格 Snapshot 与 15 FPS 调度。
+     */
+    void exitInCanvasFullscreen();
+
+    /** @brief 当前是否处于画布内全屏。 */
+    [[nodiscard]] bool isInCanvasFullscreenActive() const noexcept;
     void bindVideoStream(
         VideoWidget *videoWidget,
         StreamId streamId,
@@ -231,6 +252,8 @@ protected:
     QSize minimumSizeHint() const override;
     void resizeEvent(QResizeEvent *event) override;
     void showEvent(QShowEvent *event) override;
+    void keyPressEvent(QKeyEvent *event) override;
+    void mouseDoubleClickEvent(QMouseEvent *event) override;
 
 signals:
     /** @brief 视频格逻辑数量发生变化。 */
@@ -280,6 +303,7 @@ private:
     [[nodiscard]] QSize maximumVideoChromeSizeHint() const;
     void setInteractionState(GridInteractionState state);
     void setDragEnabledForAll(bool enabled);
+    void applyInCanvasFullscreenSnapshot();
     [[nodiscard]] QLabel *createSnapshotOverlay(const QPixmap &pixmap,
                                                 const QRect &geometry);
     [[nodiscard]] QPixmap captureWidgetSnapshot(VideoWidget *videoWidget);
@@ -292,5 +316,6 @@ private:
     GridInteractionState interactionState_ = GridInteractionState::Idle;
     MonitoringGridGeometry monitoringGridGeometry_;
     bool monitoringWallMode_ = false;
+    bool inCanvasFullscreen_ = false;
     int nextCameraNumber_ = 1;
 };

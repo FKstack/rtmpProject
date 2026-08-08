@@ -21,6 +21,7 @@
 - [Week 4～5 架构、维护与深入学习指南](guides/architecture/week4_week5_architecture_guide.md)：从 Week 3 过渡到多路播放、状态、重连和日志框架。
 - [Week 4 多路媒体与并发深度学习](guides/architecture/week4_media_concurrency_deep_dive.md)：线程模型、包队列、共享解码池和代码调用链详解。
 - [用户事件、系统日志与审计日志架构](guides/architecture/logging_architecture.md)：三类信息边界、配置、轮转、脱敏和维护入口。
+- [嵌入式设备分级与 Linux 双后端实施方案](architecture/embedded_device_rendering_strategy.md)：明确无 GPU 的 Qt Raster/QImage/QPainter/linuxfb 路径、有 GPU 的 OpenGL ES 3.0 路径、CMake 可裁剪构建、板级路数自测和 WSL2 ARM64 验收边界，可直接交给 Kimi K3 实施。
 
 ### 2.2 开发规范
 
@@ -32,6 +33,7 @@
 ### 2.3 构建与验证
 
 - [Windows x64 与 Linux ARM64 跨平台构建](guides/build-and-testing/cross_platform_build.md)
+- [Linux 双路径渲染构建（RASTER/GLES3/AUTO）与板级资格脚本](guides/build-and-testing/linux_dual_render_build.md)
 - [RTMP 推流链路验证脚本](guides/build-and-testing/rtmp_chain_verification.md)
 
 ## 3. 分周实现
@@ -94,4 +96,5 @@
 - [当前视频渲染架构审查](architecture/current_rendering_architecture_review.md)
 - [GoObject PDF 渲染框架映射](architecture/pdf_rendering_framework_mapping.md)
 - [产品级视频渲染框架](architecture/video_rendering_framework.md)
+- [嵌入式设备分级与通用显示优化方案](architecture/embedded_device_rendering_strategy.md)
 - [ADR：单主 OpenGL 画布与临时全屏画布](architecture/adr/001-video-rendering-architecture.md)

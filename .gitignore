@@ -1,4 +1,4 @@
-﻿# =========================
+# =========================
 # Visual Studio
 # =========================
 .vs/
@@ -168,3 +168,7 @@ desktop_latency/
 # working notes stay local and must not be uploaded.
 docs/project_handoff.md
 docs/local/
+
+# Local-only client config: project-scoped Kimi Code MCP entry (OpenViking).
+# The file itself must never be committed; it references the API key via env var.
+/.kimi-code/mcp.json

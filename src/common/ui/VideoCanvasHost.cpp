@@ -1,11 +1,5 @@
 #include "ui/VideoCanvasHost.h"
 
-#include <QColor>
-#include <QElapsedTimer>
-#include <QOpenGLContext>
-#include <QOpenGLExtraFunctions>
-#include <QOpenGLWidget>
-#include <QPainter>
 #include <QResizeEvent>
 #include <QShowEvent>
 #include <QThread>
@@ -13,13 +7,13 @@
 
 #include <algorithm>
 #include <chrono>
-#include <iterator>
-#include <unordered_map>
-#include <unordered_set>
 #include <utility>
 
-#include "media/VideoFrameConverter.h"
-#include "render/OpenGLGridRenderer.h"
+#include "RtmpMonitorBuildConfig.h"
+#include "ui/CpuVideoCanvas.h"
+#if RTMP_MONITOR_HAS_OPENGL
+#include "ui/VideoOpenGLCanvas.h"
+#endif
 
 namespace {
 
@@ -44,236 +38,7 @@ QString rendererPreferenceName(RendererPreference preference)
     return QStringLiteral("unknown");
 }
 
-QString openGlString(QOpenGLExtraFunctions *functions, GLenum name)
-{
-    if (functions == nullptr) {
-        return {};
-    }
-    const auto *value = functions->glGetString(name);
-    return value == nullptr
-               ? QString {}
-               : QString::fromLatin1(reinterpret_cast<const char *>(value));
-}
-
-class CpuFrameCache final
-{
-public:
-    std::uint64_t sequence = 0;
-    QImage image;
-    VideoFrameToImageConverter converter;
-};
-
 } // namespace
-
-class VideoOpenGLCanvas final : public QOpenGLWidget
-{
-public:
-    VideoOpenGLCanvas(VideoCanvasHost *host, QWidget *parent)
-        : QOpenGLWidget(parent)
-        , host_(host)
-    {
-        setUpdateBehavior(QOpenGLWidget::NoPartialUpdate);
-        setAttribute(Qt::WA_TransparentForMouseEvents);
-    }
-
-    ~VideoOpenGLCanvas() override
-    {
-        QObject::disconnect(contextDestructionConnection_);
-        cleanup();
-    }
-
-protected:
-    void initializeGL() override
-    {
-        QOpenGLContext *openGLContext = context();
-        if (openGLContext == nullptr || !openGLContext->isValid()) {
-            host_->onOpenGLInitialized(
-                false, QStringLiteral("OpenGL context creation failed.")
-            );
-            return;
-        }
-        const QSurfaceFormat format = openGLContext->format();
-        const bool openGles = openGLContext->isOpenGLES();
-        const bool versionReady = openGles
-                                      ? format.majorVersion() >= 3
-                                      : (format.majorVersion() > 3 ||
-                                         (format.majorVersion() == 3 &&
-                                          format.minorVersion() >= 3));
-        if (!versionReady) {
-            host_->onOpenGLInitialized(
-                false,
-                openGles
-                    ? QStringLiteral("OpenGL ES 3.0 or newer is required.")
-                    : QStringLiteral("Desktop OpenGL 3.3 or newer is required.")
-            );
-            return;
-        }
-
-        QObject::disconnect(contextDestructionConnection_);
-        contextDestructionConnection_ = QObject::connect(
-            openGLContext,
-            &QOpenGLContext::aboutToBeDestroyed,
-            this,
-            [this] { cleanup(); },
-            Qt::DirectConnection
-        );
-
-        QString error;
-        QOpenGLExtraFunctions *functions = openGLContext->extraFunctions();
-        functions->initializeOpenGLFunctions();
-        const bool initialized = renderer_.initialize(functions, openGles, &error);
-        host_->onOpenGLInitialized(
-            initialized,
-            error,
-            openGles ? QStringLiteral("OpenGL ES")
-                     : QStringLiteral("Desktop OpenGL"),
-            openGlString(functions, GL_VENDOR),
-            openGlString(functions, GL_RENDERER),
-            openGlString(functions, GL_VERSION)
-        );
-    }
-
-    void resizeGL(int, int) override
-    {
-        host_->controller_->markDirty(RenderDirtyFlag::Viewport);
-    }
-
-    void paintGL() override
-    {
-        (void)host_->controller_->consumeDirty();
-        QString error;
-        QOpenGLContext *openGLContext = context();
-        const qreal dpr = devicePixelRatioF();
-        const QSize framebufferSize(
-            std::max(1, qRound(width() * dpr)),
-            std::max(1, qRound(height() * dpr))
-        );
-        const bool rendered = openGLContext != nullptr && renderer_.render(
-            openGLContext->extraFunctions(),
-            framebufferSize,
-            host_->controller_.get(),
-            &host_->statistics_,
-            &error
-        );
-        if (!rendered && !error.isEmpty()) {
-            emit host_->renderingError(error);
-        }
-        host_->onSurfacePainted();
-    }
-
-private:
-    void cleanup()
-    {
-        QOpenGLContext *openGLContext = context();
-        if (!renderer_.isInitialized()) {
-            return;
-        }
-        if (openGLContext == nullptr || !openGLContext->isValid()) {
-            renderer_.release(nullptr);
-            host_->controller_->markDirty(RenderDirtyFlag::Resource);
-            return;
-        }
-        makeCurrent();
-        renderer_.release(openGLContext->extraFunctions());
-        doneCurrent();
-        host_->controller_->markDirty(RenderDirtyFlag::Resource);
-    }
-
-    VideoCanvasHost *host_ = nullptr;
-    OpenGLGridRenderer renderer_;
-    QMetaObject::Connection contextDestructionConnection_;
-};
-
-class CpuVideoCanvas final : public QWidget
-{
-public:
-    CpuVideoCanvas(VideoCanvasHost *host, QWidget *parent)
-        : QWidget(parent)
-        , host_(host)
-    {
-        setAttribute(Qt::WA_TransparentForMouseEvents);
-        setAutoFillBackground(false);
-    }
-
-protected:
-    void paintEvent(QPaintEvent *) override
-    {
-        QElapsedTimer timer;
-        timer.start();
-        (void)host_->controller_->consumeDirty();
-
-        QPainter painter(this);
-        painter.fillRect(rect(), Qt::black);
-        painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
-        qint64 latestAge = -1;
-        std::unordered_set<StreamId> activeStreams;
-        for (const RenderItem &item : host_->controller_->snapshot().items) {
-            if (item.streamId != kInvalidStreamId) {
-                activeStreams.insert(item.streamId);
-            }
-            if (!item.frameVisible || item.streamId == kInvalidStreamId) {
-                continue;
-            }
-            auto &cache = caches_[item.streamId];
-            if (const auto frame = host_->controller_->consumeFrame(
-                    item.streamId, cache.sequence);
-                frame.has_value()) {
-                QImage image = cache.converter.convert(*frame);
-                if (!image.isNull()) {
-                    cache.image = std::move(image);
-                    cache.sequence = frame->sequence();
-                    ++host_->statistics_.uploadedFrames;
-                    if (const auto mailbox = host_->controller_->mailbox(
-                            item.streamId);
-                        mailbox != nullptr) {
-                        mailbox->recordUploaded();
-                    }
-                    latestAge = std::max<qint64>(
-                        0, monotonicMilliseconds() - frame->receivedMonotonicMs()
-                    );
-                } else {
-                    ++host_->statistics_.unsupportedFrames;
-                }
-            }
-            if (cache.image.isNull()) {
-                continue;
-            }
-            const VideoPlacement placement = calculateVideoPlacement(
-                item.videoViewport,
-                cache.image.size(),
-                item.displayMode
-            );
-            const QRectF source(
-                placement.sourceUv.x() * cache.image.width(),
-                placement.sourceUv.y() * cache.image.height(),
-                placement.sourceUv.width() * cache.image.width(),
-                placement.sourceUv.height() * cache.image.height()
-            );
-            painter.drawImage(placement.targetRect, cache.image, source);
-            if (const auto mailbox = host_->controller_->mailbox(item.streamId);
-                mailbox != nullptr) {
-                mailbox->recordRendered();
-            }
-            ++host_->statistics_.renderedFrames;
-        }
-        for (auto iterator = caches_.begin(); iterator != caches_.end();) {
-            iterator = activeStreams.find(iterator->first) == activeStreams.end()
-                           ? caches_.erase(iterator)
-                           : std::next(iterator);
-        }
-        ++host_->statistics_.paintCalls;
-        host_->statistics_.lastPaintCpuUs = timer.nsecsElapsed() / 1000;
-        host_->statistics_.lastUploadCpuUs = 0;
-        host_->statistics_.lastGpuTimeUs = -1;
-        host_->statistics_.latestFrameAgeMs = latestAge;
-        host_->statistics_.textureBytes = 0;
-        host_->onSurfacePainted();
-    }
-
-private:
-    VideoCanvasHost *host_ = nullptr;
-    std::unordered_map<StreamId, CpuFrameCache> caches_;
-};
 
 VideoCanvasHost::VideoCanvasHost(
     RendererPreference preference,
@@ -299,8 +64,10 @@ VideoCanvasHost::~VideoCanvasHost()
 {
     scheduleTimer_->stop();
     controller_->clearStreams();
+#if RTMP_MONITOR_HAS_OPENGL
     delete openGLCanvas_;
     openGLCanvas_ = nullptr;
+#endif
     delete cpuCanvas_;
     cpuCanvas_ = nullptr;
 }
@@ -347,11 +114,13 @@ void VideoCanvasHost::setRendererPreference(RendererPreference preference)
         return;
     }
     preference_ = preference;
+#if RTMP_MONITOR_HAS_OPENGL
     if (openGLCanvas_ != nullptr) {
         openGLCanvas_->hide();
         delete openGLCanvas_;
         openGLCanvas_ = nullptr;
     }
+#endif
     if (cpuCanvas_ != nullptr) {
         cpuCanvas_->hide();
         delete cpuCanvas_;
@@ -419,11 +188,14 @@ QImage VideoCanvasHost::grabFramebufferImage()
 {
     QImage image;
     bool openGlFramebuffer = false;
+#if RTMP_MONITOR_HAS_OPENGL
     if (!cpuActive_ && openGLCanvas_ != nullptr &&
         openGLCanvas_->isValid()) {
         image = openGLCanvas_->grabFramebuffer();
         openGlFramebuffer = true;
-    } else if (cpuCanvas_ != nullptr) {
+    } else
+#endif
+    if (cpuCanvas_ != nullptr) {
         image = cpuCanvas_->grab().toImage();
     }
     if (!image.isNull() && openGlFramebuffer) {
@@ -435,9 +207,11 @@ QImage VideoCanvasHost::grabFramebufferImage()
 void VideoCanvasHost::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
+#if RTMP_MONITOR_HAS_OPENGL
     if (openGLCanvas_ != nullptr) {
         openGLCanvas_->setGeometry(rect());
     }
+#endif
     if (cpuCanvas_ != nullptr) {
         cpuCanvas_->setGeometry(rect());
     }
@@ -463,19 +237,34 @@ void VideoCanvasHost::createBackend()
         activateCpuFallback({});
         return;
     }
+#if RTMP_MONITOR_HAS_OPENGL
     openGLCanvas_ = new VideoOpenGLCanvas(this, this);
     openGLCanvas_->setGeometry(rect());
     openGLCanvas_->show();
     openGLCanvas_->lower();
     cpuActive_ = false;
     controller_->markDirty(RenderDirtyFlag::Resource);
+#else
+    activateCpuFallback(
+        preference_ == RendererPreference::OpenGL
+            ? QStringLiteral(
+                  "This build does not include an OpenGL backend "
+                  "(RTMP_MONITOR_HAS_OPENGL=0); falling back to CPU."
+              )
+            : QStringLiteral(
+                  "OpenGL backend not included in this build; using CPU."
+              )
+    );
+#endif
 }
 
 void VideoCanvasHost::activateCpuFallback(const QString &reason)
 {
+#if RTMP_MONITOR_HAS_OPENGL
     if (openGLCanvas_ != nullptr) {
         openGLCanvas_->hide();
     }
+#endif
     if (cpuCanvas_ == nullptr) {
         cpuCanvas_ = new CpuVideoCanvas(this, this);
         cpuCanvas_->setGeometry(rect());
@@ -502,11 +291,15 @@ void VideoCanvasHost::scheduleTick()
     ++statistics_.updateRequests;
     if (cpuActive_ && cpuCanvas_ != nullptr) {
         cpuCanvas_->update();
-    } else if (openGLCanvas_ != nullptr) {
-        openGLCanvas_->update();
-    } else {
-        paintPending_ = false;
+        return;
     }
+#if RTMP_MONITOR_HAS_OPENGL
+    if (openGLCanvas_ != nullptr) {
+        openGLCanvas_->update();
+        return;
+    }
+#endif
+    paintPending_ = false;
 }
 
 void VideoCanvasHost::onSurfacePainted()

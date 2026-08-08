@@ -37,19 +37,23 @@ RtmpMonitor 是一个使用同一套 C++17、Qt 6 Widgets 和 FFmpeg 代码，�
 | ARM64 sysroot | 位于 WSL VHDX 内；本任务不移动或修改其现有工具链边界。 |
 | OpenViking Server | 0.4.11 已从预编译 wheel 安装到 `/opt/openviking/venv-0.4.11`；MCP 固定为 1.29.0；VLM 为 `openai-codex/gpt-5.6-luna`（OAuth，Responses，`reasoning.effort=none`）；配置和数据分别位于 `/etc/openviking`、`/var/lib/openviking`。`openviking.service.d/proxy.conf` 只为该服务设置本机 `127.0.0.1:7890` 代理和 localhost 例外，不修改 Clash 配置。 |
 | OpenViking Windows 客户端 | `ovcli.conf`、插件状态和日志位于本机专用配置目录，该个人绝对路径不入库；Marketplace 插件 0.7.4 已安装并启用一次。`ovcli.conf` 不再固定 `actor_peer_id`，由插件按工作目录派生 peer；当前 CLI 的通用 `hooks` 功能为稳定且默认启用，已移除失效的旧配置项 `plugin_hooks`。 |
+| Kimi Code MCP 客户端 | 项目级 `.kimi-code/mcp.json`（规则 `/.kimi-code/mcp.json` 已在 `.gitignore`）连接 `http://127.0.0.1:1933/mcp`，peer 固定 `E--rtmpProject`。2026-08-08 起 `OPENVIKING_API_KEY` 持久化为 Windows 用户级环境变量（HKCU，值与受限 `ovcli.conf` 一致），根治了此前“绕开安全启动器直接启动即 401”的问题；任意方式启动的新会话均可连接。仅主动工具调用，无自动 Hook 链路。 |
 | WSL 登录保活 | `OpenViking-rtmpProject-WSL-KeepAlive` 登录后延迟 30 秒、禁止重复实例并隐藏维持 WSL 生命周期；无交互式 WSL 终端的五分钟空闲、四个 Windows HTTP 入口及任务停止/重启恢复已通过。 |
 
 ## 当前主要模块
 
 - 应用组合：`StreamConnectionController`、`StyleLoader`。
 - 播放与并发：`FFmpegPlayer`、`MultiStreamPlaybackManager`、`DecodeWorkerPool`。
-- UI：`MainWindow`、`VideoGridWidget`、`VideoWidget`、`FullscreenVideoWindow`、`VideoCanvasHost`、`LogPanel`。
-- 视频帧与渲染：`VideoFrame`、`LatestFrameMailbox`、`VideoRenderController`、`OpenGLGridRenderer`；旧 `VideoRenderWidget` 仅保留为历史 RGB 原型冒烟。
+- UI：`MainWindow`、`VideoGridWidget`、`VideoWidget`、`FullscreenVideoWindow`、`VideoCanvasHost`、`CpuVideoCanvas`、`VideoOpenGLCanvas`（GL 可选编译）、`LogPanel`。
+- 视频帧与渲染：`VideoFrame`、`LatestFrameMailbox`、`VideoRenderController`、`OpenGLGridRenderer`（仅 `RTMP_MONITOR_HAS_OPENGL=1` 时编译）、`EmbeddedGlCapabilities`；旧 `VideoRenderWidget` 仅保留为历史 RGB 原型冒烟。
+- Linux 平台：`LinuxApplicationBootstrap`、`LinuxRenderingPolicy`、`LinuxRendererFactory`（`src/platform/linux/`，仅 Linux 编译）；EGLFS 下全屏复用主画布。
 - 日志与用户消息：`LogManager`、`SensitiveDataSanitizer`、`UserMessageService`。
-- 构建与验证：Windows/ARM64 Preset、AArch64 toolchain、RTMP 和多路验收脚本。
+- 构建与验证：Windows/ARM64 Preset、AArch64 toolchain、Linux `RASTER/GLES3/AUTO` 渲染模式、RTMP 和多路验收脚本、`scripts/qualify_embedded_device.sh` 板级资格脚本。
 
 ## 当前已验证进度
 
+- 2026-08-08 Linux 双路径渲染架构（`embedded_device_rendering_strategy.md` §16～§22）已由 Kimi 落地：`CpuVideoCanvas`/`VideoOpenGLCanvas` 拆为独立编译单元，`RtmpMonitorBuildConfig.h` 暴露 `RTMP_MONITOR_HAS_OPENGL`；新增 `src/platform/linux/`（bootstrap/policy/factory）与 `EmbeddedGlCapabilities` 纯判定；EGLFS 自动改为画布内单路 Snapshot 全屏；GLES3 P1 小优化（静态 sampler、批次 unpack、每 RenderItem 一次错误检查、纹理保留策略）完成。Windows Debug CTest 14/14 通过（新增 capabilities/policy 两个纯逻辑目标与 7 个动态网格用例）。
+- 2026-08-08 WSL2 ARM64 双构建完成：RASTER 产物为 ELF64/AArch64 且 NEEDED 无 Qt6OpenGL/Qt6OpenGLWidgets/libEGL/libGLES；GLES3 产物含 Qt6 OpenGL/OpenGLWidgets 依赖且全部来自 sysroot。QEMU 用户态下纯逻辑测试：capabilities 10/10、policy 9/9、render core 9/9、user message 5/5 通过；logging 2 个计时敏感用例在 QEMU 下失败（QEMU 时序问题，Windows 端通过，与本次改动无关）。板级资格脚本 `scripts/qualify_embedded_device.sh` 已交付但未经真实板运行。
 - Week 1～3：外部 RTMP 链路、动态 1～16 路 UI、单路 FFmpeg 拉流与安全退出已完成。
 - Week 4：源码已支持 0～16 路动态连接、阻塞网络与共享解码池解耦、指标和自动化验收脚本。
 - Week 5：设备状态、日志分层、脱敏和可配置重连相关模块已存在。
@@ -92,7 +96,7 @@ RtmpMonitor 是一个使用同一套 C++17、Qt 6 Widgets 和 FFmpeg 代码，�
 
 1. 自然重启 Desktop，让长期运行的插件/MCP 子进程读取移除固定 `actor_peer_id` 后的配置；分别在 rtmpProject 和另一工作区核对派生 peer。
 2. 在新的自然 Desktop 任务中完成唯一标记自动注入验收；只有后台任务 `completed`、`SessionStart`/`UserPromptSubmit` 注入日志和完全一致召回同时成立才关闭 ISSUE-003，随后清理专用标记。
-3. 在真实 Linux ARM64 盒子完成发布级验收。
+3. 在真实 Linux ARM64 盒子完成发布级验收：使用 `scripts/qualify_embedded_device.sh` 按用户指定的路数阶梯/码流/门槛执行，生成设备档案与 `recommendedMaxStreams`；EGLFS 全屏、linuxfb、温度和长稳只能在真机验证。
 4. 启动 RTMP Server 产品化集成专项，先做架构、选型和部署 PoC。
 
 ## 关键文档

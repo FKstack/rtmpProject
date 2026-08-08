@@ -18,6 +18,18 @@ enum class VideoDisplayMode {
     Cover,
 };
 
+/**
+ * @brief 纹理在流暂时离开 Snapshot 时的保留策略。
+ *
+ * KeepRegisteredStreams：已注册但暂时不在 Snapshot 的流保留纹理不继续上传，
+ * 适用于 EGLFS 单画布全屏往返与内存充足设备；ReleaseImmediately：S0 等极低
+ * 内存设备立即释放。Context lost 时两种策略都全部释放。
+ */
+enum class TextureRetentionPolicy {
+    KeepRegisteredStreams,
+    ReleaseImmediately,
+};
+
 enum class RenderDirtyFlag : std::uint32_t {
     None = 0,
     Frame = 1U << 0U,

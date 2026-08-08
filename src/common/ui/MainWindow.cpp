@@ -4,6 +4,7 @@
 
 #include <QAction>
 #include <QDockWidget>
+#include <QGuiApplication>
 #include <QKeyEvent>
 #include <QKeySequence>
 #include <QLabel>
@@ -90,6 +91,13 @@ MainWindow::MainWindow(
     fullscreenVideoWindow_ = new FullscreenVideoWindow(
         rendererPreference, this
     );
+
+#if defined(Q_OS_LINUX)
+    // EGLFS 只允许一个 GL 顶层窗口：全屏复用主画布，不创建第二个
+    // QOpenGLWidget 顶层窗口。
+    fullscreenPresentationMode_ =
+        fullscreenPresentationModeForQpa(QGuiApplication::platformName());
+#endif
 
     connect(
         addVideoAction_, &QAction::triggered,
@@ -389,6 +397,14 @@ void MainWindow::handleFullscreenRequest(VideoWidget *videoWidget)
             VideoGridWidget::GridInteractionState::EnteringFullscreen ||
         fullscreenVideoWindow_->isFullscreenActive()) {
         videoGrid_->notifyFullscreenEntryResult(videoWidget, false);
+        return;
+    }
+
+    if (fullscreenPresentationMode_ ==
+            FullscreenPresentationMode::ReuseMainCanvas) {
+        // EGLFS：不隐藏主窗口、不创建第二画布，只切换主画布 Snapshot/FPS。
+        const bool entered = videoGrid_->enterInCanvasFullscreen(videoWidget);
+        videoGrid_->notifyFullscreenEntryResult(videoWidget, entered);
         return;
     }
 

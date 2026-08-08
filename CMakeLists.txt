@@ -44,37 +44,89 @@ set(CMAKE_AUTORCC ON)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(ProjectOptions)
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets OpenGL OpenGLWidgets)
-
-option(
-    RTMP_MONITOR_BUILD_OPENGL_PROTOTYPE
-    "Build the optional RGB OpenGL renderer prototype and smoke targets."
-    ON
-)
-
-if(RTMP_MONITOR_BUILD_OPENGL_PROTOTYPE)
-    find_package(Qt6 REQUIRED COMPONENTS OpenGL OpenGLWidgets)
-
-    if(WIN32)
-        find_package(OpenGL REQUIRED)
-    elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-        find_path(RTMP_MONITOR_EGL_INCLUDE_DIR
-            NAMES EGL/egl.h
-            REQUIRED
+# ---------------------------------------------------------------------------
+# Linux 渲染构建模式：RASTER（纯 CPU，无 GL 依赖）/ GLES3（必须含 ES3 依赖）/
+# AUTO（可选探测 GL 依赖，齐全则双后端，否则退化为 RASTER-only）。
+# Windows 始终包含 Desktop GL 后端，行为与既有版本一致。
+# ---------------------------------------------------------------------------
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(RTMP_MONITOR_LINUX_RENDER_MODE "AUTO" CACHE STRING
+        "Linux renderer build: AUTO, RASTER, or GLES3")
+    set_property(CACHE RTMP_MONITOR_LINUX_RENDER_MODE
+        PROPERTY STRINGS AUTO RASTER GLES3)
+    if(NOT RTMP_MONITOR_LINUX_RENDER_MODE MATCHES "^(AUTO|RASTER|GLES3)$")
+        message(FATAL_ERROR
+            "RTMP_MONITOR_LINUX_RENDER_MODE must be AUTO, RASTER or GLES3, "
+            "got: ${RTMP_MONITOR_LINUX_RENDER_MODE}"
         )
-        find_path(RTMP_MONITOR_GLES3_INCLUDE_DIR
-            NAMES GLES3/gl3.h
-            REQUIRED
-        )
-        find_library(RTMP_MONITOR_EGL_LIBRARY
-            NAMES EGL
-            REQUIRED
-        )
-        find_library(RTMP_MONITOR_GLES3_LIBRARY
-            NAMES GLESv2
-            REQUIRED
-        )
+    endif()
+endif()
 
+set(RTMP_MONITOR_HAS_OPENGL 0)
+if(WIN32)
+    set(RTMP_MONITOR_HAS_OPENGL 1)
+    set(RTMP_MONITOR_LINUX_RENDER_MODE_EFFECTIVE "DESKTOP")
+    find_package(Qt6 REQUIRED COMPONENTS Widgets OpenGL OpenGLWidgets)
+    find_package(OpenGL REQUIRED)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(RTMP_MONITOR_LINUX_RENDER_MODE_EFFECTIVE
+        "${RTMP_MONITOR_LINUX_RENDER_MODE}")
+    find_package(Qt6 REQUIRED COMPONENTS Widgets)
+
+    if(NOT RTMP_MONITOR_LINUX_RENDER_MODE STREQUAL "RASTER")
+        # AUTO 使用 QUIET 探测；GLES3 使用 REQUIRED 强制成功。
+        set(RTMP_MONITOR_GL_FIND_QUIET QUIET)
+        set(RTMP_MONITOR_GL_FIND_REQUIRED OFF)
+        if(RTMP_MONITOR_LINUX_RENDER_MODE STREQUAL "GLES3")
+            set(RTMP_MONITOR_GL_FIND_QUIET)
+            set(RTMP_MONITOR_GL_FIND_REQUIRED ON)
+        endif()
+
+        find_package(Qt6 ${RTMP_MONITOR_GL_FIND_QUIET} COMPONENTS
+            OpenGL OpenGLWidgets)
+        find_path(RTMP_MONITOR_EGL_INCLUDE_DIR NAMES EGL/egl.h)
+        find_path(RTMP_MONITOR_GLES3_INCLUDE_DIR NAMES GLES3/gl3.h)
+        find_library(RTMP_MONITOR_EGL_LIBRARY NAMES EGL)
+        find_library(RTMP_MONITOR_GLES3_LIBRARY NAMES GLESv2)
+
+        set(RTMP_MONITOR_GL_DEPENDENCIES_OK TRUE)
+        foreach(dependency IN ITEMS
+            "${RTMP_MONITOR_EGL_INCLUDE_DIR}"
+            "${RTMP_MONITOR_GLES3_INCLUDE_DIR}"
+            "${RTMP_MONITOR_EGL_LIBRARY}"
+            "${RTMP_MONITOR_GLES3_LIBRARY}"
+        )
+            if(dependency MATCHES "-NOTFOUND$" OR dependency STREQUAL "")
+                set(RTMP_MONITOR_GL_DEPENDENCIES_OK FALSE)
+            endif()
+        endforeach()
+        if(NOT Qt6OpenGL_FOUND OR NOT Qt6OpenGLWidgets_FOUND)
+            set(RTMP_MONITOR_GL_DEPENDENCIES_OK FALSE)
+        endif()
+
+        if(RTMP_MONITOR_GL_DEPENDENCIES_OK)
+            set(RTMP_MONITOR_HAS_OPENGL 1)
+        elseif(RTMP_MONITOR_GL_FIND_REQUIRED)
+            message(FATAL_ERROR
+                "GLES3 build mode requires ARM64 Qt OpenGL/OpenGLWidgets and "
+                "EGL/GLESv2 inside the target sysroot. Missing: "
+                "EGL include='${RTMP_MONITOR_EGL_INCLUDE_DIR}' "
+                "GLES3 include='${RTMP_MONITOR_GLES3_INCLUDE_DIR}' "
+                "EGL lib='${RTMP_MONITOR_EGL_LIBRARY}' "
+                "GLESv2 lib='${RTMP_MONITOR_GLES3_LIBRARY}' "
+                "Qt6OpenGL=${Qt6OpenGL_FOUND} "
+                "Qt6OpenGLWidgets=${Qt6OpenGLWidgets_FOUND}"
+            )
+        else()
+            set(RTMP_MONITOR_LINUX_RENDER_MODE_EFFECTIVE "RASTER")
+            message(STATUS
+                "AUTO mode: GL dependencies not all available; "
+                "building RASTER-only (CPU) backends."
+            )
+        endif()
+    endif()
+
+    if(RTMP_MONITOR_HAS_OPENGL)
         foreach(arm64_opengl_path IN ITEMS
             "${RTMP_MONITOR_EGL_INCLUDE_DIR}"
             "${RTMP_MONITOR_GLES3_INCLUDE_DIR}"
@@ -114,6 +166,26 @@ if(RTMP_MONITOR_BUILD_OPENGL_PROTOTYPE)
                 "${RTMP_MONITOR_GLES3_LIBRARY}"
         )
     endif()
+endif()
+
+# 编译期渲染能力配置头；业务代码只使用该头暴露的能力宏。
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/RtmpMonitorBuildConfig.h.in"
+    "${CMAKE_BINARY_DIR}/generated/RtmpMonitorBuildConfig.h"
+    @ONLY
+)
+
+option(
+    RTMP_MONITOR_BUILD_OPENGL_PROTOTYPE
+    "Build the optional RGB OpenGL renderer prototype and smoke targets."
+    ON
+)
+
+if(RTMP_MONITOR_BUILD_OPENGL_PROTOTYPE AND NOT RTMP_MONITOR_HAS_OPENGL)
+    message(STATUS
+        "OpenGL prototype disabled: this build has no OpenGL backend."
+    )
+    set(RTMP_MONITOR_BUILD_OPENGL_PROTOTYPE OFF)
 endif()
 
 add_library(rtmp_monitor_ffmpeg INTERFACE)
@@ -250,9 +322,16 @@ set(RTMP_MONITOR_RENDER_SOURCES
     src/common/render/RenderTypes.cpp
     include/common/render/VideoRenderController.h
     src/common/render/VideoRenderController.cpp
-    include/common/render/OpenGLGridRenderer.h
-    src/common/render/OpenGLGridRenderer.cpp
+    include/common/render/EmbeddedGlCapabilities.h
+    src/common/render/EmbeddedGlCapabilities.cpp
 )
+
+if(RTMP_MONITOR_HAS_OPENGL)
+    list(APPEND RTMP_MONITOR_RENDER_SOURCES
+        include/common/render/OpenGLGridRenderer.h
+        src/common/render/OpenGLGridRenderer.cpp
+    )
+endif()
 
 qt_add_library(rtmp_monitor_render STATIC
     ${RTMP_MONITOR_RENDER_SOURCES}
@@ -261,15 +340,22 @@ qt_add_library(rtmp_monitor_render STATIC
 target_include_directories(rtmp_monitor_render
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include/common
+    PRIVATE
+        ${CMAKE_BINARY_DIR}/generated
 )
 
 target_link_libraries(rtmp_monitor_render
     PUBLIC
         Qt6::Gui
         rtmp_monitor_media
-    PRIVATE
-        Qt6::OpenGL
 )
+
+if(RTMP_MONITOR_HAS_OPENGL)
+    target_link_libraries(rtmp_monitor_render
+        PRIVATE
+            Qt6::OpenGL
+    )
+endif()
 
 rtmp_monitor_apply_project_options(rtmp_monitor_render)
 
@@ -289,9 +375,18 @@ set(RTMP_MONITOR_UI_SOURCES
     src/common/ui/MainWindow.cpp
     include/common/ui/LogPanel.h
     src/common/ui/LogPanel.cpp
+    include/common/ui/CpuVideoCanvas.h
+    src/common/ui/CpuVideoCanvas.cpp
     include/common/ui/VideoCanvasHost.h
     src/common/ui/VideoCanvasHost.cpp
 )
+
+if(RTMP_MONITOR_HAS_OPENGL)
+    list(APPEND RTMP_MONITOR_UI_SOURCES
+        include/common/ui/VideoOpenGLCanvas.h
+        src/common/ui/VideoOpenGLCanvas.cpp
+    )
+endif()
 
 qt_add_library(rtmp_monitor_ui STATIC
     ${RTMP_MONITOR_UI_SOURCES}
@@ -300,17 +395,53 @@ qt_add_library(rtmp_monitor_ui STATIC
 target_include_directories(rtmp_monitor_ui
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include/common
+    PRIVATE
+        ${CMAKE_BINARY_DIR}/generated
 )
 
 target_link_libraries(rtmp_monitor_ui
     PUBLIC
         Qt6::Widgets
-        Qt6::OpenGLWidgets
         rtmp_monitor_logging
         rtmp_monitor_render
 )
 
+if(RTMP_MONITOR_HAS_OPENGL)
+    target_link_libraries(rtmp_monitor_ui
+        PUBLIC
+            Qt6::OpenGLWidgets
+    )
+endif()
+
 rtmp_monitor_apply_project_options(rtmp_monitor_ui)
+
+# Linux 平台策略：bootstrap / policy / factory，只在 Linux 构建中编译。
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    qt_add_library(rtmp_monitor_platform_linux STATIC
+        include/platform/linux/LinuxRenderingPolicy.h
+        src/platform/linux/LinuxRenderingPolicy.cpp
+        include/platform/linux/LinuxApplicationBootstrap.h
+        src/platform/linux/LinuxApplicationBootstrap.cpp
+        include/platform/linux/LinuxRendererFactory.h
+        src/platform/linux/LinuxRendererFactory.cpp
+    )
+
+    target_include_directories(rtmp_monitor_platform_linux
+        PUBLIC
+            ${CMAKE_CURRENT_SOURCE_DIR}/include/common
+            ${CMAKE_CURRENT_SOURCE_DIR}/include/platform
+        PRIVATE
+            ${CMAKE_BINARY_DIR}/generated
+    )
+
+    target_link_libraries(rtmp_monitor_platform_linux
+        PUBLIC
+            Qt6::Widgets
+            rtmp_monitor_ui
+    )
+
+    rtmp_monitor_apply_project_options(rtmp_monitor_platform_linux)
+endif()
 
 if(RTMP_MONITOR_BUILD_OPENGL_PROTOTYPE)
     qt_add_library(rtmp_monitor_opengl_prototype STATIC
@@ -351,6 +482,18 @@ target_link_libraries(rtmp_monitor
         rtmp_monitor_media
         rtmp_monitor_ui
 )
+
+target_include_directories(rtmp_monitor
+    PRIVATE
+        ${CMAKE_BINARY_DIR}/generated
+)
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_link_libraries(rtmp_monitor
+        PRIVATE
+            rtmp_monitor_platform_linux
+    )
+endif()
 
 rtmp_monitor_apply_project_options(rtmp_monitor)
 
@@ -461,7 +604,7 @@ if(BUILD_TESTING)
                     RUN_SERIAL TRUE
                     TIMEOUT 60
             )
-        elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND RTMP_MONITOR_HAS_OPENGL)
             add_executable(rtmp_monitor_opengl_egl_smoke
                 tests/OpenGLEglSmoke.cpp
             )
@@ -652,6 +795,50 @@ if(BUILD_TESTING)
     rtmp_monitor_apply_project_options(rtmp_monitor_log_panel_test)
     add_test(NAME rtmp_monitor_log_panel_test
         COMMAND rtmp_monitor_log_panel_test)
+
+    qt_add_executable(rtmp_monitor_embedded_gl_capabilities_test
+        tests/EmbeddedGlCapabilitiesTest.cpp
+    )
+    if(WIN32)
+        set_target_properties(rtmp_monitor_embedded_gl_capabilities_test
+            PROPERTIES WIN32_EXECUTABLE FALSE)
+    endif()
+    target_link_libraries(rtmp_monitor_embedded_gl_capabilities_test
+        PRIVATE
+            rtmp_monitor_render
+            Qt6::Test
+    )
+    rtmp_monitor_apply_project_options(
+        rtmp_monitor_embedded_gl_capabilities_test
+    )
+    add_test(NAME rtmp_monitor_embedded_gl_capabilities_test
+        COMMAND rtmp_monitor_embedded_gl_capabilities_test)
+
+    # Linux 渲染策略为纯判定逻辑，跨平台编译以便在 Windows 上回归。
+    qt_add_executable(rtmp_monitor_linux_rendering_policy_test
+        tests/LinuxRenderingPolicyTest.cpp
+        include/platform/linux/LinuxRenderingPolicy.h
+        src/platform/linux/LinuxRenderingPolicy.cpp
+    )
+    if(WIN32)
+        set_target_properties(rtmp_monitor_linux_rendering_policy_test
+            PROPERTIES WIN32_EXECUTABLE FALSE)
+    endif()
+    target_include_directories(rtmp_monitor_linux_rendering_policy_test
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include/common
+            ${CMAKE_CURRENT_SOURCE_DIR}/include/platform
+    )
+    target_link_libraries(rtmp_monitor_linux_rendering_policy_test
+        PRIVATE
+            Qt6::Core
+            Qt6::Test
+    )
+    rtmp_monitor_apply_project_options(
+        rtmp_monitor_linux_rendering_policy_test
+    )
+    add_test(NAME rtmp_monitor_linux_rendering_policy_test
+        COMMAND rtmp_monitor_linux_rendering_policy_test)
 endif()
 
 include(GNUInstallDirs)
@@ -672,3 +859,24 @@ install(TARGETS rtmp_monitor
 install(FILES resources/styles/app.qss
     DESTINATION ${CMAKE_INSTALL_BINDIR}/styles
 )
+
+# ---------------------------------------------------------------------------
+# 不可含糊的构建配置摘要
+# ---------------------------------------------------------------------------
+message(STATUS "==================== RtmpMonitor build summary ====================")
+message(STATUS "Target system        : ${CMAKE_SYSTEM_NAME}/${CMAKE_SYSTEM_PROCESSOR}")
+message(STATUS "Build type           : ${CMAKE_BUILD_TYPE}")
+message(STATUS "Linux render mode    : ${RTMP_MONITOR_LINUX_RENDER_MODE_EFFECTIVE}")
+message(STATUS "CPU canvas compiled  : ON")
+message(STATUS "OpenGL backend       : ${RTMP_MONITOR_HAS_OPENGL}")
+message(STATUS "OpenGL prototype     : ${RTMP_MONITOR_BUILD_OPENGL_PROTOTYPE}")
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    message(STATUS "Target sysroot       : ${CMAKE_SYSROOT}")
+    if(RTMP_MONITOR_HAS_OPENGL)
+        message(STATUS "EGL library          : ${RTMP_MONITOR_EGL_LIBRARY}")
+        message(STATUS "GLESv2 library       : ${RTMP_MONITOR_GLES3_LIBRARY}")
+    else()
+        message(STATUS "Qt QPA expectation   : linuxfb / software raster (no EGL/GLES)")
+    endif()
+endif()
+message(STATUS "===================================================================")

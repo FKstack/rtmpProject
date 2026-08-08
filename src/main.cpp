@@ -16,6 +16,12 @@
 #include "ui/MainWindow.h"
 #include "ui/VideoCanvasHost.h"
 
+#if defined(Q_OS_LINUX)
+#include "linux/LinuxApplicationBootstrap.h"
+#include "linux/LinuxRendererFactory.h"
+#include "linux/LinuxRenderingPolicy.h"
+#endif
+
 namespace {
 
 int defaultDecodeWorkerCount()
@@ -29,21 +35,28 @@ int main(int argc, char *argv[])
 {
 #if defined(Q_OS_WIN)
     QCoreApplication::setAttribute(Qt::AA_UseDesktopOpenGL);
-#endif
     QSurfaceFormat surfaceFormat;
-#if defined(Q_OS_WIN)
     surfaceFormat.setRenderableType(QSurfaceFormat::OpenGL);
     surfaceFormat.setVersion(3, 3);
     surfaceFormat.setProfile(QSurfaceFormat::CoreProfile);
-#else
-    surfaceFormat.setRenderableType(QSurfaceFormat::OpenGLES);
-    surfaceFormat.setVersion(3, 0);
-    surfaceFormat.setProfile(QSurfaceFormat::NoProfile);
-#endif
     surfaceFormat.setDepthBufferSize(0);
     surfaceFormat.setStencilBufferSize(0);
     surfaceFormat.setSwapBehavior(QSurfaceFormat::DoubleBuffer);
     QSurfaceFormat::setDefaultFormat(surfaceFormat);
+#elif defined(Q_OS_LINUX)
+    // Linux 的 QPA/SurfaceFormat 决策集中在平台 bootstrap：RASTER 构建、
+    // 显式 --renderer=cpu 或 linuxfb 目标都不会请求 ES 3.0。
+    const LinuxBootstrapResult bootstrapResult =
+        LinuxApplicationBootstrap::configureSurfaceFormat(
+            LinuxRendererFactory::isOpenGlBackendCompiled(),
+            LinuxApplicationBootstrap::requestedRendererFromArgs(argc, argv),
+            argc,
+            argv
+        );
+    if (!bootstrapResult.note.isEmpty()) {
+        qInfo().noquote() << bootstrapResult.note;
+    }
+#endif
 
     QApplication app(argc, argv);
     QApplication::setApplicationName(QStringLiteral("RtmpMonitor"));
@@ -137,6 +150,23 @@ int main(int argc, char *argv[])
             << QStringLiteral("--renderer 必须是 auto、opengl 或 cpu。");
         return EXIT_FAILURE;
     }
+
+#if defined(Q_OS_LINUX)
+    // 依据编译能力、CLI 和实际 QPA 名称做 Linux 后端决策；linuxfb 或
+    // RASTER 构建直接锁定 CPU，不进入任何 GL 初始化。
+    const LinuxRenderingDecision renderingDecision = LinuxRenderingPolicy::decide(
+        LinuxRendererFactory::isOpenGlBackendCompiled(),
+        rendererName,
+        QGuiApplication::platformName()
+    );
+    if (!renderingDecision.reason.isEmpty()) {
+        qWarning().noquote() << renderingDecision.reason;
+    }
+    rendererPreference = LinuxRendererFactory::rendererPreferenceFor(
+        rendererName,
+        renderingDecision
+    );
+#endif
 
     bool workerCountValid = false;
     const int workerCount =

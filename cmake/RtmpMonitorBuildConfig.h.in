@@ -1,0 +1,8 @@
+#pragma once
+
+// 由 CMake configure_file 生成；业务代码只使用这里暴露的编译能力宏，
+// 不在源文件中散布平台或构建模式判断。
+#define RTMP_MONITOR_HAS_OPENGL @RTMP_MONITOR_HAS_OPENGL@
+
+// Linux 渲染构建模式：AUTO / RASTER / GLES3；非 Linux 平台固定为 "DESKTOP"。
+#define RTMP_MONITOR_LINUX_RENDER_MODE "@RTMP_MONITOR_LINUX_RENDER_MODE_EFFECTIVE@"

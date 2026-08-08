@@ -7,6 +7,7 @@
 #include <cstdint>
 
 #include "logging/UserMessageTypes.h"
+#include "ui/FullscreenPresentationMode.h"
 
 class QAction;
 class QDockWidget;
@@ -135,4 +136,6 @@ private:
     bool logVisibleBeforeMonitoringWall_ = false;
     bool monitoringWallMode_ = false;
     bool wasVisibleBeforeFullscreen_ = false;
+    FullscreenPresentationMode fullscreenPresentationMode_ =
+        FullscreenPresentationMode::TemporaryWindowCanvas;
 };

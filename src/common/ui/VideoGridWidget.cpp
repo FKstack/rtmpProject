@@ -8,7 +8,9 @@
 #include <QEvent>
 #include <QGraphicsOpacityEffect>
 #include <QGridLayout>
+#include <QKeyEvent>
 #include <QLabel>
+#include <QMouseEvent>
 #include <QParallelAnimationGroup>
 #include <QPainter>
 #include <QPixmap>
@@ -594,11 +596,110 @@ void VideoGridWidget::unbindVideoStream(VideoWidget *videoWidget)
         canvasHost_->unregisterStream(streamId);
     }
     videoWidget->unbindRenderSource();
+    if (inCanvasFullscreen_ && videoWidget == fullscreenVideoWidget_) {
+        // 画布内全屏的流被解绑时直接退出全屏，恢复网格视图。
+        exitInCanvasFullscreen();
+        return;
+    }
     refreshRenderSnapshot();
+}
+
+bool VideoGridWidget::enterInCanvasFullscreen(VideoWidget *videoWidget)
+{
+    if (interactionState_ != GridInteractionState::EnteringFullscreen ||
+        fullscreenVideoWidget_ != videoWidget || videoWidget == nullptr ||
+        videoWidget->streamId() == kInvalidStreamId ||
+        videoWidget->frameMailbox() == nullptr) {
+        return false;
+    }
+
+    // 视频格只承载状态/标题等覆盖层；全屏期间隐藏，避免覆盖单路画面。
+    for (VideoWidget *widget : videoWidgets_) {
+        if (widget != nullptr) {
+            widget->hide();
+        }
+    }
+    inCanvasFullscreen_ = true;
+    applyInCanvasFullscreenSnapshot();
+    canvasHost_->setTargetFps(30);
+    setFocusPolicy(Qt::StrongFocus);
+    setFocus(Qt::OtherFocusReason);
+    return true;
+}
+
+void VideoGridWidget::exitInCanvasFullscreen()
+{
+    if (!inCanvasFullscreen_) {
+        return;
+    }
+    inCanvasFullscreen_ = false;
+    setFocusPolicy(Qt::NoFocus);
+    canvasHost_->setTargetFps(15);
+    for (VideoWidget *widget : videoWidgets_) {
+        if (widget != nullptr) {
+            widget->show();
+        }
+    }
+    fullscreenVideoWidget_ = nullptr;
+    setInteractionState(GridInteractionState::Idle);
+    refreshRenderSnapshot();
+}
+
+bool VideoGridWidget::isInCanvasFullscreenActive() const noexcept
+{
+    return inCanvasFullscreen_;
+}
+
+void VideoGridWidget::applyInCanvasFullscreenSnapshot()
+{
+    RenderSnapshot snapshot;
+    snapshot.logicalCanvasSize = size();
+    snapshot.devicePixelRatio = devicePixelRatioF();
+    VideoWidget *videoWidget = fullscreenVideoWidget_;
+    if (videoWidget != nullptr && videoWidget->streamId() != kInvalidStreamId) {
+        RenderItem item;
+        item.streamId = videoWidget->streamId();
+        item.tileRect = rect();
+        item.videoViewport = rect();
+        item.displayMode = VideoDisplayMode::Contain;
+        item.title = videoWidget->deviceName();
+        item.status = videoWidget->statusText();
+        item.frameVisible = videoWidget->isFrameVisible();
+        item.fullscreen = true;
+        snapshot.items.push_back(std::move(item));
+    }
+    canvasHost_->setSnapshot(std::move(snapshot));
+}
+
+void VideoGridWidget::keyPressEvent(QKeyEvent *event)
+{
+    if (inCanvasFullscreen_ && event != nullptr &&
+        event->key() == Qt::Key_Escape) {
+        exitInCanvasFullscreen();
+        event->accept();
+        return;
+    }
+    QWidget::keyPressEvent(event);
+}
+
+void VideoGridWidget::mouseDoubleClickEvent(QMouseEvent *event)
+{
+    if (inCanvasFullscreen_) {
+        exitInCanvasFullscreen();
+        if (event != nullptr) {
+            event->accept();
+        }
+        return;
+    }
+    QWidget::mouseDoubleClickEvent(event);
 }
 
 void VideoGridWidget::refreshRenderSnapshot()
 {
+    if (inCanvasFullscreen_) {
+        applyInCanvasFullscreenSnapshot();
+        return;
+    }
     RenderSnapshot snapshot;
     snapshot.logicalCanvasSize = size();
     snapshot.devicePixelRatio = devicePixelRatioF();

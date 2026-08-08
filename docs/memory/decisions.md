@@ -161,6 +161,18 @@
 - 性能边界：最终版本 120 秒快速对照中，OpenGL CPU 降低 91.66%、显示 14.914 FPS、实际后端与纹理证据有效；但 latest frame age P95 47→52 ms，超过 51.7 ms 相对门槛 0.3 ms，因此总控判定失败。重新执行正式套件前，不把 ADR-012 的较早短测或 2026-08-04 的 600 秒结果包装为当前布局认证。
 - 相关文件：`src/common/ui/VideoGridWidget.cpp`、`src/common/ui/VideoWidget.cpp`、`src/common/ui/MainWindow.cpp`、`tests/VideoGridDynamicTest.cpp`、`tests/VideoGridSmokeTest.cpp`、`tests/OpenGLGridRendererSmoke.cpp`
 
+## ADR-014 嵌入式渲染采用设备分级和保守资格策略
+
+- 日期：2026-08-08
+- 状态：双路径已于 2026-08-08 由 Kimi 实施完成（Windows CTest 14/14；ARM64 RASTER 与 GLES3 双构建、ELF/readelf 依赖验证通过；QEMU 纯逻辑测试除 2 个计时敏感日志用例外全过），真实板性能待验证
+- 背景：Windows RTX 3060 已证明当前单画布 YUV OpenGL 路径在该设备上有显著 CPU 收益，但 ARM64 只有交叉构建证据。团队对低端盒子场景是否值得继续投入 OpenGL 存在争议；仅凭“Linux 6.1”无法判断 QPA、EGL/GLES、VPU、内存带宽、温度和驱动稳定性。
+- 决策：保留 `VideoFrame + LatestFrameMailbox + RenderSnapshot + CPU/GL Canvas` 公共架构，并为 Linux ARM64 提供两种真实可裁剪构建：无 GPU/无可靠 EGL 的设备使用 `QImage + QPainter + Qt Raster Paint Engine + linuxfb`，应用不直接写 framebuffer；有 GPU 且实际 ES 3.0 Context、Shader、FBO smoke 通过的设备使用单画布 OpenGL ES 3.0。新增 `RASTER/GLES3/AUTO` CMake 模式，RASTER 构建不得查找或链接 Qt OpenGL、EGL、GLES。Linux bootstrap、能力策略和 backend factory 放入现有 `src/platform/linux/`。停止无目标设备的 PBO、共享 Context、上传线程和复杂 Shader 开发。
+- 原因：低端设备的首要瓶颈可能是多路软件解码，GL 只能优化颜色转换、上传和合成。子码流和负载预算同时降低网络、解码、内存和显示成本，适用面更广；稳定 GLES3 设备仍能复用当前 OpenGL 的真实收益。
+- 替代方案：所有平台默认 GL；删除 GL 退回逐路 QImage；把 Linux 6.1 视为统一图形平台；立即实现 GLES2、硬件解码或零拷贝。
+- 影响：嵌入式 EGLFS 全屏应复用同一画布切换 Snapshot，不创建 Windows 式第二个 GL 顶层窗口。UI 技术上限仍为 16，但不再把 16 路作为任意 ARM 板的承诺或硬门槛；用户在目标板按自定义路数阶梯测试，结果写入 `recommendedMaxStreams`，超出时提示而不是静默硬拦截。当前“断开并移除”主链已存在，只补 Linux 两后端生命周期回归。硬件解码只在目标 SoC 冻结且实测证明必要后进入实施。
+- 验证要求：Kimi K3 先完成 ARM64 RASTER 与 GLES3 两套交叉构建、AArch64 ELF 和依赖检查；RASTER 产物不得依赖 Qt OpenGL/OpenGLWidgets、EGL、GLES。WSL2 只证明构建和可运行的纯逻辑测试，不证明 linuxfb、EGLFS、GPU、VPU、温度或多路性能。真实板由用户选择路数、码流和门槛运行资格测试；GL 只有在该板的质量、延迟、温度和长稳门禁通过后才写入资格档案。
+- 相关文件：`docs/architecture/embedded_device_rendering_strategy.md`、`docs/architecture/video_rendering_framework.md`、`src/common/ui/VideoCanvasHost.cpp`、`src/platform/linux/`、`CMakeLists.txt`
+
 ## ADR-XXX 标题
 
 - 日期：

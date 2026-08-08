@@ -155,6 +155,8 @@ struct OpenGLGridRenderer::Implementation
     bool gpuTimingSupported = false;
     qint64 lastGpuTimeUs = -1;
     bool initialized = false;
+    TextureRetentionPolicy retentionPolicy =
+        TextureRetentionPolicy::KeepRegisteredStreams;
     std::unordered_map<StreamId, TextureSet> textures;
 
     void releaseTextureSet(QOpenGLExtraFunctions *functions, TextureSet &set)
@@ -216,7 +218,7 @@ struct OpenGLGridRenderer::Implementation
         return functions->glGetError() == GL_NO_ERROR;
     }
 
-    bool uploadPlane(
+    void uploadPlane(
         QOpenGLExtraFunctions *functions,
         TextureSet &set,
         const VideoFrame &frame,
@@ -248,9 +250,10 @@ struct OpenGLGridRenderer::Implementation
             rowLength = plane.rowBytes / pixelBytes;
         }
 
+        // GL_UNPACK_ALIGNMENT=1 由 render() 在上传批次开始时设置一次；
+        // 这里只更新每个 plane 的 ROW_LENGTH，批次结束由 render() 统一恢复。
         functions->glActiveTexture(GL_TEXTURE0 + index);
         functions->glBindTexture(GL_TEXTURE_2D, set.textures[index]);
-        functions->glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
         functions->glPixelStorei(GL_UNPACK_ROW_LENGTH, rowLength);
         functions->glTexSubImage2D(
             GL_TEXTURE_2D,
@@ -263,8 +266,6 @@ struct OpenGLGridRenderer::Implementation
             GL_UNSIGNED_BYTE,
             data
         );
-        functions->glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-        return functions->glGetError() == GL_NO_ERROR;
     }
 };
 
@@ -305,6 +306,14 @@ bool OpenGLGridRenderer::initialize(
         }
         return false;
     }
+
+    // 静态 sampler uniform 只在 link 后绑定一次；render() 不再逐帧设置。
+    program->bind();
+    program->setUniformValue("yTexture", 0);
+    program->setUniformValue("uTexture", 1);
+    program->setUniformValue("vTexture", 2);
+    program->setUniformValue("uvTexture", 1);
+    program->release();
 
     functions->glGenVertexArrays(1, &implementation_->vertexArray);
     functions->glGenBuffers(1, &implementation_->vertexBuffer);
@@ -454,10 +463,6 @@ bool OpenGLGridRenderer::render(
 
     auto &program = *implementation_->program;
     program.bind();
-    program.setUniformValue("yTexture", 0);
-    program.setUniformValue("uTexture", 1);
-    program.setUniformValue("vTexture", 2);
-    program.setUniformValue("uvTexture", 1);
     functions->glBindVertexArray(implementation_->vertexArray);
     functions->glEnable(GL_SCISSOR_TEST);
 
@@ -471,7 +476,16 @@ bool OpenGLGridRenderer::render(
     }
     for (auto iterator = implementation_->textures.begin();
          iterator != implementation_->textures.end();) {
-        if (activeStreams.find(iterator->first) == activeStreams.end()) {
+        const bool inSnapshot =
+            activeStreams.find(iterator->first) != activeStreams.end();
+        // KeepRegisteredStreams：已注册但暂时不在 Snapshot 的流（如 EGLFS
+        // 画布内全屏往返）保留纹理但不继续上传；未注册流始终立即释放。
+        const bool retained =
+            !inSnapshot &&
+            implementation_->retentionPolicy ==
+                TextureRetentionPolicy::KeepRegisteredStreams &&
+            controller->mailbox(iterator->first) != nullptr;
+        if (!inSnapshot && !retained) {
             implementation_->releaseTextureSet(functions, iterator->second);
             iterator = implementation_->textures.erase(iterator);
         } else {
@@ -480,6 +494,9 @@ bool OpenGLGridRenderer::render(
     }
     qint64 uploadMicroseconds = 0;
     std::uint64_t textureBytes = 0;
+    // 上传批次：ALIGNMENT 只在批次边界设置/恢复，ROW_LENGTH 每 plane 更新，
+    // 批次结束统一清零；错误检查收敛为每个 RenderItem 一次。
+    functions->glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     for (const RenderItem &item : snapshot.items) {
         if (item.streamId == kInvalidStreamId || !item.frameVisible) {
             continue;
@@ -510,14 +527,13 @@ bool OpenGLGridRenderer::render(
             }
             QElapsedTimer uploadTimer;
             uploadTimer.start();
-            bool uploaded = true;
             for (int index = 0; index < frame->planeCount(); ++index) {
-                uploaded = implementation_->uploadPlane(
-                               functions, textureSet, *frame, index
-                           ) && uploaded;
+                implementation_->uploadPlane(functions, textureSet, *frame, index);
             }
             uploadMicroseconds += uploadTimer.nsecsElapsed() / 1000;
-            if (!uploaded) {
+            // 每个 RenderItem 的全部 plane 上传后只检查一次错误；
+            // 失败只隔离当前 StreamId，不触发整个 Canvas 重建。
+            if (functions->glGetError() != GL_NO_ERROR) {
                 if (error != nullptr) {
                     *error = QStringLiteral("YUV texture upload failed for stream %1.")
                                  .arg(item.streamId);
@@ -593,6 +609,8 @@ bool OpenGLGridRenderer::render(
         textureBytes += textureSet.bytes;
     }
 
+    functions->glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+    functions->glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
     functions->glDisable(GL_SCISSOR_TEST);
     functions->glBindVertexArray(0);
     program.release();
@@ -616,4 +634,11 @@ bool OpenGLGridRenderer::render(
 bool OpenGLGridRenderer::isInitialized() const noexcept
 {
     return implementation_->initialized;
+}
+
+void OpenGLGridRenderer::setTextureRetentionPolicy(
+    TextureRetentionPolicy policy
+) noexcept
+{
+    implementation_->retentionPolicy = policy;
 }

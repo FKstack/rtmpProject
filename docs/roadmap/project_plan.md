@@ -1299,3 +1299,37 @@ Linux ARM64 当前只承诺交叉构建和 AArch64 ELF，真实 QPA/GPU/播放�
 自动回归已覆盖 1～16 路、四种窗口尺寸、F11/Esc、标题覆盖、日志 Dock、单路全屏往返，以及 CPU/OpenGL 的 16:9/4:3/竖屏四边 framebuffer。最终 Windows Debug 构建和 CTest 12/12 通过。用户确认 Visual Studio 生成的程序显示正常；自动化账户使用不同启动环境拉起的窗口不作为可比视觉证据。
 
 性能发布边界保持诚实：2026-08-05 的四组 600 秒正式结果早于本布局。最终监控墙版本的 120 秒快速对照显示 OpenGL CPU 降低 91.66%、显示 14.914 FPS，但 latest frame age P95 由 47 ms 到 52 ms，超过相对门槛 0.3 ms，因此短测总控为失败。要认证当前布局，仍需重新执行 Video、LiveLatency 和 Quality 正式套件。
+
+## 17. 嵌入式设备分级与通用显示优化（2026-08-08）
+
+后续渲染路线不再以“所有设备都启用 OpenGL”为目标，而以设备事实选择两条正式 Linux
+产品路径：
+
+1. 无 GPU 或无可靠 EGL/GLES3：使用 `QImage + QPainter + Qt Raster Paint Engine + linuxfb`
+   的 CPU 路径，应用不直接操作 `/dev/fb0`。
+2. 有 GPU 且真实 ES 3.0 Context、Shader、FBO smoke 通过：使用当前单画布 YUV OpenGL ES
+   3.0 路径；EGLFS 全屏复用主画布。
+3. 在 `src/platform/linux/` 增加 Linux bootstrap、能力策略和 renderer factory；把 CPU Canvas
+   从当前混合实现中拆出，使其不包含任何 OpenGL 头文件。
+4. 根 CMake 增加 `RASTER/GLES3/AUTO` 构建模式。RASTER 产物不得查找或链接 Qt OpenGL、
+   OpenGLWidgets、EGL、GLES；AUTO 在依赖缺失时生成可诊断的 CPU-only 构建。
+5. UI 仍允许最多 16 路，但不把 16 路作为任意板卡承诺。目标板资格脚本由用户传入路数阶梯、
+   码流和门槛，输出该板实测的 `recommendedMaxStreams`；失败即停止升档。
+6. 当前右键“断开并移除”到 Controller、PlaybackManager 和 Grid 的主链已经存在，不重复添加；
+   只补 CPU/GLES3 下普通流、重连流、全屏流和最后一路的资源释放回归。
+7. Kimi K3 先在 WSL2 使用现有 ARM64 toolchain 完成 RASTER/GLES3 两套构建、AArch64 ELF
+   与依赖防逃逸检查。WSL2 结果不代表真实 linuxfb、EGLFS、GPU、VPU、温度或多路性能通过。
+8. 真机数据明确后再实施 Display QoS、主/子码流和必要的硬件解码；零拷贝、PBO、共享
+   Context 和复杂 Shader 继续后置。
+
+完整产品判断、设备分级、架构图、实施阶段和门禁见 `docs/architecture/embedded_device_rendering_strategy.md`。
+
+**实施状态（2026-08-08，Kimi）**：上述 1～7 项已落地。`CpuVideoCanvas`/`VideoOpenGLCanvas`
+已拆为独立编译单元，`RtmpMonitorBuildConfig.h` 统一暴露 `RTMP_MONITOR_HAS_OPENGL`；
+`src/platform/linux/` 新增 `LinuxApplicationBootstrap`、`LinuxRenderingPolicy`、
+`LinuxRendererFactory`；`EmbeddedGlCapabilities` 纯判定接入 `VideoOpenGLCanvas` 初始化；
+EGLFS 自动切换为画布内全屏（`VideoGridWidget::enterInCanvasFullscreen`）；
+`scripts/qualify_embedded_device.sh` 与构建/资格指南
+（`docs/guides/build-and-testing/linux_dual_render_build.md`）已交付。Windows Debug
+CTest 14/14 通过；ARM64 RASTER 构建 NEEDED 无 Qt6OpenGL*/EGL/GLES，GLES3 构建依赖全部
+来自 sysroot。Display QoS、主/子码流与硬件解码仍按第 8 项等待真机数据。

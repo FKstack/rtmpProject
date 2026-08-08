@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "media/LatestFrameMailbox.h"
+#include "media/PlaybackTypes.h"
 #include "media/VideoFrame.h"
 #include "ui/ConnectionDialog.h"
 #include "ui/FullscreenVideoWindow.h"
@@ -88,6 +89,13 @@ private slots:
     void logDockDefaultsHiddenAndCanBeShown();
     void monitoringWallRoundTripRestoresWindowChrome();
     void transientWidgetVisibilityDoesNotSuppressSharedCanvas();
+    void inCanvasFullscreenRoundTripUsesMainCanvas();
+    void inCanvasFullscreenExitsOnStreamUnbind();
+    void inCanvasFullscreenEscapeKeyExits();
+    void removalReleasesCanvasBindingsForCpuBackend();
+    void removalReleasesTexturesForOpenGlBackend();
+    void reconnectWaitingStreamCanBeRemoved();
+    void fullscreenStreamRemovalRequiresExitFirst();
     void mainWindowDisablesAddActionAtMaximum();
 
 private:
@@ -624,6 +632,211 @@ void VideoGridDynamicTest::transientWidgetVisibilityDoesNotSuppressSharedCanvas(
     QTRY_VERIFY_WITH_TIMEOUT(
         grid.rendererRuntimeMetrics().renderedFrames >= 4, 5'000
     );
+}
+
+void VideoGridDynamicTest::inCanvasFullscreenRoundTripUsesMainCanvas()
+{
+    VideoGridWidget grid(RendererPreference::Cpu);
+    grid.resize(960, 540);
+
+    std::vector<std::shared_ptr<LatestFrameMailbox>> mailboxes;
+    for (StreamId streamId = 1; streamId <= 2; ++streamId) {
+        VideoWidget *videoWidget = grid.addVideoWidget(
+            QStringLiteral("Camera %1").arg(streamId, 2, 10, QLatin1Char('0'))
+        );
+        QVERIFY(videoWidget != nullptr);
+        auto mailbox = std::make_shared<LatestFrameMailbox>();
+        grid.bindVideoStream(videoWidget, streamId, mailbox);
+        videoWidget->showFrame();
+        QVERIFY(mailbox->submit(makeGridTestFrame(streamId)));
+        mailboxes.push_back(std::move(mailbox));
+    }
+    QCOMPARE(grid.rendererRuntimeMetrics().renderItemCount, 2);
+
+    VideoWidget *target = grid.videoWidgetAt(0);
+    target->fullscreenRequested(target);
+    QCOMPARE(grid.interactionState(),
+             VideoGridWidget::GridInteractionState::EnteringFullscreen);
+
+    // EGLFS 单窗口模式：主画布直接切单路 Snapshot，不创建第二个画布。
+    QVERIFY(grid.enterInCanvasFullscreen(target));
+    grid.notifyFullscreenEntryResult(target, true);
+    QVERIFY(grid.isInCanvasFullscreenActive());
+    QCOMPARE(grid.interactionState(),
+             VideoGridWidget::GridInteractionState::Fullscreen);
+    QCOMPARE(grid.rendererRuntimeMetrics().renderItemCount, 1);
+    QVERIFY(grid.videoWidgetAt(0)->isHidden());
+    QVERIFY(grid.videoWidgetAt(1)->isHidden());
+
+    // 断流标记通过 renderStateChanged 刷新单路 Snapshot，不会退回网格。
+    target->clearFrame();
+    QCOMPARE(grid.rendererRuntimeMetrics().renderItemCount, 1);
+    QCOMPARE(grid.rendererRuntimeMetrics().visibleRenderItemCount, 0);
+
+    grid.exitInCanvasFullscreen();
+    QVERIFY(!grid.isInCanvasFullscreenActive());
+    QCOMPARE(grid.interactionState(),
+             VideoGridWidget::GridInteractionState::Idle);
+    QCOMPARE(grid.rendererRuntimeMetrics().renderItemCount, 2);
+    QVERIFY(!grid.videoWidgetAt(0)->isHidden());
+    QVERIFY(!grid.videoWidgetAt(1)->isHidden());
+}
+
+void VideoGridDynamicTest::inCanvasFullscreenExitsOnStreamUnbind()
+{
+    VideoGridWidget grid(RendererPreference::Cpu);
+    grid.resize(960, 540);
+
+    VideoWidget *first = grid.addVideoWidget(QStringLiteral("Camera 01"));
+    VideoWidget *second = grid.addVideoWidget(QStringLiteral("Camera 02"));
+    QVERIFY(first != nullptr && second != nullptr);
+    auto firstMailbox = std::make_shared<LatestFrameMailbox>();
+    auto secondMailbox = std::make_shared<LatestFrameMailbox>();
+    grid.bindVideoStream(first, 1, firstMailbox);
+    grid.bindVideoStream(second, 2, secondMailbox);
+
+    first->fullscreenRequested(first);
+    QVERIFY(grid.enterInCanvasFullscreen(first));
+    grid.notifyFullscreenEntryResult(first, true);
+    QVERIFY(grid.isInCanvasFullscreenActive());
+
+    // 解绑当前画布内全屏的流必须自动退出全屏并恢复网格。
+    grid.unbindVideoStream(first);
+    QVERIFY(!grid.isInCanvasFullscreenActive());
+    QCOMPARE(grid.interactionState(),
+             VideoGridWidget::GridInteractionState::Idle);
+    QCOMPARE(grid.rendererRuntimeMetrics().renderItemCount, 1);
+    QVERIFY(!second->isHidden());
+}
+
+void VideoGridDynamicTest::inCanvasFullscreenEscapeKeyExits()
+{
+    VideoGridWidget grid(RendererPreference::Cpu);
+    grid.resize(960, 540);
+
+    VideoWidget *widget = grid.addVideoWidget(QStringLiteral("Camera 01"));
+    QVERIFY(widget != nullptr);
+    auto mailbox = std::make_shared<LatestFrameMailbox>();
+    grid.bindVideoStream(widget, 1, mailbox);
+
+    widget->fullscreenRequested(widget);
+    QVERIFY(grid.enterInCanvasFullscreen(widget));
+    grid.notifyFullscreenEntryResult(widget, true);
+    QVERIFY(grid.isInCanvasFullscreenActive());
+
+    QTest::keyClick(&grid, Qt::Key_Escape);
+    QVERIFY(!grid.isInCanvasFullscreenActive());
+    QCOMPARE(grid.interactionState(),
+             VideoGridWidget::GridInteractionState::Idle);
+}
+
+void VideoGridDynamicTest::removalReleasesCanvasBindingsForCpuBackend()
+{
+    VideoGridWidget grid(RendererPreference::Cpu);
+    grid.resize(960, 540);
+
+    VideoWidget *first = grid.addVideoWidget(QStringLiteral("Camera 01"));
+    VideoWidget *second = grid.addVideoWidget(QStringLiteral("Camera 02"));
+    QVERIFY(first != nullptr && second != nullptr);
+    auto firstMailbox = std::make_shared<LatestFrameMailbox>();
+    auto secondMailbox = std::make_shared<LatestFrameMailbox>();
+    grid.bindVideoStream(first, 1, firstMailbox);
+    grid.bindVideoStream(second, 2, secondMailbox);
+    first->showFrame();
+    second->showFrame();
+    QVERIFY(firstMailbox->submit(makeGridTestFrame(1)));
+    QVERIFY(secondMailbox->submit(makeGridTestFrame(2)));
+
+    QCOMPARE(grid.rendererRuntimeMetrics().renderItemCount, 2);
+    QCOMPARE(grid.rendererRuntimeMetrics().boundMailboxCount, 2);
+
+    // 播放中删除：Widget、Snapshot 项与 mailbox 绑定同时释放。
+    QVERIFY(grid.removeVideoWidget(first));
+    QCOMPARE(grid.rendererRuntimeMetrics().renderItemCount, 1);
+    QCOMPARE(grid.rendererRuntimeMetrics().boundMailboxCount, 1);
+
+    // 最后一路删除：画布不再持有任何 Snapshot 项或 mailbox 绑定。
+    QVERIFY(grid.removeVideoWidget(second));
+    QCOMPARE(grid.videoWidgetCount(), 0);
+    QCOMPARE(grid.rendererRuntimeMetrics().renderItemCount, 0);
+    QCOMPARE(grid.rendererRuntimeMetrics().boundMailboxCount, 0);
+}
+
+void VideoGridDynamicTest::removalReleasesTexturesForOpenGlBackend()
+{
+    VideoGridWidget grid(RendererPreference::OpenGL);
+    grid.resize(640, 360);
+    grid.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&grid));
+    if (grid.activeRendererBackend() != QStringLiteral("opengl")) {
+        QSKIP("OpenGL backend unavailable in this environment.");
+    }
+
+    VideoWidget *widget = grid.addVideoWidget(QStringLiteral("Camera 01"));
+    QVERIFY(widget != nullptr);
+    auto mailbox = std::make_shared<LatestFrameMailbox>();
+    grid.bindVideoStream(widget, 1, mailbox);
+    widget->showFrame();
+    QVERIFY(mailbox->submit(makeGridTestFrame(1)));
+
+    QTRY_VERIFY_WITH_TIMEOUT(
+        grid.rendererRuntimeMetrics().textureBytes > 0, 5'000
+    );
+    // 可见网格的添加动画结束后才允许删除。
+    QTRY_VERIFY_WITH_TIMEOUT(
+        grid.interactionState() == VideoGridWidget::GridInteractionState::Idle,
+        5'000
+    );
+
+    QVERIFY(grid.removeVideoWidget(widget));
+    QCOMPARE(grid.rendererRuntimeMetrics().renderItemCount, 0);
+    QCOMPARE(grid.rendererRuntimeMetrics().boundMailboxCount, 0);
+    // 删除后纹理必须随 Snapshot 项消失而释放，下一次绘制即归零。
+    QTRY_VERIFY_WITH_TIMEOUT(
+        grid.rendererRuntimeMetrics().textureBytes == 0, 5'000
+    );
+}
+
+void VideoGridDynamicTest::reconnectWaitingStreamCanBeRemoved()
+{
+    MainWindow mainWindow;
+    VideoWidget *videoWidget =
+        mainWindow.addConnectionWidget(QStringLiteral("Camera 01"));
+    QVERIFY(videoWidget != nullptr);
+    auto mailbox = std::make_shared<LatestFrameMailbox>();
+    mainWindow.bindVideoStream(videoWidget, 1, mailbox);
+
+    // 重连等待状态：连接已断开但格子仍在等待自动重连。
+    mainWindow.updateDeviceStatus(videoWidget, DeviceStatus::Reconnecting);
+    QVERIFY(mainWindow.removeConnectionWidget(videoWidget));
+    QCOMPARE(mainWindow.videoWidgetCount(), 0);
+    QCOMPARE(mainWindow.rendererRuntimeMetrics().renderItemCount, 0);
+    QCOMPARE(mainWindow.rendererRuntimeMetrics().boundMailboxCount, 0);
+}
+
+void VideoGridDynamicTest::fullscreenStreamRemovalRequiresExitFirst()
+{
+    VideoGridWidget grid(RendererPreference::Cpu);
+    grid.resize(960, 540);
+
+    VideoWidget *first = grid.addVideoWidget(QStringLiteral("Camera 01"));
+    QVERIFY(first != nullptr);
+    auto mailbox = std::make_shared<LatestFrameMailbox>();
+    grid.bindVideoStream(first, 1, mailbox);
+    first->showFrame();
+    QVERIFY(mailbox->submit(makeGridTestFrame(1)));
+
+    first->fullscreenRequested(first);
+    QVERIFY(grid.enterInCanvasFullscreen(first));
+    grid.notifyFullscreenEntryResult(first, true);
+    QVERIFY(grid.isInCanvasFullscreenActive());
+
+    // 全屏期间删除被拒绝；退出全屏后删除成功并释放全部绑定。
+    QVERIFY(!grid.removeVideoWidget(first));
+    grid.exitInCanvasFullscreen();
+    QVERIFY(grid.removeVideoWidget(first));
+    QCOMPARE(grid.rendererRuntimeMetrics().renderItemCount, 0);
+    QCOMPARE(grid.rendererRuntimeMetrics().boundMailboxCount, 0);
 }
 
 void VideoGridDynamicTest::mainWindowDisablesAddActionAtMaximum()

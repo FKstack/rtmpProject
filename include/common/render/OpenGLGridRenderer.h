@@ -33,6 +33,13 @@ public:
 
     [[nodiscard]] bool isInitialized() const noexcept;
 
+    /**
+     * @brief 设置非 Snapshot 流纹理的保留策略；默认 KeepRegisteredStreams。
+     *
+     * 必须在 Context 线程调用（initialize/render 同一线程规则）。
+     */
+    void setTextureRetentionPolicy(TextureRetentionPolicy policy) noexcept;
+
 private:
     struct Implementation;
     std::unique_ptr<Implementation> implementation_;
