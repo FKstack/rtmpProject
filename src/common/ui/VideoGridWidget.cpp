@@ -98,6 +98,8 @@ VideoGridWidget::VideoGridWidget(
     canvasHost_->setObjectName(QStringLiteral("videoGridCanvas"));
     canvasHost_->setGeometry(rect());
     canvasHost_->lower();
+    connect(canvasHost_, &VideoCanvasHost::surfacePresented,
+            this, &VideoGridWidget::surfacePresented);
 
     gridLayout_ = new QGridLayout(this);
     gridLayout_->setContentsMargins(

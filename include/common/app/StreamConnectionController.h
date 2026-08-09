@@ -9,6 +9,7 @@
 #include "logging/LogTypes.h"
 #include "logging/UserMessageTypes.h"
 #include "media/PlaybackTypes.h"
+#include "server/MediaServerTypes.h"
 
 class MainWindow;
 class LogManager;
@@ -38,8 +39,30 @@ public:
         bool startImmediately = true,
         bool userInitiated = false
     );
+
+    /**
+     * @brief 按摄像头档案接入一路连接。
+     *
+     * 播放 URL 由 buildRtmpUrl(endpoint, profile.streamKey) 生成；
+     * 生成失败或 cameraId 与会话内既有绑定重复时记 warning 并返回
+     * kInvalidStreamId。成功后行为与完整 URL 版本一致，并在会话内
+     * 维持 cameraId 到 StreamId 的绑定（不写回 profile）。
+     */
+    StreamId addConnection(
+        const CameraStreamProfile &profile,
+        const MediaServerEndpoint &endpoint,
+        bool startImmediately = true
+    );
     bool removeConnection(StreamId streamId, bool askForConfirmation);
     bool preloadUrls(const QStringList &streamUrls);
+
+    /**
+     * @brief 设置媒体服务器接入点。
+     *
+     * 设置后连接对话框的默认 URL 由 buildRtmpUrl 按接入点生成；
+     * --url 预装与手工输入完整 URL 的流程不受影响，优先级更高。
+     */
+    void setMediaServerEndpoint(const MediaServerEndpoint &endpoint);
 
     [[nodiscard]] StreamId streamIdFor(
         const VideoWidget *videoWidget
@@ -54,6 +77,8 @@ private:
         QPointer<VideoWidget> videoWidget;
         UserFailureReason lastFailureReason = UserFailureReason::None;
         bool removing = false;
+        // 仅 profile 接入的连接携带 cameraId；其余连接保持为空。
+        QString cameraId;
     };
 
     void showConnectionDialog();
@@ -85,5 +110,7 @@ private:
     MultiStreamPlaybackManager *playbackManager_ = nullptr;
     LogManager *logManager_ = nullptr;
     UserMessageService *userMessageService_ = nullptr;
+    MediaServerEndpoint mediaServerEndpoint_;
+    bool hasMediaServerEndpoint_ = false;
     std::vector<Binding> bindings_;
 };

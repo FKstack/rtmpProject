@@ -10,11 +10,78 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+if(MSVC AND CMAKE_GENERATOR MATCHES "Ninja")
+    # CMake's MSVC probe decodes /showIncludes using the active console code
+    # page.  On Windows installations where cl.exe emits UTF-8 while that code
+    # page is still GBK, the prefix is mojibake and Ninja silently records no
+    # header dependencies ("#deps 0").  Preserve the compiler's raw bytes so
+    # the prefix in rules.ninja exactly matches subsequent compiler output.
+    set(RTMP_MONITOR_SHOWINCLUDES_DIR
+        "${CMAKE_BINARY_DIR}/CMakeFiles/RtmpMonitorShowIncludes")
+    file(MAKE_DIRECTORY "${RTMP_MONITOR_SHOWINCLUDES_DIR}")
+    file(WRITE "${RTMP_MONITOR_SHOWINCLUDES_DIR}/probe.h" "\n")
+    file(WRITE "${RTMP_MONITOR_SHOWINCLUDES_DIR}/probe.cpp"
+        "#include \"probe.h\"\nint main() { return 0; }\n")
+    execute_process(
+        COMMAND "${CMAKE_CXX_COMPILER}" /nologo /showIncludes /c probe.cpp
+        WORKING_DIRECTORY "${RTMP_MONITOR_SHOWINCLUDES_DIR}"
+        OUTPUT_VARIABLE RTMP_MONITOR_SHOWINCLUDES_OUTPUT
+        ERROR_VARIABLE RTMP_MONITOR_SHOWINCLUDES_ERROR
+        RESULT_VARIABLE RTMP_MONITOR_SHOWINCLUDES_RESULT
+        ENCODING NONE
+    )
+    if(RTMP_MONITOR_SHOWINCLUDES_RESULT EQUAL 0 AND
+       RTMP_MONITOR_SHOWINCLUDES_OUTPUT MATCHES
+       "(^|\n)([^:\n][^:\n]+:[^:\n]*[^: \n][^: \n]:?[ \t]+)([A-Za-z]:\\\\|\\./|\\.\\\\|/)")
+        set(CMAKE_CXX_CL_SHOWINCLUDES_PREFIX "${CMAKE_MATCH_2}")
+        set(CMAKE_CL_SHOWINCLUDES_PREFIX "${CMAKE_MATCH_2}")
+        message(STATUS "Using raw MSVC /showIncludes prefix for Ninja dependency tracking")
+    else()
+        message(FATAL_ERROR
+            "Unable to determine the raw MSVC /showIncludes prefix. "
+            "Ninja header dependency tracking would be unsafe. Compiler output: "
+            "${RTMP_MONITOR_SHOWINCLUDES_OUTPUT}${RTMP_MONITOR_SHOWINCLUDES_ERROR}")
+    endif()
+endif()
+
 if(WIN32)
     if(NOT MSVC)
         message(FATAL_ERROR
             "Windows x86_64 builds require MSVC and a matching Qt 6 MSVC kit."
         )
+    endif()
+
+    # Visual Studio does not inject the vcpkg toolchain when CMake Presets are
+    # enabled. Fail before Qt/FFmpeg discovery so a broken preset produces an
+    # actionable diagnostic instead of a secondary missing build.ninja error.
+    set(RTMP_MONITOR_HAS_MANUAL_FFMPEG_HINT FALSE)
+    foreach(ffmpeg_hint IN ITEMS
+        FFMPEG_INCLUDE_DIRS
+        FFMPEG_LIBRARIES
+        FFmpeg_DIR
+    )
+        if(DEFINED ${ffmpeg_hint} AND NOT "${${ffmpeg_hint}}" STREQUAL "")
+            set(RTMP_MONITOR_HAS_MANUAL_FFMPEG_HINT TRUE)
+        endif()
+    endforeach()
+    if(NOT RTMP_MONITOR_HAS_MANUAL_FFMPEG_HINT)
+        if(NOT DEFINED CMAKE_TOOLCHAIN_FILE OR
+           CMAKE_TOOLCHAIN_FILE STREQUAL "")
+            message(FATAL_ERROR
+                "Windows FFmpeg discovery requires the vcpkg toolchain. "
+                "Set VCPKG_ROOT and use the Qt-Debug/Qt-Release preset, or "
+                "configure with "
+                "-DCMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake. "
+                "In Visual Studio select Qt-Debug, then Delete Cache and "
+                "Reconfigure."
+            )
+        elseif(NOT EXISTS "${CMAKE_TOOLCHAIN_FILE}")
+            message(FATAL_ERROR
+                "CMAKE_TOOLCHAIN_FILE does not exist: ${CMAKE_TOOLCHAIN_FILE}. "
+                "Check VCPKG_ROOT in the ignored CMakeUserPresets.json, then "
+                "Delete Cache and Reconfigure in Visual Studio."
+            )
+        endif()
     endif()
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" RTMP_MONITOR_SYSTEM_PROCESSOR)
@@ -66,12 +133,12 @@ set(RTMP_MONITOR_HAS_OPENGL 0)
 if(WIN32)
     set(RTMP_MONITOR_HAS_OPENGL 1)
     set(RTMP_MONITOR_LINUX_RENDER_MODE_EFFECTIVE "DESKTOP")
-    find_package(Qt6 REQUIRED COMPONENTS Widgets OpenGL OpenGLWidgets)
+    find_package(Qt6 REQUIRED COMPONENTS Widgets OpenGL OpenGLWidgets Network)
     find_package(OpenGL REQUIRED)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(RTMP_MONITOR_LINUX_RENDER_MODE_EFFECTIVE
         "${RTMP_MONITOR_LINUX_RENDER_MODE}")
-    find_package(Qt6 REQUIRED COMPONENTS Widgets)
+    find_package(Qt6 REQUIRED COMPONENTS Widgets Network)
 
     if(NOT RTMP_MONITOR_LINUX_RENDER_MODE STREQUAL "RASTER")
         # AUTO 使用 QUIET 探测；GLES3 使用 REQUIRED 强制成功。
@@ -264,6 +331,35 @@ target_link_libraries(rtmp_monitor_logging
 )
 
 rtmp_monitor_apply_project_options(rtmp_monitor_logging)
+
+# 媒体服务器边界库：只读配置、URL 生成和异步健康观察，
+# 不包含任何服务器进程管理能力。
+set(RTMP_MONITOR_SERVER_SOURCES
+    include/common/server/MediaServerTypes.h
+    include/common/server/RtmpUrlBuilder.h
+    src/common/server/RtmpUrlBuilder.cpp
+    include/common/server/MediaServerConfiguration.h
+    src/common/server/MediaServerConfiguration.cpp
+    include/common/server/MediaServerMonitor.h
+    src/common/server/MediaServerMonitor.cpp
+)
+
+qt_add_library(rtmp_monitor_server STATIC
+    ${RTMP_MONITOR_SERVER_SOURCES}
+)
+
+target_include_directories(rtmp_monitor_server
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/common
+)
+
+target_link_libraries(rtmp_monitor_server
+    PUBLIC
+        Qt6::Core
+        Qt6::Network
+)
+
+rtmp_monitor_apply_project_options(rtmp_monitor_server)
 
 qt_add_library(rtmp_monitor_app STATIC
     ${RTMP_MONITOR_APP_SOURCES}
@@ -480,6 +576,7 @@ target_link_libraries(rtmp_monitor
         rtmp_monitor_app
         rtmp_monitor_logging
         rtmp_monitor_media
+        rtmp_monitor_server
         rtmp_monitor_ui
 )
 
@@ -699,6 +796,40 @@ if(BUILD_TESTING)
         COMMAND rtmp_monitor_multi_stream_test)
     rtmp_monitor_copy_ffmpeg_runtime(rtmp_monitor_multi_stream_test)
 
+    if(WIN32)
+        qt_add_executable(rtmp_monitor_live_ui_shutdown_test
+            tests/LiveUiShutdownTest.cpp
+            include/common/app/StreamConnectionController.h
+            src/common/app/StreamConnectionController.cpp
+            ${RTMP_MONITOR_STYLE_RESOURCE}
+        )
+        set_target_properties(rtmp_monitor_live_ui_shutdown_test
+            PROPERTIES WIN32_EXECUTABLE FALSE)
+        target_include_directories(rtmp_monitor_live_ui_shutdown_test
+            PRIVATE
+                ${CMAKE_BINARY_DIR}/generated
+        )
+        target_link_libraries(rtmp_monitor_live_ui_shutdown_test
+            PRIVATE
+                rtmp_monitor_app
+                rtmp_monitor_logging
+                rtmp_monitor_media
+                rtmp_monitor_server
+                rtmp_monitor_ui
+                Qt6::Test
+        )
+        rtmp_monitor_apply_project_options(rtmp_monitor_live_ui_shutdown_test)
+        add_test(NAME rtmp_monitor_live_ui_shutdown_test
+            COMMAND rtmp_monitor_live_ui_shutdown_test)
+        set_tests_properties(rtmp_monitor_live_ui_shutdown_test
+            PROPERTIES
+                LABELS "windows;live;shutdown"
+                RUN_SERIAL TRUE
+                TIMEOUT 60
+        )
+        rtmp_monitor_copy_ffmpeg_runtime(rtmp_monitor_live_ui_shutdown_test)
+    endif()
+
     qt_add_executable(rtmp_monitor_video_render_core_test
         tests/VideoRenderCoreTest.cpp
     )
@@ -766,6 +897,7 @@ if(BUILD_TESTING)
         PRIVATE
             rtmp_monitor_logging
             rtmp_monitor_media
+            rtmp_monitor_server
             rtmp_monitor_ui
             Qt6::Test
     )
@@ -839,6 +971,54 @@ if(BUILD_TESTING)
     )
     add_test(NAME rtmp_monitor_linux_rendering_policy_test
         COMMAND rtmp_monitor_linux_rendering_policy_test)
+
+    qt_add_executable(rtmp_monitor_url_builder_test
+        tests/RtmpUrlBuilderTest.cpp
+    )
+    if(WIN32)
+        set_target_properties(rtmp_monitor_url_builder_test
+            PROPERTIES WIN32_EXECUTABLE FALSE)
+    endif()
+    target_link_libraries(rtmp_monitor_url_builder_test
+        PRIVATE
+            rtmp_monitor_server
+            Qt6::Test
+    )
+    rtmp_monitor_apply_project_options(rtmp_monitor_url_builder_test)
+    add_test(NAME rtmp_monitor_url_builder_test
+        COMMAND rtmp_monitor_url_builder_test)
+
+    qt_add_executable(rtmp_monitor_media_server_config_test
+        tests/MediaServerConfigurationTest.cpp
+    )
+    if(WIN32)
+        set_target_properties(rtmp_monitor_media_server_config_test
+            PROPERTIES WIN32_EXECUTABLE FALSE)
+    endif()
+    target_link_libraries(rtmp_monitor_media_server_config_test
+        PRIVATE
+            rtmp_monitor_server
+            Qt6::Test
+    )
+    rtmp_monitor_apply_project_options(rtmp_monitor_media_server_config_test)
+    add_test(NAME rtmp_monitor_media_server_config_test
+        COMMAND rtmp_monitor_media_server_config_test)
+
+    qt_add_executable(rtmp_monitor_media_server_monitor_test
+        tests/MediaServerMonitorTest.cpp
+    )
+    if(WIN32)
+        set_target_properties(rtmp_monitor_media_server_monitor_test
+            PROPERTIES WIN32_EXECUTABLE FALSE)
+    endif()
+    target_link_libraries(rtmp_monitor_media_server_monitor_test
+        PRIVATE
+            rtmp_monitor_server
+            Qt6::Test
+    )
+    rtmp_monitor_apply_project_options(rtmp_monitor_media_server_monitor_test)
+    add_test(NAME rtmp_monitor_media_server_monitor_test
+        COMMAND rtmp_monitor_media_server_monitor_test)
 endif()
 
 include(GNUInstallDirs)

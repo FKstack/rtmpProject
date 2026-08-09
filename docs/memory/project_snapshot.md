@@ -1,8 +1,8 @@
 # RtmpMonitor 当前项目快照
 
-> 最近审查日期：2026-08-08
+> 最近审查日期：2026-08-10
 >
-> 发布分支：`week6`
+> 发布分支：`v0.1.0-alpha.1`
 >
 > 发布前基线：`fb54a6076f3cf05616617d77b17f97e4f28d2eb3`
 >
@@ -14,7 +14,9 @@
 
 RtmpMonitor 是一个使用同一套 C++17、Qt 6 Widgets 和 FFmpeg 代码，在 Windows x86_64 与 Linux ARM64 上接收、解码并多宫格显示 H.264/RTMP 视频的桌面/嵌入式客户端。
 
-长期产品目标还包括由软件管理 RTMP Server 能力，但该能力属于六周原型和 ARM64 专项之后的独立产品化阶段。本阶段不实现 Server 业务代码。
+RTMP Server 采用独立 SRS 服务，不在 Qt 进程内实现 RTMP 协议。当前仓库已完成
+Windows+WSL2 侧的最小配置、生命周期脚本、URL/配置生成和只读健康监控；ARM
+真机、真实摄像头和最终分发仍按 ISSUE-008 保持 `[需要验证]`。
 
 ## 当前技术栈
 
@@ -52,6 +54,10 @@ RtmpMonitor 是一个使用同一套 C++17、Qt 6 Widgets 和 FFmpeg 代码，�
 
 ## 当前已验证进度
 
+- 2026-08-10 已创建发布候选分支 `v0.1.0-alpha.1`；当前 Windows Debug 工作树
+  增量构建无待编译目标，完整 CTest 18/18 通过（92.76 秒）。本轮未设置
+  `RTMP_MONITOR_TEST_URL`，因此真实流 UI 用例为跳过路径，真实流结论仍使用下方
+  已记录的独立 Verifier/压力测试证据，不把本轮 18/18 冒充新的真实流验收。
 - 2026-08-08 Linux 双路径渲染架构（`embedded_device_rendering_strategy.md` §16～§22）已由 Kimi 落地：`CpuVideoCanvas`/`VideoOpenGLCanvas` 拆为独立编译单元，`RtmpMonitorBuildConfig.h` 暴露 `RTMP_MONITOR_HAS_OPENGL`；新增 `src/platform/linux/`（bootstrap/policy/factory）与 `EmbeddedGlCapabilities` 纯判定；EGLFS 自动改为画布内单路 Snapshot 全屏；GLES3 P1 小优化（静态 sampler、批次 unpack、每 RenderItem 一次错误检查、纹理保留策略）完成。Windows Debug CTest 14/14 通过（新增 capabilities/policy 两个纯逻辑目标与 7 个动态网格用例）。
 - 2026-08-08 WSL2 ARM64 双构建完成：RASTER 产物为 ELF64/AArch64 且 NEEDED 无 Qt6OpenGL/Qt6OpenGLWidgets/libEGL/libGLES；GLES3 产物含 Qt6 OpenGL/OpenGLWidgets 依赖且全部来自 sysroot。QEMU 用户态下纯逻辑测试：capabilities 10/10、policy 9/9、render core 9/9、user message 5/5 通过；logging 2 个计时敏感用例在 QEMU 下失败（QEMU 时序问题，Windows 端通过，与本次改动无关）。板级资格脚本 `scripts/qualify_embedded_device.sh` 已交付但未经真实板运行。
 - Week 1～3：外部 RTMP 链路、动态 1～16 路 UI、单路 FFmpeg 拉流与安全退出已完成。
@@ -67,6 +73,9 @@ RtmpMonitor 是一个使用同一套 C++17、Qt 6 Widgets 和 FFmpeg 代码，�
 - 2026-08-08 第一轮居中 16:9 网格的 120 秒快速对照全部门禁通过：CPU 3.425%→0.203%，display FPS 11.047→14.914，frame age P95 46→34 ms；但它早于最终标题覆盖和监控墙实现。
 - 最终监控墙版本的 120 秒快速对照实际命中 RTX 3060 Desktop GL 3.3、无 fallback：CPU 2.362%→0.197%（降低 91.66%），display FPS 8.496→14.914，internal latency P95 43→40 ms，最大 UI gap 149→174 ms，纹理稳定为 22,118,400 bytes；latest frame age P95 47→52 ms，超过 51.7 ms 门槛 0.3 ms，因此总控如实判定失败。两次短测均不替代四组 600 秒正式门禁。
 - 视觉证据边界：用户确认 Visual Studio 生成并启动的程序显示正常。Codex 自动化账户启动的窗口与用户 VS 运行环境不同，不作为可比产品证据，也不再据此修改生产渲染代码。当前可重复的定量证据来自纯几何、CPU/OpenGL framebuffer 回读和用户对 VS 产物的人工确认；尚未固化 VS 窗口外围留白的像素测量截图。按状态文件精确停止后，1935 监听器及匹配客户端/FFmpeg/nginx 进程均为 0。
+- 2026-08-09 Windows 单路全屏后续修复已完成代码与自动化门禁：无帧控制栏固定可见；有帧后经 1200ms 以 180ms `OutCubic` 收起，由底部 96px 热区滑入，离开防抖 250ms；清帧立即恢复。截图按钮与 `Ctrl+Shift+S` 抓取全屏画布 framebuffer、立即显示缩略图，并在线程池用 `QSaveFile` 异步原子保存 PNG。退出以最后 framebuffer 的 raster 冻结层遮挡切换，主网格 `surfacePresented()` 后才揭开，750ms 超时兜底。Visual Studio MSVC 环境 `Qt-Debug --fresh` 配置成功、136/136 构建成功、完整 CTest 17/17（92.74 秒）通过。真实 SRS 流下的工具栏、截图方向/颜色和 NVIDIA Overlay 录屏仍 `[需要验证]`，见 ISSUE-009。
+- 2026-08-09 用户第二轮录像发现无帧顶部旋转控制栏、有帧截图后底栏不收起以及光标难以恢复。控制栏现改为底部 96px 热区内的受裁剪子控件，不再把表面动画到顶层窗口边界外；重复鼠标移动不再重启动画。全屏临时画布的鼠标事件穿透到统一处理器，底栏 250ms 收起与光标 2000ms 空闲隐藏使用独立计时，任何全屏鼠标活动立即恢复光标。新建独立 Windows Debug 目录完成 136/136 构建和 CTest 17/17（98.01 秒）；用户退出旧 F5 实例后，Visual Studio 当前构建目录的 `rtmp_monitor.exe` 已重新链接 1/1 成功。重新 F5 后的录像复验仍 `[需要验证]`。
+- 2026-08-09 Windows Debug 退出堆损坏已定位到构建依赖追踪，而非 FFmpeg/OpenGL 运行时：Application Verifier Full Heaps 捕获 `FullscreenVideoWindow` 分配块末尾首次越界，Ninja 同期记录旧 `MainWindow.cpp.obj` 为 `#deps 0`。根因是 CMake 3.29 按 GBK 错误解码 `cl.exe` 的 UTF-8 中文 `/showIncludes` 前缀，头文件变化后调用方未重编译，产生类布局 ABI 不一致。CMake 现以原始字节探测前缀且探测失败即拒绝配置；全新 `Qt-Debug` 后 `MainWindow.cpp.obj` 恢复 347 条依赖并包含 `FullscreenVideoWindow.h`。143/143 构建、CTest 18/18、Verifier 真实流 UI 复测、CPU/OpenGL UI 关闭 30/30、单路真实流 30/30、16 路真实流 10/10，以及独立 ASan RelWithDebInfo 54/54 构建与真实流 UI 退出均通过；Verifier 已关闭。用户 Visual Studio F5 两种 renderer 各 30 次人工退出仍 `[需要验证]`，见 ISSUE-010。
 - 2026-08-03 Windows Debug 全工程构建通过，完整 CTest 12/12 通过（65.87 秒），包含生产 YUV Shader framebuffer 像素验证和渲染核心并发/所有权/最终渲染延迟测试。
 - 2026-08-03 Linux ARM64 Debug 全量交叉构建 94/94 目标步骤通过，最终改动又通过 45 步增量构建；主程序、ES3 EGL 冒烟和渲染核心测试均为 ELF64/AArch64，主程序依赖目标 Qt6 OpenGL/OpenGLWidgets 与 FFmpeg `.so`。
 - 历史 GLES2 冒烟基线已提升为 GLES3；ARM64 主程序、测试、EGL/ES3 与 Qt OpenGL 目标均生成 AArch64 ELF。
@@ -77,7 +86,9 @@ RtmpMonitor 是一个使用同一套 C++17、Qt 6 Widgets 和 FFmpeg 代码，�
 - Linux ARM64 真实硬件盒子的 QPA、GPU、FFmpeg 播放、输入和长期稳定性尚未验收。
 - Windows 16 路正式性能资格测试已完成；更换 GPU/驱动、分辨率或部署环境后需重新执行。
 - 2026-08-04 的四组 600 秒正式结果早于当前紧凑网格和 F11 监控墙；当前布局只完成两次 120 秒预录 Video 快速对照，最终版本还因 latest frame age P95 超出相对门槛 0.3 ms 而未全过。若要把当前布局作为新的完整发布负载认证，需要重新执行 Video、LiveLatency 与 Quality 的正式套件。
-- RTMP Server 产品化尚处于路线规划和选型阶段，未实现生命周期管理或打包。
+- RTMP Server 接入已于 2026-08-09 完成独立修复复验：Visual Studio `Qt-Debug` 现通过公共 `Windows-MSVC-vcpkg` 与本机 `VCPKG_ROOT` 使用正确 FFmpeg；无 toolchain 时 CMake 会给出可操作错误。全新配置、136/136 构建、CTest 17/17（85.29 秒）通过。SRS 6.0.184 的 1935/回环 1985、WSL/Windows 双侧 H.264 拉流、停推/同 URL 恢复、SIGQUIT 停止和未知 1935 占用拒绝已重跑通过；停止后端口与状态文件均清理。Kimi 的 4/16 路与 600 秒结果保留为历史证据，本次未重跑；Visual Studio F5 中文界面需用户在本机窗口最终确认。ARM 实机、真实摄像头、Docker 仍 `[需要验证]`，见 ISSUE-008。
+- Windows 单路全屏的历史控制栏、完全黑屏、成功推流后工具栏不可唤出和退出白闪均已完成代码修复与自动化回归，但 Visual Studio F5、默认 OpenGL、NVIDIA Overlay 开启的真实 SRS 流录像尚未由用户确认；首帧、截图方向/颜色、停推与恢复推流保持 `[需要验证]`，见 ISSUE-009。
+- Windows Debug 退出堆损坏的首次非法写入已由 Application Verifier 捕获并修复，自动化与真实流压力回归均通过；Visual Studio F5 下 `auto`/`cpu` 各 30 次人工关闭仍 `[需要验证]`，见 ISSUE-010。
 - OpenViking 0.4.11 已启用为 systemd 服务并绑定 `127.0.0.1:1933`；MCP 已通过 wheel-only 固定为 1.29.0。doctor、`/health`、`/ready`、Windows 回环访问、重启恢复、user/root key 边界和临时 Session CRUD/清理均已验证。
 - OpenViking Marketplace 与 `openviking-memory` 0.7.4 已各安装一次；插件声明四个官方 Hook 和一个内置 MCP。真实 MCP 握手及 18 个工具枚举已通过。2026-07-30 已在共享 `CODEX_HOME` 的 Codex CLI 中完成持久审批，四个 Hook 均显示 `Installed=1`、`Active=1`。真实 CLI `/compact` 已触发 `PreCompact(trigger=manual)`、真实 transcript 捕获、工作区 peer 和 Session commit accepted 均有日志证据；当时后台抽取任务因网络超时失败。
 - 2026-08-03 当前 Desktop 已真实暴露并成功调用 `search_experience`、`read_experience`；常规 `search`、`recall`、`read` 也已从项目 peer 命中历史摘要。精确 MCP 工具与直接召回已通过，但仍需在自然新建的 Desktop 任务中证明 `SessionStart`/`UserPromptSubmit` 自动注入和跨任务唯一标记完全一致，故 ISSUE-003 仍未完全关闭。
@@ -97,7 +108,7 @@ RtmpMonitor 是一个使用同一套 C++17、Qt 6 Widgets 和 FFmpeg 代码，�
 1. 自然重启 Desktop，让长期运行的插件/MCP 子进程读取移除固定 `actor_peer_id` 后的配置；分别在 rtmpProject 和另一工作区核对派生 peer。
 2. 在新的自然 Desktop 任务中完成唯一标记自动注入验收；只有后台任务 `completed`、`SessionStart`/`UserPromptSubmit` 注入日志和完全一致召回同时成立才关闭 ISSUE-003，随后清理专用标记。
 3. 在真实 Linux ARM64 盒子完成发布级验收：使用 `scripts/qualify_embedded_device.sh` 按用户指定的路数阶梯/码流/门槛执行，生成设备档案与 `recommendedMaxStreams`；EGLFS 全屏、linuxfb、温度和长稳只能在真机验证。
-4. 启动 RTMP Server 产品化集成专项，先做架构、选型和部署 PoC。
+4. 按 `cross_platform_build.md` §9 在真实 ARM 目标板完成 SRS 本机构建、systemd 与 LAN 推拉流验收；真实摄像头到货后按方案 Phase 3 复测编码兼容性（ISSUE-008）。
 
 ## 关键文档
 
@@ -108,5 +119,6 @@ RtmpMonitor 是一个使用同一套 C++17、Qt 6 Widgets 和 FFmpeg 代码，�
 - [当前会话交接](../project_handoff.md)
 - [跨平台构建](../guides/build-and-testing/cross_platform_build.md)
 - [RTMP 链路验证](../guides/build-and-testing/rtmp_chain_verification.md)
+- [SRS Server 接入实施方案](../srs_server_integration_plan.md)
 - [OpenViking 使用与测试](../guides/development/openviking_usage_and_testing.md)
 - [Week 6 OpenGL 验证](../weeks/week6/week6_opengl_environment_and_validation.md)

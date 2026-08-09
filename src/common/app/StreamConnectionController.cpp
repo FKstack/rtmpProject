@@ -4,11 +4,13 @@
 #include <QSet>
 
 #include <algorithm>
+#include <optional>
 
 #include "logging/LogManager.h"
 #include "logging/UserMessageService.h"
 #include "media/FFmpegPlayer.h"
 #include "media/MultiStreamPlaybackManager.h"
+#include "server/RtmpUrlBuilder.h"
 #include "ui/ConnectionDialog.h"
 #include "ui/MainWindow.h"
 #include "ui/VideoWidget.h"
@@ -266,7 +268,8 @@ StreamId StreamConnectionController::addConnection(
         normalizedUrl,
         videoWidget,
         UserFailureReason::None,
-        false
+        false,
+        {}
     });
     mainWindow_->bindVideoStream(
         videoWidget,
@@ -299,6 +302,65 @@ StreamId StreamConnectionController::addConnection(
     }
     if (startImmediately) {
         playbackManager_->startStream(streamId);
+    }
+    return streamId;
+}
+
+StreamId StreamConnectionController::addConnection(
+    const CameraStreamProfile &profile,
+    const MediaServerEndpoint &endpoint,
+    bool startImmediately
+)
+{
+    const QString cameraId = profile.cameraId.trimmed();
+    const auto reject =
+        [this, &cameraId](const QString &technicalReason) {
+            if (logManager_ != nullptr) {
+                logManager_->logSystem(
+                    LogLevel::Warning,
+                    QStringLiteral("device"),
+                    QStringLiteral("connection_add_failed"),
+                    technicalReason,
+                    {{QStringLiteral("cameraId"), cameraId}}
+                );
+            }
+            return kInvalidStreamId;
+        };
+
+    // cameraId 在会话内唯一；重复 profile 不得覆盖既有绑定。
+    if (!cameraId.isEmpty()) {
+        const bool duplicateCameraId = std::any_of(
+            bindings_.begin(), bindings_.end(),
+            [&cameraId](const Binding &binding) {
+                return !binding.cameraId.isEmpty() &&
+                       binding.cameraId == cameraId;
+            }
+        );
+        if (duplicateCameraId) {
+            return reject(QStringLiteral(
+                "Duplicate camera profile identifier."
+            ));
+        }
+    }
+
+    QString buildError;
+    const std::optional<QUrl> generatedUrl =
+        buildRtmpUrl(endpoint, profile.streamKey, &buildError);
+    if (!generatedUrl.has_value()) {
+        return reject(buildError);
+    }
+
+    const StreamId streamId = addConnection(
+        profile.displayName,
+        generatedUrl->toString(),
+        startImmediately,
+        false
+    );
+    if (streamId != kInvalidStreamId && !cameraId.isEmpty()) {
+        Binding *binding = bindingFor(streamId);
+        if (binding != nullptr) {
+            binding->cameraId = cameraId;
+        }
     }
     return streamId;
 }
@@ -439,6 +501,14 @@ StreamId StreamConnectionController::streamIdFor(
                : kInvalidStreamId;
 }
 
+void StreamConnectionController::setMediaServerEndpoint(
+    const MediaServerEndpoint &endpoint
+)
+{
+    mediaServerEndpoint_ = endpoint;
+    hasMediaServerEndpoint_ = true;
+}
+
 void StreamConnectionController::showConnectionDialog()
 {
     if (bindings_.size() >= 16) {
@@ -453,9 +523,36 @@ void StreamConnectionController::showConnectionDialog()
                                         10,
                                         QLatin1Char('0')
                                     );
-    const QString url = QStringLiteral(
-        "rtmp://127.0.0.1:1935/live/camera%1"
-    ).arg(cameraNumber, 3, 10, QLatin1Char('0'));
+    // 默认流名沿用既有 cameraNNN 命名；配置接入点后由 URL builder 生成
+    // 默认 URL，生成失败时回退本机默认值，不影响手工完整 URL 输入。
+    QString url;
+    if (hasMediaServerEndpoint_) {
+        const QString streamKey = QStringLiteral("camera%1")
+                                      .arg(
+                                          cameraNumber,
+                                          3,
+                                          10,
+                                          QLatin1Char('0')
+                                      );
+        QString buildError;
+        const std::optional<QUrl> generatedUrl =
+            buildRtmpUrl(mediaServerEndpoint_, streamKey, &buildError);
+        if (generatedUrl.has_value()) {
+            url = generatedUrl->toString();
+        } else if (logManager_ != nullptr) {
+            logManager_->logSystem(
+                LogLevel::Warning,
+                QStringLiteral("server"),
+                QStringLiteral("default_url_build_failed"),
+                buildError
+            );
+        }
+    }
+    if (url.isEmpty()) {
+        url = QStringLiteral(
+            "rtmp://127.0.0.1:1935/live/camera%1"
+        ).arg(cameraNumber, 3, 10, QLatin1Char('0'));
+    }
 
     QSet<QString> names;
     QSet<QString> urls;

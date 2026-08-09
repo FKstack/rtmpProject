@@ -21,6 +21,8 @@ enum class UserEventType {
     LoginFailed,
     LogoutSucceeded,
     ConfigurationUpdated,
+    ServerHealthy,
+    ServerUnavailable,
 };
 
 enum class UserFailureReason {

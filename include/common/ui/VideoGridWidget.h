@@ -289,6 +289,9 @@ signals:
      */
     void fullscreenRequested(VideoWidget *videoWidget);
 
+    /** @brief 主 CPU/OpenGL 画布完成一次真实呈现。 */
+    void surfacePresented();
+
 private:
     static constexpr int kMaximumGridDimension = 4;
 

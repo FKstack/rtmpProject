@@ -13,6 +13,7 @@
 ## 1. 路线规划
 
 - [项目计划](roadmap/project_plan.md)：项目目标、阶段安排、验收标准和当前进度。
+- [v0.1.0-alpha.1 版本冻结与交付任务清单](roadmap/v0.1.0_alpha1_release_handoff_checklist.md)：源码交接、Windows 测试包、ARM 真机和最终发布门禁。
 
 ## 2. 通用指南
 
@@ -34,7 +35,9 @@
 
 - [Windows x64 与 Linux ARM64 跨平台构建](guides/build-and-testing/cross_platform_build.md)
 - [Linux 双路径渲染构建（RASTER/GLES3/AUTO）与板级资格脚本](guides/build-and-testing/linux_dual_render_build.md)
+- [SRS 新手完全指南：概念、使用、配置与项目联动](guides/build-and-testing/srs_beginner_guide.md)
 - [RTMP 推流链路验证脚本](guides/build-and-testing/rtmp_chain_verification.md)
+- [SRS 异常恢复与发布门禁验证指南](guides/build-and-testing/srs_failure_recovery.md)
 
 ## 3. 分周实现
 
@@ -67,6 +70,12 @@
 - [产品视频渲染框架教学篇](weeks/week6/week6_product_rendering_framework_tutorial.md)
 - [CPU/OpenGL 自动化对照测试实战篇](weeks/week6/week6_renderer_performance_test_guide.md)
 - [正式 Renderer 对照脱敏结果 JSON](weeks/week6/week6_renderer_comparison_results.json)
+
+### Week 7：SRS Server 接入
+
+- [SRS 接入实施与逐 Phase 验收记录](weeks/week7/week7_srs_server_integration.md)
+- [SRS 新手完全指南：概念、使用、配置与项目联动](guides/build-and-testing/srs_beginner_guide.md)
+- [SRS 异常恢复与发布门禁验证指南](guides/build-and-testing/srs_failure_recovery.md)
 
 ## 4. 推荐阅读路径
 

@@ -25,6 +25,7 @@ RtmpMonitor 是一个使用 C++17、Qt 6 Widgets 和 FFmpeg 的多路 H.264/RTMP
 | Windows 16 路验收 | 600 秒 A/B 通过 | OpenGL CPU 降低 69.08%、显示 14.91 FPS；双屏最差流 P95 196 ms |
 | 监控级显示 | 功能回归通过，当前负载待正式复测 | 普通紧凑网格、标题覆盖和 F11 监控墙；最终布局短测有一项 frame age 门禁超出 0.3 ms |
 | Linux ARM64 | OpenGL 交叉构建门禁 | 主程序、EGL/ES3、生产渲染和测试均为 AArch64 ELF；真实 QPA/GPU/播放仍需目标盒子 |
+| SRS Server 接入 | Windows+WSL2 最小链路通过 | 2026-08-09 独立复验了 VS Preset 构建、SRS 6.0.184、1935/回环 1985、Windows/WSL 双侧推拉流和安全停止；ARM 实机、真实摄像头仍待验证 |
 
 > 2026-08-05 的四组 600 秒结果验证了产品 Renderer，但早于 2026-08-08 的最终
 > 监控墙布局。当前布局已完成 Windows Debug CTest 12/12 和 120 秒快速对照；快速对照
@@ -160,20 +161,25 @@ worker；不使用 `QThread::terminate()`。
 
 ### Windows x86_64
 
-要求 Visual Studio 2022、Qt 6.6.1 MSVC x64、CMake 3.21+，以及与当前工程匹配的
-FFmpeg 8.1.2 LGPL 开发库。已配置当前机器的预设时：
+要求 Visual Studio 2022、Qt 6.6.1 MSVC x64、CMake 3.21+，以及由 vcpkg
+`x64-windows` 提供的 FFmpeg 8.1.2 LGPL 开发库。开发启动以 Visual Studio 为准：
+
+1. 选择 `Qt-Debug` 配置预设；
+2. 首次配置或修改 vcpkg 后执行“删除缓存并重新配置”；
+3. 将 `rtmp_monitor.exe` 设为启动项并按 F5。
+
+命令行只作为 Developer PowerShell 中的构建/测试入口：
 
 ```powershell
-cmake -S . -B out\build-windows-x64\debug -G Ninja `
-  -DCMAKE_BUILD_TYPE=Debug `
-  -DBUILD_TESTING=ON `
-  -DCMAKE_PREFIX_PATH=E:\QT6\6.6.1\msvc2019_64
+cmake --preset Qt-Debug --fresh
 cmake --build out\build-windows-x64\debug
-ctest --test-dir out\build-windows-x64\debug -C Debug --output-on-failure
+ctest --test-dir out\build-windows-x64\debug --output-on-failure
 ```
 
-普通 PowerShell 未初始化 MSVC 时，先执行 Visual C++ 环境脚本，或在 Developer
-PowerShell 中构建。不能混用 MinGW Qt 和 MSVC 产物。
+`CMakePresets.json` 的公共 Windows 基类通过 `VCPKG_ROOT` 定位 toolchain；本机
+`CMakeUserPresets.json` 保存 Qt/vcpkg 的个人路径且不提交。普通 PowerShell 未初始化
+MSVC 时使用 Developer PowerShell。不能混用 MinGW Qt 和 MSVC 产物，也不要把双击
+未部署 Qt DLL 的 EXE 当作开发期标准启动方式。
 
 OpenGL 环境、WGL/Qt 运行和完整回归：
 
@@ -345,6 +351,35 @@ ARM64 盒子的 QPA、VPU、网络和长期稳定性测试。
   317 ms；OpenGL UI 最大间隔 441 ms、纹理 22,118,400 字节且末 60 秒稳定。
 - 8 个 framebuffer 质量用例全部通过；完整结果和正确解读见 Week 6 总览。全部硬门槛
   通过后 CLI 默认已由 `cpu` 切换为 `auto`，显式 CPU 回滚仍保留。
+
+## RTMP Server（SRS 6.0.184）
+
+当前基线 Server 为固定 tag `v6.0-r0` 源码构建的 SRS 6.0.184，作为独立基础设施
+运行（Qt 客户端不拥有其进程）。Windows 开发机在 WSL2 Ubuntu 内构建运行；ARM
+Linux 首选目标设备本机构建并由 systemd 管理；Docker 固定镜像为烟测/CI 备选。
+
+```powershell
+# 检查 / 启动 / 状态 / 快速推拉自测 / 停止（只管理脚本自有进程）
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\srs\srs_dev_wsl.ps1 -Action Check
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\srs\srs_dev_wsl.ps1 -Action Start
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\srs\srs_dev_wsl.ps1 -Action Status
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\srs\srs_dev_wsl.ps1 -Action Test
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\srs\srs_dev_wsl.ps1 -Action Stop
+
+# 端到端验收（推流激活、WSL/Windows 双侧 ffprobe、停推消失、同 URL 恢复）
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\srs\verify_srs_chain.ps1 -Action Verify
+```
+
+最小配置为 `deploy/srs/conf/srs-minimal.conf`：1935 对所有接口推拉 RTMP，
+1985 HTTP API 只绑定回环、RAW API 关闭，不启用 HLS/WebRTC/SRT/Callback。
+客户端直接以现有 `--url` 拉流，例如
+`rtmp_monitor --url rtmp://127.0.0.1:1935/live/camera01`。
+新手从
+[SRS 新手完全指南](docs/guides/build-and-testing/srs_beginner_guide.md)入手；
+完整方案、ARM 部署与逐 Phase 验收见
+[SRS Server 接入实施方案](docs/srs_server_integration_plan.md)和
+[RTMP 链路验证 §15](docs/guides/build-and-testing/rtmp_chain_verification.md)；
+历史 nginx-rtmp 脚本保留未删。
 
 ## 性能验收门槛
 

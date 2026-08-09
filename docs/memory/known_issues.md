@@ -84,6 +84,49 @@
 - 临时规避：把批量写入拆成可审计的独立 Session，每份轮询到 `completed`；失败时根据对应 `memory_diff.json` 精确回滚后重试，不重复上传 Resource。
 - 相关文档和代码：`docs/project_handoff.md`、`docs/guides/development/openviking_usage_and_testing.md`、`/etc/systemd/system/openviking.service.d/proxy.conf`
 
+## ISSUE-008 SRS ARM 实机、真实摄像头与部分恢复场景尚未验收
+
+- 状态：未解决
+- 影响范围：SRS Server 接入的最终验收（方案文档第 16 节）；不得据此宣称"Server 产品化完成"。
+- 已验证现象：2026-08-09 独立复验重新通过 Windows Preset 全新配置、136/136 构建、CTest 17/17（85.29 秒），以及 SRS 6.0.184 的 1935/回环 1985、Windows/WSL 双侧推拉流、停推恢复、SIGQUIT 停止和未知 1935 占用拒绝。Kimi 的 FFmpeg 10 分钟、4/16 路 profile、SRS 崩溃恢复和 API Degraded 结果属于历史证据，本次没有重复执行，不扩大为新的独立门禁结论。SRS `/api/v1/streams/` 默认分页 count=10 已确认，多流查询必须显式 `?start=0&count=N`。
+- 复现步骤：见 `docs/guides/build-and-testing/srs_failure_recovery.md` §5 与 `docs/weeks/week7/`。
+- 已排除内容：当前 Visual Studio 配置失败、WSL2 SRS 基础端口/API、单路推拉流、配置解析和监控防抖已有本轮命令终态证据；ARM、真实摄像头与未重跑的长测仍不在排除范围。
+- 剩余缺口（保持方案第 15 节 `[需要验证]`）：
+  1. WSL2 mirrored networking 下真实摄像头从 LAN 访问 Windows 主机 1935 的入站路径，必须由外部设备验证。
+  2. 目标 ARM 板本机构建、systemd 管理、LAN 推拉流和重启自恢复（`build_srs_arm64.sh`/`verify_srs_chain.sh`/systemd unit 已交付，交叉构建仅证明 AArch64 ELF）。
+  3. 真实摄像头 H.264 profile/level、GOP、时间戳与现有播放器兼容性。
+  4. 非零 `--max-reconnect-failures` 达上限后 Server 恢复是否自动 restartStream；默认无限重试已覆盖常规恢复，Healthy 上升沿逻辑未启用。
+  5. `ossrs/srs:6.0.184` 镜像 arm64 manifest 与 Docker Desktop bind mount 转义（Docker 备选路径未在本轮启用）。
+- 下一步验证：确定 ARM 目标板后按 `cross_platform_build.md` §9 执行实机验收；摄像头到货后按方案 Phase 3 复测。
+- 临时规避：项目状态区分“本轮独立复验”“Kimi 历史证据”和“ARM/摄像头待验证”，不得合并表述为全面产品化通过。
+- 相关文档和代码：`docs/srs_server_integration_plan.md`、`docs/guides/build-and-testing/srs_failure_recovery.md`、`deploy/srs/`、`scripts/srs/`、`docs/weeks/week7/`
+
+## ISSUE-009 Windows 单路全屏历史表面、控制栏与退出闪屏
+
+- 状态：代码与自动化回归已修复；真实 SRS 流、Visual Studio F5 + NVIDIA Overlay 现场录像待用户确认。
+- 影响范围：Windows 桌面 `TemporaryWindowCanvas` 单路全屏及 F11 监控墙；Linux/ARM EGLFS 单画布路径不执行 Win32 逻辑。
+- 已验证现象：用户提供的 12.864 秒 ScreenSketch 录像与两张截图显示，Camera 01 退出后进入 Camera 02 时可能残留旋转 180° 的旧控制栏；无视频帧时控制栏在 2.5 秒后消失，屏幕只剩黑色背景，NVIDIA Alt+Z 通知可能同时出现。NVIDIA 通知属于外部覆盖层，不是本程序控件。
+- 根因：Windows DWM 对全屏 OpenGL 顶层窗口与其他顶层窗口同时显示存在已知合成限制；原进入/退出顺序会短暂重叠主窗口和全屏窗口，且隐藏窗口保留上一路 Snapshot。无帧状态仍启动控制栏自动隐藏则进一步造成“完全黑屏”体验。有帧后整条控制栏被隐藏，但鼠标事件可能由 `VideoCanvasHost/QOpenGLWidget` 接收，窗口本身没有稳定的底部唤出区域；退出时先隐藏全屏顶层窗口则会短暂暴露桌面/Visual Studio 和尚未完成首绘的白色主窗口。Qt 官方建议全屏 OpenGL 窗口保留 `WS_BORDER`：[Qt for Windows - Fullscreen OpenGL Based Windows](https://doc.qt.io/qt-6/windows-issues.html#fullscreen-opengl-based-windows)。
+- 解决方式：Windows 的单路全屏窗口和 F11 主窗口在 `WinIdChange`/全屏状态变化时为 HWND 保留 `WS_BORDER`；进入单路全屏前先隐藏主窗口。无帧时控制栏和光标固定可见；首帧后等待 1200ms，以 180ms `OutCubic` 向下收起；独立的底部 96px 透明热区负责唤出，离开热区和控制栏 250ms 后收起，`clearFrame()` 会立即取消动画并恢复固定显示。截图按钮与 `Ctrl+Shift+S` 直接抓取全屏画布 framebuffer，立即显示缩略图，使用线程池和 `QSaveFile` 异步原子保存 PNG。退出时以最后一帧（无帧则纯黑）形成 raster 冻结层，隐藏全屏 OpenGL 子画布后恢复主窗口；只有主网格 `surfacePresented()` 后才揭开，750ms 设安全超时。
+- 自动化证据：2026-08-09 使用 `Qt-Debug --fresh` 完成配置，136/136 构建成功，完整 CTest 17/17（92.74 秒）通过。回归覆盖无帧常驻、首帧滑出、96px 热区滑入/离开防抖、动画中清帧、按钮与快捷键单次触发、PNG 异步唯一命名/像素/失败报告、无帧不落盘、raster 过渡与 `surfacePresented()` 门禁、750ms 超时、普通/最大化/F11 恢复、30 次重复往返、旧 Camera 清理及 Windows `WS_BORDER`。
+- 2026-08-09 录像复验补充：第二轮两段 ScreenSketch 录像确认，无帧时底栏之外会在顶部出现一条旋转的控制栏历史表面；有帧截图后底栏可能不再收起，且光标长时间隐藏后无法通过画布上的普通移动可靠恢复。代码核对表明，控制栏原先直接以全屏窗口为父对象并动画到窗口边界外，DWM/QOpenGLWidget 组合会暴露越界 backing-store；底部每个 `MouseMove` 又会重启动画；光标恢复只覆盖少数父控件事件，实际事件常被 GL/CPU 子画布或 Toast 接收。
+- 补充修复：控制栏改为底部 96px 热区的子控件，滑出过程始终受父容器裁剪，不再把 QWidget 表面移出全屏顶层窗口；同方向动画幂等，不因重复 `MouseMove` 从 0 重启。全屏临时画布启用 `WA_TransparentForMouseEvents`，并由全屏窗口统一处理其范围内的鼠标活动；底栏离开后独立执行 250ms 收起，光标使用独立 2000ms 空闲计时，任何画布/控制栏/Toast 路径的鼠标移动都会立即恢复。新建独立构建目录完成 136/136，CTest 17/17（98.01 秒）通过；原目录曾因用户正在运行的 F5 进程占用 EXE 返回 `LNK1168`，用户退出后已重新链接 `rtmp_monitor.exe` 1/1 成功，Visual Studio 当前构建目录已是新版本。
+- 剩余验证：必须先停止仍在运行的旧 F5 实例、重新构建并 F5，随后在 `Qt-Debug`、`--renderer=auto`、NVIDIA Overlay 开启的真实桌面会话中，分别验证无帧顶部零历史表面，以及真实 SRS 流截图后移到上方能收起、任意位置移动能立即恢复光标、动画流畅、截图方向/颜色、停推/恢复；Esc、双击、按钮各往返至少 10 次录屏。`--renderer=cpu` 只作 A/B。上述现场项目均为 `[需要验证]`，自动化测试不代替视觉结论。
+- 临时规避：若现场仍复现，保留 `--renderer=cpu` 仅作 A/B 定位，不得作为最终方案；提交新录像并记录进入方式、Renderer、Overlay 状态及 Camera 顺序。
+- 相关文档和代码：`src/common/ui/FullscreenVideoWindow.cpp`、`src/common/ui/MainWindow.cpp`、`src/common/ui/VideoCanvasHost.cpp`、`src/common/ui/VideoGridWidget.cpp`、`tests/VideoGridSmokeTest.cpp`、`tests/VideoGridDynamicTest.cpp`
+
+## ISSUE-010 Windows Debug 退出时 CRT Heap Corruption
+
+- 状态：根因已修复，Application Verifier 与自动化压力回归通过；Visual Studio F5 人工关闭复验待用户执行。
+- 影响范围：使用 MSVC + Ninja 的 Windows 增量构建；不是 FFmpeg、OpenGL 或 CPU renderer 的运行时专属问题。
+- 已验证现象：自动连接真实流后正常退出，MSVC Debug CRT 在释放 `FullscreenVideoWindow` 时报告 heap suffix 损坏；`--no-camera-autostart` 不出现。单路 FFmpeg 生命周期、16 路 `MultiStreamPlaybackManager` 生命周期和 FFmpeg Debug DLL 哈希检查均正常，说明退出检查只是发现更早发生的写坏。
+- 首次非法写入证据：新增真实流 UI 关闭测试后，对其启用 Application Verifier Full Heaps。Verifier 在 CPU 数据行首次中断，损坏位置恰为 `FullscreenVideoWindow` 已分配块末尾；释放栈为 `FullscreenVideoWindow` deleting destructor → `MainWindow::~MainWindow` → 测试。同期 Ninja 依赖数据库显示旧 `MainWindow.cpp.obj` 为 `#deps 0`，对象文件早于已变化的 `FullscreenVideoWindow.h`。旧调用方按较小类尺寸分配对象，新构造函数按新布局写成员，形成确定的一字节后堆尾越界。
+- 根因：该 Windows 环境的 `cl.exe /showIncludes` 输出为 UTF-8 中文，CMake 3.29 按活动 GBK 控制台代码页自动解码后把乱码前缀写入 `rules.ninja`。Ninja 因前缀不匹配静默丢失头文件依赖，头文件变化后未重编译调用方，造成 C++ 类布局 ABI 不一致。
+- 修复方式：MSVC + Ninja 配置阶段用独立探针以 `ENCODING NONE` 保留 `/showIncludes` 原始字节，并把原始前缀设置为 CMake/Ninja 依赖前缀；探针失败时配置直接失败，禁止生成依赖不安全的构建。新增 `rtmp_monitor_live_ui_shutdown_test`，用 `RTMP_MONITOR_TEST_URL` 参数化 CPU/OpenGL，等待 Playing、首帧呈现和渲染指标后按生产顺序正常关闭。
+- 修复后证据：`cmake --fresh --preset Qt-Debug` 成功；`rules.ninja` 前缀与编译器输出一致；`MainWindow.cpp.obj` 恢复为 347 条依赖并包含 `FullscreenVideoWindow.h`。全量 143/143 构建、CTest 18/18、Application Verifier Full Heaps 真实流 UI 复测、CPU/OpenGL UI 关闭 30/30、单路真实 FFmpeg 生命周期 30/30、16 路真实流管理器生命周期 10/10 全部通过。另建 MSVC AddressSanitizer `RelWithDebInfo` 目录，54/54 构建并在明确使用 MSVC Qt DLL 的环境中通过 CPU/OpenGL 真实流 UI 退出测试，无 ASan 报告。Verifier 设置已在复测后关闭。
+- 剩余验证：用户在 Visual Studio `Qt-Debug` 删除缓存并重新配置后，以 `--renderer=auto` 和 `--renderer=cpu` 各正常关闭 30 次，确认不再出现 CRT 对话框、卡死或后台残留；该人工 F5 项为 `[需要验证]`。不以禁用 Debug Heap、禁用自动连接、CPU 模式或强制结束进程规避。
+- 相关文档和代码：`CMakeLists.txt`、`tests/LiveUiShutdownTest.cpp`、`docs/memory/decisions.md`
+
 ## Issue 模板
 
 ## ISSUE-XXX 标题

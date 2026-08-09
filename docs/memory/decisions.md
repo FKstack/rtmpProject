@@ -173,6 +173,66 @@
 - 验证要求：Kimi K3 先完成 ARM64 RASTER 与 GLES3 两套交叉构建、AArch64 ELF 和依赖检查；RASTER 产物不得依赖 Qt OpenGL/OpenGLWidgets、EGL、GLES。WSL2 只证明构建和可运行的纯逻辑测试，不证明 linuxfb、EGLFS、GPU、VPU、温度或多路性能。真实板由用户选择路数、码流和门槛运行资格测试；GL 只有在该板的质量、延迟、温度和长稳门禁通过后才写入资格档案。
 - 相关文件：`docs/architecture/embedded_device_rendering_strategy.md`、`docs/architecture/video_rendering_framework.md`、`src/common/ui/VideoCanvasHost.cpp`、`src/platform/linux/`、`CMakeLists.txt`
 
+## ADR-015 SRS 采用外部服务、稳定版本固定和只读客户端监控
+
+- 日期：2026-08-08
+- 状态：架构已确认；Windows+WSL2 最小链路已独立复验，ARM/摄像头待验证
+- 背景：项目播放、解码、并发和 OpenGL 已完成，缺失的是成熟 RTMP Server 的部署与接入层。目标覆盖 Windows x64 开发和 ARM Linux 产品环境，同时禁止自研 RTMP Server、大改播放器或让平台部署逻辑侵入业务代码。
+- 决策：固定 SRS 6.0.184（`v6.0-r0`）。Windows 开发首选 WSL2 Ubuntu 源码构建，Docker 固定镜像作为烟测/CI 备选，不采用 MSVC 原生假设或 Cygwin 正式基线；ARM Linux 首选目标机本机构建并由 systemd 管理。Qt 第一版不拥有 SRS 进程，只通过 `MediaServerEndpoint`、`RtmpUrlBuilder` 和异步 `MediaServerMonitor` 读取配置、生成 URL 和观察 1935/回环 HTTP API 健康。`FFmpegPlayer` 继续只接收 RTMP URL。第一版不启用 HTTP Callback。
+- 原因：SRS 官方稳定构建和主要运行环境是 Linux/Docker；现有 WSL2 与 ARM Linux 路线可复用同一配置和运维模型。外部服务所有权避免 Qt 误杀未知进程，现有播放器自动重连已经覆盖 Server 短暂中断。同步 `on_publish` 若依赖桌面 GUI 会让摄像头推流反向依赖客户端可用性。
+- 替代方案：Cygwin `srs.exe` 正式部署；Qt 直接启动/停止 WSL、Docker 或 systemd；新增统一管理摄像头/SRS/播放器的 `SrsManager`；第一版启用 `on_publish/on_unpublish` 自动建流。
+- 影响：平台差异放在 WSL/Docker 脚本和 systemd unit；公共 C++ 只需 Qt Network 健康观察和 URL/config 纯逻辑。1935 冲突时只能识别复用或失败，不得杀未知 listener。动态发现或鉴权以后由常驻 control service 承接 Callback，不直接指向 GUI。
+- 验证要求：独立验收必须使用全新/清空的 CMake 缓存和直接黑盒命令，不以实现者历史报告替代。2026-08-09 已重跑 Windows Debug CTest 17/17、单路真实 SRS 双侧推拉流、同 URL 恢复、SIGQUIT 和冲突拒绝；Kimi 的 4/16 路与 600 秒报告只作为历史证据。WSL LAN 入站、ARM 目标 ABI、官方镜像 arm64 manifest、真实摄像头编码仍 `[需要验证]`，见 ISSUE-008。
+- 相关文件：`docs/srs_server_integration_plan.md`、`docs/weeks/week7/week7_srs_server_integration.md`、`deploy/srs/`、`scripts/srs/`、`include/common/server/`
+
+## ADR-016 Windows 开发以 Visual Studio CMake Preset 和 F5 为标准入口
+
+- 日期：2026-08-09
+- 状态：已确认
+- 背景：`Qt-Debug` 曾遗漏 vcpkg toolchain，Visual Studio 先报 FFmpeg 缺失，随后报 `build.ninja` 不存在；命令行或双击 EXE 还可能绕开 MSVC Qt 运行环境并误加载 MinGW Qt。
+- 决策：公共 `CMakePresets.json` 提供隐藏 `Windows-MSVC-vcpkg`，只引用 `VCPKG_ROOT`；个人 Qt/vcpkg 绝对路径留在被忽略的 `CMakeUserPresets.json`。开发者选择 `Qt-Debug`、删除缓存并重新配置、将 `rtmp_monitor.exe` 设为启动项后按 F5。未执行 `windeployqt` 前不把双击 EXE 作为支持的启动方式。
+- 原因：Visual Studio、MSVC、Qt Kit、vcpkg 和调试环境保持一致，且公共仓库不保存个人路径；CMake 缺少 toolchain 时在依赖探测前给出明确错误。
+- 影响：命令行只作为 Developer PowerShell 构建/CTest 后备；GUI 与中文显示的最终视觉结论由用户的 Visual Studio 会话确认。
+- 验证证据：`Qt-Debug --fresh` 指向正确 vcpkg，生成 `build.ninja`，136/136 构建和 CTest 17/17（85.29 秒）通过；无 toolchain 负向配置命中项目自定义诊断。
+- 相关文件：`CMakePresets.json`、`CMakeLists.txt`、`README.md`、`docs/guides/build-and-testing/cross_platform_build.md`
+
+## ADR-017 Windows OpenGL 全屏保留 DWM 合成边界并串行切换顶层窗口
+
+- 日期：2026-08-09
+- 状态：已采用；真实 Overlay 现场录像待确认
+- 背景：Windows 无推流单路全屏在 Camera 切换时出现旋转的历史控制栏，随后控制栏自动隐藏形成完全黑屏；NVIDIA Alt+Z 外部覆盖层可能同时出现。Qt 官方记录了 Windows DWM 对全屏 OpenGL 窗口和其他顶层窗口的合成限制。
+- 决策：Windows 桌面的单路全屏顶层窗口与 F11 主窗口为原生 HWND 保留 `WS_BORDER`；单路全屏进入前先隐藏主窗口，退出时先清空当前 Snapshot、解绑并隐藏全屏窗口，再恢复主窗口。无帧期间禁止控制栏自动隐藏。Linux/ARM EGLFS 继续使用既有单画布策略，不引入 Win32 依赖。
+- 原因：该方案对应 Qt 官方 workaround，并从生命周期上消除两个 OpenGL 顶层窗口重叠和历史 Snapshot 暴露；无需改变 FFmpeg、renderer、Shader 或业务管理层。
+- 替代方案：`WA_AlwaysStackOnTop`；强制 CPU renderer；重写全屏 renderer；关闭 NVIDIA Overlay。前者会破坏正常叠放，CPU 只能诊断，后两者扩大范围或把外部环境当作根治。
+- 影响：Windows 全屏窗口存在不可见或接近不可见的系统合成边界；进入/退出的短暂桌面暴露风险由黑色全屏窗口改为串行切换控制。现场发布前必须在 Visual Studio F5 + 默认 OpenGL + Overlay 开启环境复验。
+- 验证证据：Windows `Qt-Debug --fresh`、136/136 构建、CTest 17/17 通过；自动化验证两个 HWND 的 `WS_BORDER`、主窗口与单路全屏不同时可见、无帧控制栏和 Camera 历史清理。真实 F5 录像仍由 ISSUE-009 跟踪。
+- 相关文件：`src/common/ui/FullscreenVideoWindow.cpp`、`src/common/ui/MainWindow.cpp`、`tests/VideoGridSmokeTest.cpp`、`tests/VideoGridDynamicTest.cpp`、`docs/memory/known_issues.md`
+
+## ADR-018 单路全屏使用帧状态控制栏、画布截图与 raster 揭幕过渡
+
+- 日期：2026-08-09
+- 状态：已采用；真实流视觉验收待确认
+- 背景：无帧控制栏必须常驻；有帧后需要在不遮挡画面的前提下可靠唤出。截图必须反映点击瞬间实际呈现的画布且不能阻塞 UI。原全屏退出顺序会在主画布首绘之前暴露桌面或白色 backing store。
+- 决策：控制栏状态只由当前全屏 `VideoWidget::isFrameVisible()` 驱动：无帧固定可见，有帧经 1200ms 自动收起，由底部 96px 独立热区滑入，动画为 180ms `OutCubic`，离开防抖 250ms。桌面单路全屏截图由按钮或 `Ctrl+Shift+S` 进入同一入口，从 `VideoCanvasHost::grabFramebufferImage()` 捕获，先展示缩略图，再在线程池用 `QSaveFile` 原子保存 PNG。退出时全屏窗口用最后 framebuffer 构造 raster 冻结层，在其后方恢复主窗口，等主网格转发 `surfacePresented()` 后再隐藏过渡层；750ms 超时负责兜底。
+- 原因：热区独立于 OpenGL 子控件的事件分发；framebuffer 截图天然不包含 QWidget 控制栏和 Toast；异步编码避免 UI 卡顿；raster 层避免两个 OpenGL 顶层窗口同时合成，也不暴露桌面和未首绘窗口。
+- 替代方案：始终固定工具栏（遮挡有帧内容）；只监听顶层 mouse move（OpenGL 子控件会截获）；截图整个顶层窗口（会包含控件）；同步保存或弹对话框（阻塞交互）；用第二个 OpenGL 顶层窗口或 `WA_AlwaysStackOnTop` 过渡（增加 DWM/叠放风险）。
+- 影响：截图范围仅为桌面单路全屏，默认保存到系统 Pictures 下的应用截图目录，失败不退出全屏；EGLFS 仍使用单画布路径，不创建第二顶层窗口。未修改 FFmpegPlayer、OpenGLGridRenderer、Shader、解码和 SRS。
+- 验证证据：Windows `Qt-Debug --fresh` 配置、136/136 构建成功，完整 CTest 17/17（92.74 秒）通过；自动化已覆盖控制栏状态机、异步 PNG、像素、唯一命名、失败路径、过渡首绘门禁/超时及重复往返。真实 SRS 流下的方向、颜色、Overlay 与白闪视觉结论仍由 ISSUE-009 跟踪。
+- 2026-08-09 补充约束：滑动控件必须位于底部热区的裁剪层级内，不得通过把 QWidget 移出全屏顶层窗口来隐藏；同方向动画请求必须幂等。全屏临时画布不承担鼠标交互并启用事件穿透，控制栏计时和光标空闲计时彼此独立；任意全屏子控件路径的鼠标活动都要立即恢复光标。独立 Windows Debug 构建 136/136、CTest 17/17（98.01 秒）通过，现场结果仍由 ISSUE-009 跟踪。
+- 相关文件：`include/common/ui/FullscreenVideoWindow.h`、`src/common/ui/FullscreenVideoWindow.cpp`、`include/common/ui/VideoCanvasHost.h`、`src/common/ui/VideoCanvasHost.cpp`、`include/common/ui/VideoGridWidget.h`、`src/common/ui/VideoGridWidget.cpp`、`src/common/ui/MainWindow.cpp`、`tests/VideoGridSmokeTest.cpp`、`tests/VideoGridDynamicTest.cpp`
+
+## ADR-019 MSVC Ninja 依赖前缀使用原始字节探测
+
+- 日期：2026-08-09
+- 状态：已采用
+- 背景：Windows Debug 退出时的 CRT Heap Corruption 被 Application Verifier 定位为 `FullscreenVideoWindow` 类布局不一致。CMake 3.29 将 `cl.exe` 的 UTF-8 中文 `/showIncludes` 输出按 GBK 解码成乱码，Ninja 因前缀不匹配记录 `#deps 0`，头文件变化后调用方未重编译。
+- 决策：仅在 MSVC + Ninja 下于配置阶段运行最小 `/showIncludes` 探针，以 `ENCODING NONE` 保留编译器原始输出字节，提取并覆盖 CMake/Ninja 依赖前缀；探针失败时配置直接失败。新增可选真实流桌面 UI 退出测试，同时覆盖 CPU 与 OpenGL。
+- 原因：语言环境变量不能保证已安装编译器资源与 CMake 解码路径一致；原始字节与 Ninja 实际接收的编译器输出严格一致，且适用于英文、中文及其他本地化输出。失败关闭比静默生成无头文件依赖的构建更安全。
+- 替代方案：只执行一次 clean build；固定中文或英文前缀；仅设置 `VSLANG`；禁用 Debug Heap；改变自动连接或强制 CPU renderer。前两者不能跨语言环境，`VSLANG` 在本机实测未改变探测结果，后几项只会掩盖 ABI 不一致。
+- 影响：MSVC Ninja 配置多一次极小编译探针；Visual Studio Preset 与命令行增量构建都能正确跟踪头文件。未修改 FFmpegPlayer、renderer、解码、OpenGL 资源或运行时退出顺序。
+- 验证证据：全新配置后 `rules.ninja` 前缀正确，`MainWindow.cpp.obj` 为 347 条有效依赖并包含 `FullscreenVideoWindow.h`；143/143 构建、CTest 18/18、Application Verifier Full Heaps 复测、真实流 UI CPU/OpenGL 30/30、单路播放器 30/30、16 路管理器 10/10 通过。独立 MSVC ASan RelWithDebInfo 目录完成 54/54 构建，CPU/OpenGL 真实流 UI 退出通过且无 ASan 报告。
+- 相关文件：`CMakeLists.txt`、`tests/LiveUiShutdownTest.cpp`、`docs/memory/known_issues.md`
+
 ## ADR-XXX 标题
 
 - 日期：

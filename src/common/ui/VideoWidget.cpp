@@ -102,15 +102,24 @@ VideoWidget::VideoWidget(QWidget *parent)
 
 void VideoWidget::setDeviceName(const QString &deviceName)
 {
+    if (deviceName_ == deviceName) {
+        return;
+    }
     deviceName_ = deviceName;
     titleLabel_->setToolTip(deviceName);
     updateTitleOverlay();
+    emit renderStateChanged(this);
 }
 
 void VideoWidget::setStatusText(const QString &statusText)
 {
+    if (statusLabel_->text() == statusText) {
+        statusLabel_->setVisible(true);
+        return;
+    }
     statusLabel_->setText(statusText);
     statusLabel_->setVisible(true);
+    emit renderStateChanged(this);
 }
 
 QString VideoWidget::deviceName() const

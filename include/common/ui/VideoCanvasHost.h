@@ -58,6 +58,8 @@ public:
 signals:
     void backendChanged(const QString &backendName);
     void renderingError(const QString &message);
+    /** @brief CPU/OpenGL 后端完成一次真实画布呈现后发出。 */
+    void surfacePresented();
 
 protected:
     void resizeEvent(QResizeEvent *event) override;

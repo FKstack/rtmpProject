@@ -54,6 +54,8 @@ class StreamConnectionControllerTest final : public QObject
 
 private slots:
     void separatesUserSystemAndAuditOutputs();
+    void profileConnectionGeneratesUrlAndValidates();
+    void profileConnectionsRespectCapacity();
 };
 
 void StreamConnectionControllerTest::
@@ -207,6 +209,141 @@ separatesUserSystemAndAuditOutputs()
     QVERIFY(auditPayload.contains("\"result\":\"FAILURE\""));
     QVERIFY(!auditPayload.contains("private-key"));
     QVERIFY(!auditPayload.contains("token=x"));
+}
+
+void StreamConnectionControllerTest::
+profileConnectionGeneratesUrlAndValidates()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+
+    LoggingOptions loggingOptions;
+    loggingOptions.directoryPath = directory.path();
+    loggingOptions.minimumLevel = LogLevel::Trace;
+    loggingOptions.consoleEnabled = false;
+
+    LogManager logManager;
+    QVERIFY(logManager.initialize(loggingOptions));
+    UserMessageService userMessages(60'000);
+
+    PlaybackPerformanceOptions playbackOptions;
+    playbackOptions.decodeWorkerCount = 1;
+    playbackOptions.reconnectDelayMs = 50;
+    playbackOptions.maximumConsecutiveFailures = 2;
+    MultiStreamPlaybackManager playbackManager(playbackOptions);
+    MainWindow window;
+    window.setUserMessageService(&userMessages);
+    StreamConnectionController controller(
+        &window,
+        &playbackManager,
+        &logManager,
+        &userMessages
+    );
+
+    MediaServerEndpoint endpoint;
+    endpoint.host = QStringLiteral("192.168.50.2");
+    endpoint.rtmpPort = 1936;
+    endpoint.application = QStringLiteral("hd");
+
+    CameraStreamProfile profile;
+    profile.cameraId = QStringLiteral("camera01");
+    profile.displayName = QStringLiteral("摄像头 01");
+    profile.streamKey = QStringLiteral("camera01");
+
+    // startImmediately=false：本用例只验证绑定与 URL，不发起网络连接。
+    const StreamId streamId =
+        controller.addConnection(profile, endpoint, false);
+    QVERIFY(streamId != kInvalidStreamId);
+
+    // 用完整 URL 手工接入同一路被拒，证明 profile 生成的 URL 与预期一致。
+    QCOMPARE(
+        controller.addConnection(
+            QStringLiteral("另一台"),
+            QStringLiteral("rtmp://192.168.50.2:1936/hd/camera01"),
+            false,
+            false
+        ),
+        kInvalidStreamId
+    );
+
+    // 非法 streamKey 无法生成 URL，必须拒绝。
+    CameraStreamProfile invalidKeyProfile;
+    invalidKeyProfile.cameraId = QStringLiteral("camera02");
+    invalidKeyProfile.displayName = QStringLiteral("摄像头 02");
+    invalidKeyProfile.streamKey = QStringLiteral("bad/key");
+    QCOMPARE(
+        controller.addConnection(invalidKeyProfile, endpoint, false),
+        kInvalidStreamId
+    );
+
+    // cameraId 重复时即使 streamKey 不同也必须拒绝。
+    CameraStreamProfile duplicateIdProfile;
+    duplicateIdProfile.cameraId = QStringLiteral("camera01");
+    duplicateIdProfile.displayName = QStringLiteral("另一台摄像头");
+    duplicateIdProfile.streamKey = QStringLiteral("camera02");
+    QCOMPARE(
+        controller.addConnection(duplicateIdProfile, endpoint, false),
+        kInvalidStreamId
+    );
+
+    playbackManager.stopAll();
+    logManager.shutdown();
+}
+
+void StreamConnectionControllerTest::profileConnectionsRespectCapacity()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+
+    LoggingOptions loggingOptions;
+    loggingOptions.directoryPath = directory.path();
+    loggingOptions.minimumLevel = LogLevel::Trace;
+    loggingOptions.consoleEnabled = false;
+
+    LogManager logManager;
+    QVERIFY(logManager.initialize(loggingOptions));
+    UserMessageService userMessages(60'000);
+
+    PlaybackPerformanceOptions playbackOptions;
+    playbackOptions.decodeWorkerCount = 1;
+    playbackOptions.reconnectDelayMs = 50;
+    playbackOptions.maximumConsecutiveFailures = 2;
+    MultiStreamPlaybackManager playbackManager(playbackOptions);
+    MainWindow window;
+    window.setUserMessageService(&userMessages);
+    StreamConnectionController controller(
+        &window,
+        &playbackManager,
+        &logManager,
+        &userMessages
+    );
+
+    const MediaServerEndpoint endpoint;
+    for (int index = 1; index <= 16; ++index) {
+        CameraStreamProfile profile;
+        const QString name = QStringLiteral("camera%1")
+                                 .arg(index, 2, 10, QLatin1Char('0'));
+        profile.cameraId = name;
+        profile.displayName = name;
+        profile.streamKey = name;
+        QVERIFY2(
+            controller.addConnection(profile, endpoint, false) !=
+                kInvalidStreamId,
+            qPrintable(name)
+        );
+    }
+
+    CameraStreamProfile overflow;
+    overflow.cameraId = QStringLiteral("camera17");
+    overflow.displayName = QStringLiteral("camera17");
+    overflow.streamKey = QStringLiteral("camera17");
+    QCOMPARE(
+        controller.addConnection(overflow, endpoint, false),
+        kInvalidStreamId
+    );
+
+    playbackManager.stopAll();
+    logManager.shutdown();
 }
 
 QTEST_MAIN(StreamConnectionControllerTest)

@@ -1,0 +1,17 @@
+[Unit]
+Description=RtmpMonitor SRS Media Server
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/rtmp-monitor/srs-6.0.184
+ExecStart=/opt/rtmp-monitor/srs-6.0.184/objs/srs -c /etc/rtmp-monitor/srs.conf
+KillSignal=SIGQUIT
+TimeoutStopSec=15
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

@@ -74,6 +74,10 @@ QString UserMessageService::messageText(const UserEvent &event)
         return tr("已退出登录");
     case UserEventType::ConfigurationUpdated:
         return tr("配置修改成功");
+    case UserEventType::ServerHealthy:
+        return tr("媒体服务器连接正常");
+    case UserEventType::ServerUnavailable:
+        return tr("媒体服务器暂时不可用，请确认服务器已启动");
     case UserEventType::DeviceConnectFailed:
         switch (event.reason) {
         case UserFailureReason::ConnectionTimeout:
@@ -158,6 +162,7 @@ UserMessageKind UserMessageService::messageKind(UserEventType type)
     case UserEventType::LoginSucceeded:
     case UserEventType::LogoutSucceeded:
     case UserEventType::ConfigurationUpdated:
+    case UserEventType::ServerHealthy:
         return UserMessageKind::Success;
     case UserEventType::DeviceDisconnected:
     case UserEventType::ManualReconnectStarted:
@@ -167,6 +172,7 @@ UserMessageKind UserMessageService::messageKind(UserEventType type)
     case UserEventType::DeviceRemoveFailed:
     case UserEventType::OperationIncomplete:
     case UserEventType::LoginFailed:
+    case UserEventType::ServerUnavailable:
         return UserMessageKind::Error;
     }
     return UserMessageKind::Information;

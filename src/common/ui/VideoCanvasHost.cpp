@@ -319,6 +319,7 @@ void VideoCanvasHost::onSurfacePainted()
             );
         }
     }
+    emit surfacePresented();
 }
 
 void VideoCanvasHost::onOpenGLInitialized(

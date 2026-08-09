@@ -11,6 +11,7 @@
 
 class QAction;
 class QDockWidget;
+class QEvent;
 class QKeyEvent;
 class QToolBar;
 class FullscreenVideoWindow;
@@ -107,12 +108,14 @@ signals:
     void addConnectionRequested();
 
 protected:
+    bool event(QEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
 
 private:
     void updateAddVideoAction();
     void updateCentralPage();
     void handleFullscreenRequest(VideoWidget *videoWidget);
+    void beginRestoreBehindFullscreen(VideoWidget *videoWidget);
     void restoreAfterFullscreen();
 
     VideoGridWidget *videoGrid_ = nullptr;
@@ -127,6 +130,7 @@ private:
     QAction *showLogAction_ = nullptr;
     QAction *monitoringWallAction_ = nullptr;
     QMetaObject::Connection logConnection_;
+    QMetaObject::Connection fullscreenRestorePaintConnection_;
     QByteArray geometryBeforeMonitoringWall_;
     Qt::WindowStates windowStateBeforeMonitoringWall_;
     bool menuVisibleBeforeMonitoringWall_ = true;

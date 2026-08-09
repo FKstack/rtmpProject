@@ -33,6 +33,7 @@ FullscreenControlBar::FullscreenControlBar(QWidget *parent)
     screenshotButton_ = new QPushButton(tr("截图"), this);
     screenshotButton_->setObjectName(QStringLiteral("screenshotButton"));
     screenshotButton_->setFocusPolicy(Qt::NoFocus);
+    screenshotButton_->setToolTip(tr("截图（Ctrl+Shift+S）"));
 
     exitButton_ = new QPushButton(tr("退出全屏"), this);
     exitButton_->setObjectName(QStringLiteral("exitFullscreenButton"));

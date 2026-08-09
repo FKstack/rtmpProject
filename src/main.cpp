@@ -2,10 +2,12 @@
 #include <QCommandLineOption>
 #include <QCommandLineParser>
 #include <QDebug>
+#include <QFileInfo>
 #include <QSurfaceFormat>
 #include <QThread>
 
 #include <algorithm>
+#include <utility>
 
 #include "app/StreamConnectionController.h"
 #include "app/StyleLoader.h"
@@ -13,6 +15,8 @@
 #include "logging/LogManager.h"
 #include "logging/UserMessageService.h"
 #include "media/MultiStreamPlaybackManager.h"
+#include "server/MediaServerConfiguration.h"
+#include "server/MediaServerMonitor.h"
 #include "ui/MainWindow.h"
 #include "ui/VideoCanvasHost.h"
 
@@ -122,6 +126,19 @@ int main(int argc, char *argv[])
         QStringLiteral("日志 INI 配置文件路径。"),
         QStringLiteral("path")
     );
+    QCommandLineOption mediaServerConfigOption(
+        QStringLiteral("media-server-config"),
+        QStringLiteral(
+            "媒体服务器 INI 配置路径；缺省时查找程序目录下 media-server.ini。"
+        ),
+        QStringLiteral("path")
+    );
+    QCommandLineOption noCameraAutostartOption(
+        QStringLiteral("no-camera-autostart"),
+        QStringLiteral(
+            "只解析校验摄像头档案，禁止启动时自动连接。"
+        )
+    );
     parser.addOption(urlOption);
     parser.addOption(decodeThreadsOption);
     parser.addOption(metricsFileOption);
@@ -131,6 +148,8 @@ int main(int argc, char *argv[])
     parser.addOption(logLevelOption);
     parser.addOption(logDirectoryOption);
     parser.addOption(logConfigOption);
+    parser.addOption(mediaServerConfigOption);
+    parser.addOption(noCameraAutostartOption);
     parser.process(app);
 
     const QStringList streamUrls = parser.values(urlOption);
@@ -223,6 +242,93 @@ int main(int argc, char *argv[])
         loggingOptions.userMessageRepeatWindowMs
     );
 
+    // 媒体服务器只读接入：配置解析失败一律回退默认接入点，
+    // 监控全部异步执行，SRS 未运行也不影响启动和其他功能。
+    const bool mediaServerConfigExplicitlySet =
+        parser.isSet(mediaServerConfigOption);
+    QString mediaServerConfigPath =
+        parser.value(mediaServerConfigOption).trimmed();
+    if (mediaServerConfigPath.isEmpty()) {
+        const QString defaultConfigPath =
+            QCoreApplication::applicationDirPath() +
+            QStringLiteral("/media-server.ini");
+        if (QFileInfo::exists(defaultConfigPath)) {
+            mediaServerConfigPath = defaultConfigPath;
+        }
+    }
+    MediaServerEndpoint mediaServerEndpoint;
+    if (mediaServerConfigPath.isEmpty()) {
+        logManager.logSystem(
+            LogLevel::Info,
+            QStringLiteral("server"),
+            QStringLiteral("config_defaulted"),
+            QStringLiteral(
+                "No media server configuration found; "
+                "using the default endpoint."
+            )
+        );
+    } else if (!QFileInfo::exists(mediaServerConfigPath)) {
+        logManager.logSystem(
+            LogLevel::Warning,
+            QStringLiteral("server"),
+            QStringLiteral("config_missing"),
+            mediaServerConfigExplicitlySet
+                ? QStringLiteral(
+                      "The explicitly selected media server configuration "
+                      "does not exist; using the default endpoint."
+                  )
+                : QStringLiteral(
+                      "Media server configuration does not exist; "
+                      "using the default endpoint."
+                  ),
+            {{QStringLiteral("configFile"), mediaServerConfigPath}}
+        );
+    } else {
+        QStringList mediaServerWarnings;
+        mediaServerEndpoint = MediaServerConfiguration::loadEndpoint(
+            mediaServerConfigPath,
+            &mediaServerWarnings
+        );
+        logManager.logSystem(
+            LogLevel::Info,
+            QStringLiteral("server"),
+            QStringLiteral("config_loaded"),
+            QStringLiteral("Media server configuration loaded."),
+            {{QStringLiteral("configFile"), mediaServerConfigPath}}
+        );
+        for (const QString &warning : std::as_const(mediaServerWarnings)) {
+            logManager.logSystem(
+                LogLevel::Warning,
+                QStringLiteral("server"),
+                QStringLiteral("config_warning"),
+                warning
+            );
+        }
+    }
+
+    // 摄像头档案只解析校验；是否自动连接由 --no-camera-autostart 与
+    // 各 profile 的 autoStart 决定，非法条目已在解析阶段跳过。
+    QList<CameraStreamProfile> cameraProfiles;
+    if (!mediaServerConfigPath.isEmpty() &&
+        QFileInfo::exists(mediaServerConfigPath)) {
+        QStringList cameraProfileWarnings;
+        cameraProfiles = MediaServerConfiguration::loadCameraProfiles(
+            mediaServerConfigPath,
+            &cameraProfileWarnings
+        );
+        for (const QString &warning :
+             std::as_const(cameraProfileWarnings)) {
+            logManager.logSystem(
+                LogLevel::Warning,
+                QStringLiteral("server"),
+                QStringLiteral("config_warning"),
+                warning
+            );
+        }
+    }
+    MediaServerMonitor mediaServerMonitor;
+    mediaServerMonitor.setEndpoint(mediaServerEndpoint);
+
     const StyleLoadResult styleResult =
         StyleLoader::instance().applyApplicationStyle(app);
     if (!styleResult.applied) {
@@ -254,6 +360,55 @@ int main(int argc, char *argv[])
         &playbackManager,
         &logManager,
         &userMessageService
+    );
+    connectionController.setMediaServerEndpoint(mediaServerEndpoint);
+    QObject::connect(
+        &mediaServerMonitor, &MediaServerMonitor::healthChanged,
+        &app,
+        [&logManager, &userMessageService](
+            const MediaServerHealth &health
+        ) {
+            // SECURITY: 日志字段只含状态与布尔标记，不含完整服务器 URL。
+            logManager.logSystem(
+                LogLevel::Info,
+                QStringLiteral("server"),
+                QStringLiteral("health_changed"),
+                health.diagnostic,
+                {
+                    {
+                        QStringLiteral("state"),
+                        mediaServerStateName(health.state)
+                    },
+                    {
+                        QStringLiteral("rtmpPortReachable"),
+                        health.rtmpPortReachable
+                    },
+                    {
+                        QStringLiteral("apiReachable"),
+                        health.apiReachable
+                    },
+                    {
+                        QStringLiteral("serverVersion"),
+                        health.serverVersion
+                    }
+                }
+            );
+            if (health.state == MediaServerState::Unavailable) {
+                userMessageService.publish({
+                    UserEventType::ServerUnavailable,
+                    UserFailureReason::HostUnavailable,
+                    0,
+                    {}
+                });
+            } else if (health.state == MediaServerState::Healthy) {
+                userMessageService.publish({
+                    UserEventType::ServerHealthy,
+                    UserFailureReason::None,
+                    0,
+                    {}
+                });
+            }
+        }
     );
     if (!logFileReady) {
         logManager.logSystem(
@@ -297,8 +452,50 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
+    // --url 预装优先；profile 与已装 URL 重复、cameraId 重复或总数
+    // 超 16 路时由 addConnection 内部拒绝并记 warning，单路失败
+    // 不影响其他 profile 与程序启动。
+    int autoStartedProfiles = 0;
+    int rejectedProfiles = 0;
+    if (!parser.isSet(noCameraAutostartOption)) {
+        for (const CameraStreamProfile &profile :
+             std::as_const(cameraProfiles)) {
+            if (!profile.autoStart) {
+                continue;
+            }
+            if (connectionController.addConnection(
+                    profile,
+                    mediaServerEndpoint,
+                    true
+                ) != kInvalidStreamId) {
+                ++autoStartedProfiles;
+            } else {
+                ++rejectedProfiles;
+            }
+        }
+    }
+    if (!cameraProfiles.isEmpty()) {
+        logManager.logSystem(
+            LogLevel::Info,
+            QStringLiteral("server"),
+            QStringLiteral("camera_profiles_processed"),
+            QStringLiteral("Camera profiles processed."),
+            {
+                {QStringLiteral("profileCount"), cameraProfiles.size()},
+                {QStringLiteral("autoStarted"), autoStartedProfiles},
+                {QStringLiteral("rejected"), rejectedProfiles},
+                {
+                    QStringLiteral("autostartDisabled"),
+                    parser.isSet(noCameraAutostartOption)
+                }
+            }
+        );
+    }
+
     mainWindow.show();
+    mediaServerMonitor.startMonitoring();
     const int exitCode = app.exec();
+    mediaServerMonitor.stopMonitoring();
     playbackManager.stopAll();
     playbackManager.setRenderMetricsProvider({});
     logManager.logSystem(

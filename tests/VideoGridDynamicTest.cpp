@@ -11,6 +11,11 @@
 #include <QTest>
 #include <QToolBar>
 
+#if defined(Q_OS_WIN)
+#include <QWindow>
+#include <qt_windows.h>
+#endif
+
 #include <algorithm>
 #include <array>
 #include <cstdint>
@@ -88,6 +93,7 @@ private slots:
     void monitoringGridKeepsSixteenByNineViewports();
     void logDockDefaultsHiddenAndCanBeShown();
     void monitoringWallRoundTripRestoresWindowChrome();
+    void temporaryFullscreenTransitionRestoresWindowState();
     void transientWidgetVisibilityDoesNotSuppressSharedCanvas();
     void inCanvasFullscreenRoundTripUsesMainCanvas();
     void inCanvasFullscreenExitsOnStreamUnbind();
@@ -560,6 +566,12 @@ void VideoGridDynamicTest::monitoringWallRoundTripRestoresWindowChrome()
     action->trigger();
     QTRY_VERIFY(mainWindow.isMonitoringWallMode());
     QTRY_VERIFY(mainWindow.isFullScreen());
+#if defined(Q_OS_WIN)
+    const HWND mainWindowHwnd = reinterpret_cast<HWND>(
+        mainWindow.windowHandle()->winId()
+    );
+    QVERIFY((GetWindowLongPtrW(mainWindowHwnd, GWL_STYLE) & WS_BORDER) != 0);
+#endif
     QVERIFY(action->isChecked());
     QVERIFY(!mainWindow.menuBar()->isVisible());
     QVERIFY(!toolbar->isVisible());
@@ -573,7 +585,24 @@ void VideoGridDynamicTest::monitoringWallRoundTripRestoresWindowChrome()
     auto *fullscreen = mainWindow.findChild<FullscreenVideoWindow *>();
     QVERIFY(fullscreen != nullptr);
     QTRY_VERIFY(fullscreen->isFullscreenActive());
+    QVERIFY(!mainWindow.isVisible());
+    auto *transitionOverlay = fullscreen->findChild<QLabel *>(
+        QStringLiteral("fullscreenExitTransitionOverlay")
+    );
+    auto *fullscreenCanvas = fullscreen->findChild<VideoCanvasHost *>(
+        QStringLiteral("fullscreenVideoCanvas")
+    );
+    QSignalSpy restoreRequestedSpy(
+        fullscreen, &FullscreenVideoWindow::fullscreenRestoreRequested
+    );
     fullscreen->exitFullscreen();
+    QCOMPARE(restoreRequestedSpy.count(), 1);
+    QVERIFY(transitionOverlay != nullptr && transitionOverlay->isVisible());
+    QVERIFY(fullscreenCanvas != nullptr && !fullscreenCanvas->isVisible());
+    QCOMPARE(
+        grid->interactionState(),
+        VideoGridWidget::GridInteractionState::ExitingFullscreen
+    );
     QTRY_VERIFY(!fullscreen->isFullscreenActive());
     QTRY_VERIFY(mainWindow.isVisible());
     QTRY_VERIFY(mainWindow.isFullScreen());
@@ -590,6 +619,41 @@ void VideoGridDynamicTest::monitoringWallRoundTripRestoresWindowChrome()
     QVERIFY(!grid->isMonitoringWallMode());
     QVERIFY(qAbs(mainWindow.width() - originalSize.width()) <= 2);
     QVERIFY(qAbs(mainWindow.height() - originalSize.height()) <= 2);
+}
+
+void VideoGridDynamicTest::temporaryFullscreenTransitionRestoresWindowState()
+{
+    for (const bool maximized : {false, true}) {
+        MainWindow mainWindow(RendererPreference::Cpu);
+        VideoWidget *videoWidget = mainWindow.addConnectionWidget(
+            maximized ? QStringLiteral("Camera Maximized")
+                      : QStringLiteral("Camera Windowed")
+        );
+        QVERIFY(videoWidget != nullptr);
+        auto mailbox = std::make_shared<LatestFrameMailbox>();
+        mainWindow.bindVideoStream(videoWidget, 901, mailbox);
+        QVERIFY(mailbox->submit(makeGridTestFrame(maximized ? 2 : 1)));
+        videoWidget->showFrame();
+        mainWindow.resize(960, 540);
+        if (maximized) {
+            mainWindow.showMaximized();
+        } else {
+            mainWindow.show();
+        }
+        QVERIFY(QTest::qWaitForWindowExposed(&mainWindow));
+
+        QTest::mouseDClick(videoWidget, Qt::LeftButton);
+        auto *fullscreen = mainWindow.findChild<FullscreenVideoWindow *>();
+        QVERIFY(fullscreen != nullptr);
+        QTRY_VERIFY(fullscreen->isFullscreenActive());
+        QVERIFY(!mainWindow.isVisible());
+
+        fullscreen->exitFullscreen();
+        QTRY_VERIFY(!fullscreen->isFullscreenActive());
+        QTRY_VERIFY(mainWindow.isVisible());
+        QCOMPARE(mainWindow.isMaximized(), maximized);
+        QVERIFY(!mainWindow.isFullScreen());
+    }
 }
 
 void VideoGridDynamicTest::transientWidgetVisibilityDoesNotSuppressSharedCanvas()

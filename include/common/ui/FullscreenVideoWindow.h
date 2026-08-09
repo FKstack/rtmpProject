@@ -2,26 +2,32 @@
 
 #include <QPointer>
 #include <QPointF>
+#include <QString>
 #include <QWidget>
 
 #include "ui/VideoCanvasHost.h"
 
 class QCloseEvent;
+class QEvent;
 class QKeyEvent;
 class QMouseEvent;
 class QPaintEvent;
+class QPropertyAnimation;
 class QResizeEvent;
 class QScreen;
+class QShortcut;
 class QTimer;
 class QVBoxLayout;
+class QFrame;
+class QLabel;
 class FullscreenControlBar;
 class VideoWidget;
 
 /**
  * @brief 承载单路真实视频区域的独立全屏预览窗口。
  *
- * 该窗口只临时转移 VideoWidget 内的 videoSurface，而不复制或创建第二个渲染目标。
- * 退出时按保存的父对象和布局信息恢复原视频区域，确保网格槽位和未来播放器绑定不变。
+ * 该窗口使用独立临时画布读取当前流邮箱，不搬运 VideoWidget 或共享 OpenGL 对象。
+ * 退出时由 raster 冻结层覆盖顶层窗口切换，确保网格槽位和播放器绑定不变。
  *
  * @thread 仅允许在 Qt UI 线程中创建和访问。
  */
@@ -42,16 +48,16 @@ public:
     );
 
     /**
-     * @brief 销毁前恢复仍在全屏窗口中的真实视频区域。
+     * @brief 销毁前安全结束可能仍在进行的全屏退出过渡。
      *
      * @thread 必须在 Qt UI 线程中调用。
      */
     ~FullscreenVideoWindow() override;
 
     /**
-     * @brief 将指定视频格的真实视频区域切换到全屏窗口。
+     * @brief 将指定视频格的当前流切换到独立全屏画布。
      *
-     * 该操作不复制视频控件；源 VideoWidget 继续停留在原 QGridLayout 槽位中。
+     * 源 VideoWidget 继续停留在原 QGridLayout 槽位中；全屏画布只注册同一帧邮箱。
      *
      * @param videoWidget 要全屏预览的视频格。
      * @return 成功进入全屏时返回 true；窗口已激活或源控件状态无效时返回 false。
@@ -60,7 +66,7 @@ public:
     bool enterFullscreen(VideoWidget *videoWidget);
 
     /**
-     * @brief 退出全屏并恢复原视频区域的父子关系、布局和可见状态。
+     * @brief 启动 raster 冻结过渡并请求恢复主窗口画布。
      *
      * 无活动视频时该函数无副作用。
      *
@@ -69,7 +75,18 @@ public:
     void exitFullscreen();
 
     /**
-     * @brief 判断窗口当前是否承载某个视频格的真实视频区域。
+     * @brief 完成退出过渡并真正隐藏全屏顶层窗口。
+     *
+     * MainWindow 在主画布完成首次呈现后调用；若未调用，内部 750ms
+     * 安全计时器会自动收尾。
+     */
+    void completeExitTransition();
+
+    /** @brief 设置截图保存目录；空字符串恢复平台默认图片目录。 */
+    void setScreenshotOutputDirectory(QString directory);
+
+    /**
+     * @brief 判断窗口是否处于进入、显示或退出全屏状态。
      *
      * @return 正在全屏预览时返回 true。
      * @thread 必须在 Qt UI 线程中调用。
@@ -79,7 +96,7 @@ public:
 
 signals:
     /**
-     * @brief 真实视频区域完成转移并显示全屏窗口后发出。
+     * @brief 临时全屏画布完成绑定并显示后发出。
      *
      * @param videoWidget 当前全屏的视频格。
      * @thread 在 Qt UI 线程中发出。
@@ -87,10 +104,10 @@ signals:
     void fullscreenEntered(VideoWidget *videoWidget);
 
     /**
-     * @brief 真实视频区域开始从全屏窗口恢复到原视频格时发出。
+     * @brief 全屏窗口开始 raster 退出过渡时发出。
      *
-     * 该信号用于让动态网格在父子关系恢复期间禁止添加和拖拽，避免布局事务与
-     * 全屏恢复并发执行。
+     * 该信号用于让动态网格在主画布恢复期间禁止添加和拖拽，避免布局事务与
+     * 全屏过渡并发执行。
      *
      * @param videoWidget 正在退出全屏的视频格。
      * @thread 在 Qt UI 线程中发出。
@@ -98,7 +115,14 @@ signals:
     void fullscreenExitStarted(VideoWidget *videoWidget);
 
     /**
-     * @brief 真实视频区域恢复到原视频格后发出。
+     * @brief 请求 MainWindow 在当前 raster 过渡图后方恢复主画布。
+     *
+     * fullscreenExited 只会在主画布呈现或安全超时后发出。
+     */
+    void fullscreenRestoreRequested(VideoWidget *videoWidget);
+
+    /**
+     * @brief raster 过渡窗口真正隐藏后发出。
      *
      * @param videoWidget 已恢复的视频格；恢复目标失效时可能为 nullptr。
      * @thread 在 Qt UI 线程中发出。
@@ -121,7 +145,15 @@ signals:
      */
     void screenshotRequested(VideoWidget *videoWidget);
 
+    /** @brief PNG 已原子保存。 */
+    void screenshotSaved(const QString &path);
+
+    /** @brief 截图失败；reason 不含流 URL 等敏感信息。 */
+    void screenshotFailed(const QString &reason);
+
 protected:
+    bool event(QEvent *event) override;
+    bool eventFilter(QObject *watched, QEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
     void mouseDoubleClickEvent(QMouseEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
@@ -142,23 +174,66 @@ private:
     };
 
     static constexpr int kControlBarBottomMargin = 20;
-    static constexpr int kControlBarRevealHeight = 120;
-    static constexpr int kControlBarAutoHideDelayMs = 2500;
+    static constexpr int kControlBarRevealHeight = 96;
+    static constexpr int kFirstFrameHideDelayMs = 1200;
+    static constexpr int kPointerLeaveHideDelayMs = 250;
+    static constexpr int kControlBarAnimationDurationMs = 180;
+    static constexpr int kCursorHideDelayMs = 2000;
+    static constexpr int kExitTransitionTimeoutMs = 750;
+    static constexpr int kScreenshotToastDurationMs = 2500;
 
     [[nodiscard]] QScreen *screenForVideoWidget(const VideoWidget *videoWidget) const;
     [[nodiscard]] bool isPointerInRevealArea(const QPointF &position) const noexcept;
-    void showControlBar(bool restartTimer);
-    void scheduleControlBarHide();
-    void hideControlBar();
+    [[nodiscard]] bool isPointerInControlBar(const QPointF &position) const noexcept;
+    void handlePointerActivity(const QPointF &position);
+    void scheduleCursorHide();
+    [[nodiscard]] QRect visibleControlBarGeometry() const;
+    [[nodiscard]] QRect hiddenControlBarGeometry() const;
+    void showControlBar(bool animated);
+    void scheduleControlBarHide(int delayMs = kPointerLeaveHideDelayMs);
+    void hideControlBar(bool animated = true);
     void positionControlBar();
+    void stopControlBarMotion();
+    void updateRevealZoneGeometry();
+    void refreshActivePresentation();
     void refreshRenderSnapshot();
+    void requestScreenshot();
+    [[nodiscard]] QString resolvedScreenshotDirectory() const;
+    [[nodiscard]] QString nextScreenshotPath();
+    [[nodiscard]] QString safeScreenshotBaseName() const;
+    void showScreenshotToast(const QImage &thumbnail, const QString &message,
+                             bool autoHide);
+    void positionScreenshotToast();
+    void finishScreenshotSave(const QString &path, const QString &error);
+    void beginExitTransition(VideoWidget *videoWidget);
+    void updateTransitionOverlayGeometry();
     void clearRestoreState();
     [[nodiscard]] const char *transitionStateName() const noexcept;
 
     QVBoxLayout *videoLayout_ = nullptr;
     VideoCanvasHost *canvasHost_ = nullptr;
     FullscreenControlBar *controlBar_ = nullptr;
-    QTimer *autoHideTimer_ = nullptr;
+    QWidget *revealZone_ = nullptr;
+    QPropertyAnimation *controlBarAnimation_ = nullptr;
+    QTimer *hideDelayTimer_ = nullptr;
+    QTimer *cursorHideTimer_ = nullptr;
+    QShortcut *screenshotShortcut_ = nullptr;
+    QFrame *screenshotToast_ = nullptr;
+    QLabel *screenshotThumbnailLabel_ = nullptr;
+    QLabel *screenshotMessageLabel_ = nullptr;
+    QTimer *screenshotToastTimer_ = nullptr;
+    QLabel *transitionOverlay_ = nullptr;
+    QTimer *exitTransitionTimer_ = nullptr;
+    QMetaObject::Connection renderStateConnection_;
     VideoSurfaceRestoreState restoreState_;
+    QPointer<VideoWidget> exitingVideoWidget_;
+    QString screenshotOutputDirectory_;
+    QString latestScreenshotPath_;
+    QImage latestScreenshotThumbnail_;
+    quint64 screenshotSequence_ = 0;
+    bool pointerInRevealZone_ = false;
+    bool pointerInControlBar_ = false;
+    bool lastFrameVisible_ = false;
+    bool controlBarTargetVisible_ = false;
     TransitionState transitionState_ = TransitionState::Windowed;
 };

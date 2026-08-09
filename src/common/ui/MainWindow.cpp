@@ -4,6 +4,7 @@
 
 #include <QAction>
 #include <QDockWidget>
+#include <QEvent>
 #include <QGuiApplication>
 #include <QKeyEvent>
 #include <QKeySequence>
@@ -15,7 +16,13 @@
 #include <QStatusBar>
 #include <QSignalBlocker>
 #include <QToolBar>
+#include <QTimer>
 #include <QVBoxLayout>
+
+#if defined(Q_OS_WIN)
+#include <QWindow>
+#include <qt_windows.h>
+#endif
 
 #include "ui/FullscreenVideoWindow.h"
 #include "logging/UserMessageService.h"
@@ -23,6 +30,25 @@
 #include "ui/LogPanel.h"
 #include "ui/VideoGridWidget.h"
 #include "ui/VideoWidget.h"
+
+namespace {
+
+#if defined(Q_OS_WIN)
+void applyWindowsOpenGlFullscreenBorder(QWidget *widget)
+{
+    if (widget == nullptr || widget->windowHandle() == nullptr) {
+        return;
+    }
+
+    const HWND window = reinterpret_cast<HWND>(widget->windowHandle()->winId());
+    const LONG_PTR style = GetWindowLongPtrW(window, GWL_STYLE);
+    if ((style & WS_BORDER) == 0) {
+        SetWindowLongPtrW(window, GWL_STYLE, style | WS_BORDER);
+    }
+}
+#endif
+
+} // namespace
 
 MainWindow::MainWindow(QWidget *parent)
     : MainWindow(RendererPreference::Cpu, parent)
@@ -134,8 +160,13 @@ MainWindow::MainWindow(
             this, &MainWindow::handleFullscreenRequest);
     connect(fullscreenVideoWindow_, &FullscreenVideoWindow::fullscreenExitStarted,
             videoGrid_, &VideoGridWidget::notifyFullscreenExitStarted);
+    connect(fullscreenVideoWindow_,
+            &FullscreenVideoWindow::fullscreenRestoreRequested,
+            this, &MainWindow::beginRestoreBehindFullscreen);
     connect(fullscreenVideoWindow_, &FullscreenVideoWindow::fullscreenExited,
             this, [this](VideoWidget *videoWidget) {
+                QObject::disconnect(fullscreenRestorePaintConnection_);
+                fullscreenRestorePaintConnection_ = {};
                 videoGrid_->notifyFullscreenExited(videoWidget);
                 restoreAfterFullscreen();
             });
@@ -148,7 +179,10 @@ MainWindow::~MainWindow()
 {
     // 析构期间不应因恢复信号重新显示正在销毁的主窗口。
     wasVisibleBeforeFullscreen_ = false;
+    QObject::disconnect(fullscreenRestorePaintConnection_);
+    fullscreenRestorePaintConnection_ = {};
     fullscreenVideoWindow_->exitFullscreen();
+    fullscreenVideoWindow_->completeExitTransition();
 }
 
 VideoWidget *MainWindow::videoWidgetAt(int index) const noexcept
@@ -339,6 +373,21 @@ void MainWindow::setMonitoringWallMode(bool enabled)
     }
 }
 
+bool MainWindow::event(QEvent *event)
+{
+    const bool handled = QMainWindow::event(event);
+#if defined(Q_OS_WIN)
+    if (event != nullptr &&
+        (event->type() == QEvent::WinIdChange ||
+         (event->type() == QEvent::WindowStateChange && isFullScreen()))) {
+        applyWindowsOpenGlFullscreenBorder(this);
+    }
+#else
+    Q_UNUSED(event);
+#endif
+    return handled;
+}
+
 void MainWindow::keyPressEvent(QKeyEvent *event)
 {
     if (event != nullptr && event->key() == Qt::Key_Escape &&
@@ -409,13 +458,16 @@ void MainWindow::handleFullscreenRequest(VideoWidget *videoWidget)
     }
 
     wasVisibleBeforeFullscreen_ = isVisible();
+    if (wasVisibleBeforeFullscreen_) {
+        // 先隐藏主 OpenGL 顶层窗口，再显示单路全屏窗口，避免 Windows DWM
+        // 在两个 OpenGL 顶层窗口重叠期间合成历史表面。
+        hide();
+    }
     const bool entered = fullscreenVideoWindow_->enterFullscreen(videoWidget);
     videoGrid_->notifyFullscreenEntryResult(videoWidget, entered);
 
-    if (entered && wasVisibleBeforeFullscreen_) {
-        hide();
-    } else if (!entered) {
-        wasVisibleBeforeFullscreen_ = false;
+    if (!entered) {
+        restoreAfterFullscreen();
     }
 }
 
@@ -426,11 +478,47 @@ void MainWindow::restoreAfterFullscreen()
     }
 
     wasVisibleBeforeFullscreen_ = false;
+    raise();
+    activateWindow();
+}
+
+void MainWindow::beginRestoreBehindFullscreen(VideoWidget *videoWidget)
+{
+    Q_UNUSED(videoWidget);
+    QObject::disconnect(fullscreenRestorePaintConnection_);
+    fullscreenRestorePaintConnection_ = {};
+
+    // 网格在 raster 过渡图遮挡期间保持 ExitingFullscreen，但先恢复完整
+    // Snapshot。主画布真正 paint 后才允许隐藏遮罩并激活主窗口。
+    videoGrid_->refreshRenderSnapshot();
+    if (!wasVisibleBeforeFullscreen_) {
+        fullscreenVideoWindow_->completeExitTransition();
+        return;
+    }
+
+    fullscreenRestorePaintConnection_ = connect(
+        videoGrid_, &VideoGridWidget::surfacePresented, this, [this] {
+            QObject::disconnect(fullscreenRestorePaintConnection_);
+            fullscreenRestorePaintConnection_ = {};
+            // 让本次 CPU backing store / QOpenGLWidget composition 先完成提交，
+            // 下一事件循环再揭开 raster 遮罩，避免“paint 已返回但窗口尚未合成”。
+            QTimer::singleShot(
+                0, fullscreenVideoWindow_,
+                &FullscreenVideoWindow::completeExitTransition
+            );
+        }
+    );
+
     if (monitoringWallMode_) {
         showFullScreen();
+    } else if (windowState().testFlag(Qt::WindowMaximized)) {
+        showMaximized();
     } else {
         show();
     }
-    raise();
-    activateWindow();
+    // show()/showFullScreen() 在 Windows 上可能隐式改变 Z 序；在事件循环
+    // 真正绘制主画布前重新把纯 raster 过渡窗口放在最前，避免露出白色 backing store。
+    fullscreenVideoWindow_->raise();
+    // showEvent 与显式刷新共同保证 CPU/OpenGL 两个后端都产生首个呈现信号。
+    videoGrid_->refreshRenderSnapshot();
 }

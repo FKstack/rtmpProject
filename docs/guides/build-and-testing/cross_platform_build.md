@@ -56,19 +56,22 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 Release/Debug FFmpeg DLL 目录不会永久加入 PATH，避免运行时混用配置。
 脚本固定使用已验证的 vcpkg 提交 `4eb0f7cabb9ca18132d80009312411b9261bba7b`，
 防止端口版本随 `master` 漂移。
-当前 `CMakeUserPresets.json` 通过
-`F:/DevTools/vcpkg/scripts/buildsystems/vcpkg.cmake` 为 Windows Preset 启用依赖发现。
+公共 `CMakePresets.json` 的隐藏预设 `Windows-MSVC-vcpkg` 通过
+`$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake` 启用依赖发现；被 Git 忽略的
+`CMakeUserPresets.json` 在 `Qt-Debug`/`Qt-Release` 的 `environment` 中提供本机
+`VCPKG_ROOT`。不要把 `F:/DevTools/vcpkg` 这类个人绝对路径写入公共 Preset。
 
 在 Visual Studio Developer PowerShell 中执行：
 
 ```powershell
-cmake --preset Qt-Debug
+cmake --preset Qt-Debug --fresh
 cmake --build out/build-windows-x64/debug
 ctest --test-dir out/build-windows-x64/debug --output-on-failure
-./out/build-windows-x64/debug/rtmp_monitor.exe
 ```
 
-`Qt-Debug` 来自本机忽略提交的 `CMakeUserPresets.json`，当前指向 `E:/QT6/6.6.1/msvc2019_64`。Windows 构建只接受 MSVC，不得与 MinGW Qt 库混用。
+`Qt-Debug` 来自本机忽略提交的 `CMakeUserPresets.json`，当前指向 MSVC Qt Kit。
+GUI 的首选运行方式是 Visual Studio 将 `rtmp_monitor.exe` 设为启动项后按 F5；命令行
+只负责构建/CTest。Windows 构建只接受 MSVC，不得与 MinGW Qt 库混用。
 
 Week 6 OpenGL 一键验证：
 
@@ -249,3 +252,43 @@ QT_QPA_PLATFORM=eglfs ./rtmp_monitor_qt_opengl_smoke
 若设备使用 Wayland 或 X11，应把 `QT_QPA_PLATFORM` 改为实际采用的
 `wayland` 或 `xcb`。详细 Week 6 结果和边界见
 [产品级 OpenGL 视频渲染与验证总览](../../weeks/week6/week6_opengl_environment_and_validation.md)。
+
+## 9. SRS Server ARM64 部署边界
+
+> 本节是 `docs/srs_server_integration_plan.md` Phase 2 的落地说明；SRS 是
+> 独立基础设施，不属于上方 Qt 客户端构建链。
+
+- 版本固定为 SRS 6.0.184（`v6.0-r0`），与 Windows 开发侧使用同一份
+  `deploy/srs/conf/srs-minimal.conf`：1935 对所有接口监听，1985 只绑定
+  回环，RAW API 关闭。
+- **首选目标设备本机构建**：官方 ARM 文档建议 ARMv7/ARMv8 直接
+  `./configure && make`。使用仓库脚本：
+
+```bash
+bash scripts/srs/build_srs_arm64.sh \
+    --source-dir <srs-6.0.184-repo> \
+    --prefix /opt/rtmp-monitor/srs-6.0.184 \
+    --config deploy/srs/conf/srs-minimal.conf \
+    --mode native
+```
+
+- **交叉编译仅作后备**：目标设备资源不足、工具链明确且 ABI 已冻结时才用
+  `--mode cross --cross-prefix aarch64-linux-gnu-`。交叉构建只证明生成
+  AArch64 ELF，**交叉构建不等于实机通过**；必须在目标板重新执行
+  `file/ldd/srs -v` 和链路验证。
+- 目标板链路验收（本机推拉流）：
+
+```bash
+bash scripts/srs/verify_srs_chain.sh \
+    --srs-home /opt/rtmp-monitor/srs-6.0.184 \
+    --srs-source <srs-6.0.184-repo>
+```
+
+- 产品期由 systemd 管理，安装仓库提供的
+  `deploy/srs/systemd/rtmp-monitor-srs.service`（`SIGQUIT` 优雅停止、
+  `on-failure` 重启、日志由 journald 接管）。第一版以系统服务默认用户
+  运行；正式产品化前创建最小权限服务用户并复验（标记 `[需要验证]`）。
+- 防火墙只向摄像头/客户端所在 LAN 网段开放 TCP 1935；1985 保持回环。
+- 在硬件/SDK 未确定前，目标 glibc/musl、动态加载器、sysroot、systemd
+  可用性和存储边界全部标记 `[需要验证]`；不得把当前 Qt/FFmpeg ARM64
+  sysroot 自动假定为 SRS 的运行 sysroot。

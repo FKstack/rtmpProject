@@ -1,4 +1,4 @@
-﻿# RTMP 推流链路验证脚本说明
+# RTMP 推流链路验证脚本说明
 
 > 文档分类：构建与验证。
 
@@ -1022,3 +1022,83 @@ FFmpeg / nginx / 网络链路
 ```text
 Qt / CMake / FFmpeg 开发库 / 解码代码
 ```
+
+---
+
+## 15. SRS 链路入口（2026-08 新增）
+
+> SRS 接入是 `docs/srs_server_integration_plan.md` 的 Phase 1 产物。本节只给出
+> SRS 链路的入口和使用方法；上方第 1～14 节的 nginx-rtmp 内容全部保留，
+> 历史脚本 `scripts/verify_rtmp_chain.ps1` 未删除、未改动。
+
+### 15.1 与 nginx 链路的关系
+
+| 项目 | nginx-rtmp（历史） | SRS 6.0.184（当前基线） |
+|---|---|---|
+| Server 形态 | Windows 原生 `nginx.exe` | WSL2 Ubuntu 内源码构建的 `srs` |
+| 管理脚本 | `scripts/verify_rtmp_chain.ps1` | `scripts/srs/srs_dev_wsl.ps1` |
+| 端到端验收 | `-Action All` 手工观察 | `scripts/srs/verify_srs_chain.ps1` 自动判定 |
+| 配置文件 | `E:\DevTools\nginx-rtmp\conf\nginx.conf` | `deploy/srs/conf/srs-minimal.conf`（入库） |
+| 健康接口 | 无 | 回环 HTTP API `127.0.0.1:1985` |
+| 默认流地址 | `rtmp://127.0.0.1:1935/live/camera001` | `rtmp://127.0.0.1:1935/live/camera01`（`camera001` 同样兼容） |
+
+迁移原则：增量新增 SRS 脚本，不删除 nginx 脚本；确认 SRS 全链路通过后再单独
+决定历史脚本的退役。
+
+### 15.2 前置条件
+
+- WSL2 发行版 `Ubuntu-22.04-New`，已按方案文档第 6 节在
+  `$HOME/opt/srs-6.0.184` 完成源码构建与安装（固定 tag `v6.0-r0`）。
+- 无 root 环境时，构建依赖 tclsh 可用户态解包到 `$HOME/local`（见
+  `docs/weeks/week7` 的 Phase 1 记录）。
+- Windows 端 `ffmpeg/ffprobe/ffplay` 在 PATH 中（用于 Windows 侧拉流验证）。
+
+### 15.3 日常使用
+
+```powershell
+# 环境检查（发行版、SRS 二进制、配置、端口、工具）
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File .\scripts\srs\srs_dev_wsl.ps1 -Action Check
+
+# 安装仓库配置并后台启动 SRS（写入所有权状态文件）
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File .\scripts\srs\srs_dev_wsl.ps1 -Action Start
+
+# 查看运行状态、端口和 API
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File .\scripts\srs\srs_dev_wsl.ps1 -Action Status
+
+# 快速推拉流自测（owned publisher -> API -> ffprobe -> 停止 -> 流消失）
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File .\scripts\srs\srs_dev_wsl.ps1 -Action Test
+
+# 停止自有 SRS（只停止身份匹配的进程，从不杀未知进程）
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File .\scripts\srs\srs_dev_wsl.ps1 -Action Stop
+```
+
+端到端验收（推流激活、WSL/Windows 双侧 ffprobe、停推消失、同 URL 恢复）：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File .\scripts\srs\verify_srs_chain.ps1 -Action Verify
+
+# 10 分钟保活验收（Phase 3 门槛）
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File .\scripts\srs\verify_srs_chain.ps1 -Action Verify -SoakSeconds 600
+```
+
+报告写入 `out/srs/verify-srs-chain-<timestamp>.json`（`out/` 已被 Git 忽略）。
+
+### 15.4 所有权与端口冲突规则
+
+- `srs_dev_wsl.ps1 -Action Start` 启动的 SRS 会立即以 `starting` 状态在
+  `out/srs/srs-dev-wsl.state.json` 记录 RunId、WSL PID、可执行路径、配置路径
+  和启动时间；端口/API 就绪后才改为 `ready`。启动失败会按相同身份回收进程。
+- `Stop` 在每次发信号前于同一个 WSL 操作中核验 `/proc/<pid>/exe` 与 cmdline；
+  先发送 `SIGQUIT`，超时且身份再次匹配才发送 `SIGKILL`。身份不匹配或
+  无状态文件时不做任何进程操作。
+- TCP 1935 或 1985 已被非自有进程占用时，`Start` 直接失败并打印监听者信息，绝不
+  `Stop-Process`、`taskkill` 或 `killall`。
+- 1935 对所有接口监听用于摄像头/客户端推拉流；1985 只绑定回环，禁止暴露
+  到局域网。
