@@ -6,6 +6,13 @@ project(RtmpMonitor
     LANGUAGES CXX
 )
 
+# CMake 的 project(VERSION) 只接受数字版本；预发布标识在这里集中冻结，
+# 并通过生成头传给应用，避免分支名、文档和 --version 输出各自维护。
+set(RTMP_MONITOR_PRERELEASE "alpha.1")
+set(RTMP_MONITOR_VERSION
+    "${PROJECT_VERSION}-${RTMP_MONITOR_PRERELEASE}"
+)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -1044,6 +1051,7 @@ install(FILES resources/styles/app.qss
 # 不可含糊的构建配置摘要
 # ---------------------------------------------------------------------------
 message(STATUS "==================== RtmpMonitor build summary ====================")
+message(STATUS "Application version : ${RTMP_MONITOR_VERSION}")
 message(STATUS "Target system        : ${CMAKE_SYSTEM_NAME}/${CMAKE_SYSTEM_PROCESSOR}")
 message(STATUS "Build type           : ${CMAKE_BUILD_TYPE}")
 message(STATUS "Linux render mode    : ${RTMP_MONITOR_LINUX_RENDER_MODE_EFFECTIVE}")

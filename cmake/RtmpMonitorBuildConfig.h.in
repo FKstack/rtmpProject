@@ -4,5 +4,8 @@
 // 不在源文件中散布平台或构建模式判断。
 #define RTMP_MONITOR_HAS_OPENGL @RTMP_MONITOR_HAS_OPENGL@
 
+// 对外版本号；CMake project(VERSION) 保留纯数字核心，预发布标识由根 CMake 冻结。
+#define RTMP_MONITOR_VERSION_STRING "@RTMP_MONITOR_VERSION@"
+
 // Linux 渲染构建模式：AUTO / RASTER / GLES3；非 Linux 平台固定为 "DESKTOP"。
 #define RTMP_MONITOR_LINUX_RENDER_MODE "@RTMP_MONITOR_LINUX_RENDER_MODE_EFFECTIVE@"

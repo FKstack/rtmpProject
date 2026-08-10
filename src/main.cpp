@@ -15,6 +15,7 @@
 #include "logging/LogManager.h"
 #include "logging/UserMessageService.h"
 #include "media/MultiStreamPlaybackManager.h"
+#include "RtmpMonitorBuildConfig.h"
 #include "server/MediaServerConfiguration.h"
 #include "server/MediaServerMonitor.h"
 #include "ui/MainWindow.h"
@@ -64,6 +65,9 @@ int main(int argc, char *argv[])
 
     QApplication app(argc, argv);
     QApplication::setApplicationName(QStringLiteral("RtmpMonitor"));
+    QApplication::setApplicationVersion(
+        QStringLiteral(RTMP_MONITOR_VERSION_STRING)
+    );
     QApplication::setOrganizationName(QStringLiteral("RtmpProject"));
 
     QCommandLineParser parser;
