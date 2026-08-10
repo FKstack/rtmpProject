@@ -15,32 +15,32 @@ ARM64 结果证明源码可以通过目标编译器编译并链接目标 Qt、EG
 
 ## 2. 存储位置
 
-为减少 C 盘占用，当前环境使用以下位置：
+仓库只约定目录职责，不固定开发者的 Windows 盘符或个人绝对路径：
 
 ```text
-E:\rtmpProject
-  -> 源码、Windows/ARM64 构建产物和 out/week6-opengl 验证日志
+<workspace>\rtmpProject
+  -> 源码；构建产物和验证报告统一写入被 Git 忽略的 out\
 
-F:\DevTools\vcpkg
-F:\DevTools\vcpkg-downloads
-F:\DevTools\vcpkg-binary-cache
-F:\Temp\rtmp-monitor-vcpkg
+<tool-root>\vcpkg
+<cache-root>\vcpkg-downloads
+<cache-root>\vcpkg-binary-cache
+<temp-root>\rtmp-monitor-vcpkg
   -> Windows x64 FFmpeg 开发库、下载、二进制缓存和临时文件
 
-G:\WSL\Ubuntu-22.04-New\ext4.vhdx
-  -> WSL 系统、交叉编译器、Qt host tools、ARM64 sysroot
-
-F:\WSL\wsl-swap.vhdx
-  -> WSL2 swap
+<wsl-storage>\<distribution>.vhdx
+<wsl-storage>\wsl-swap.vhdx
+  -> WSL 发行版和 swap；具体宿主机位置由接收方自行记录，不写入公共配置
 
 /opt/rtmp-monitor/sysroots/jammy-arm64
-  -> WSL VHDX 内的 Ubuntu 22.04 ARM64 Qt/FFmpeg sysroot
+  -> WSL/Linux 内的项目标准 ARM64 Qt/FFmpeg sysroot
 
 /opt/rtmp-monitor/ffmpeg-arm64
-  -> FFmpeg 8.1.2 已验证源码、交叉构建目录和构建参数
+  -> WSL/Linux 内的 FFmpeg 8.1.2 源码、交叉构建目录和构建参数
 ```
 
-不要把 SDK、sysroot 或构建目录放入 `%TEMP%`、用户下载目录或 C 盘。`out/` 已被 Git 忽略。
+Windows 侧通过 `VCPKG_ROOT`、`QTDIR` 和被忽略的 `CMakeUserPresets.json` 注入
+本机位置。空间受限时可把工具和缓存放到非系统盘，但不得把个人路径提交到公共
+Preset 或文档。`out/` 已被 Git 忽略。
 
 ## 3. Windows x64 构建
 
@@ -59,7 +59,7 @@ Release/Debug FFmpeg DLL 目录不会永久加入 PATH，避免运行时混用�
 公共 `CMakePresets.json` 的隐藏预设 `Windows-MSVC-vcpkg` 通过
 `$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake` 启用依赖发现；被 Git 忽略的
 `CMakeUserPresets.json` 在 `Qt-Debug`/`Qt-Release` 的 `environment` 中提供本机
-`VCPKG_ROOT`。不要把 `F:/DevTools/vcpkg` 这类个人绝对路径写入公共 Preset。
+`VCPKG_ROOT`。不要把任何开发者的绝对路径写入公共 Preset。
 
 在 Visual Studio Developer PowerShell 中执行：
 
