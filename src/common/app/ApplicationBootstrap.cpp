@@ -14,10 +14,12 @@
 #include "app/SavedStreamController.h"
 #include "app/DeviceControlController.h"
 #include "app/DeviceControlTransport.h"
+#include "app/PlatformEventBridge.h"
 #include "app/StyleLoader.h"
 #include "diagnostics/RuntimeMetricsReporter.h"
 #include "device_control/MqttDeviceClient.h"
 #include "device_control/DevicePresenceTracker.h"
+#include "event_center/EventCenterService.h"
 #include "logging/LogConfiguration.h"
 #include "logging/LogManager.h"
 #include "logging/UserMessageService.h"
@@ -29,6 +31,7 @@
 #include "ui/MainWindow.h"
 #include "ui/DeviceControlPanel.h"
 #include "ui/DeviceControlInputRouter.h"
+#include "ui/EventCenterPanel.h"
 #include "ui/VideoCanvasHost.h"
 
 #if defined(Q_OS_LINUX)
@@ -174,6 +177,20 @@ int ApplicationBootstrap::run(int argc, char *argv[])
     UserMessageService userMessageService(
         loggingOptions.userMessageRepeatWindowMs
     );
+    EventCenterService eventCenterService;
+    QString eventCenterError;
+    const bool eventCenterWriteReady =
+        eventCenterService.initialize(&eventCenterError);
+    if (!eventCenterWriteReady) {
+        logManager.logSystem(
+            LogLevel::Critical,
+            QStringLiteral("event_center"),
+            QStringLiteral("storage_unavailable"),
+            eventCenterError,
+            {{QStringLiteral("playbackAffected"), false},
+             {QStringLiteral("controlAffected"), false}}
+        );
+    }
 
     // 媒体服务器只读接入：配置解析失败一律回退默认接入点，
     // 监控全部异步执行，SRS 未运行也不影响启动和其他功能。
@@ -293,6 +310,37 @@ int ApplicationBootstrap::run(int argc, char *argv[])
         [&mainWindow] { return mainWindow.rendererRuntimeMetrics(); }
     );
     mainWindow.setUserMessageService(&userMessageService);
+    auto *eventCenterPanel = new EventCenterPanel(&mainWindow);
+    mainWindow.installEventCenterPanel(eventCenterPanel);
+    eventCenterPanel->setEvents(
+        eventCenterService.events(), eventCenterService.summary());
+    eventCenterPanel->setStorageState(
+        eventCenterService.isWriteEnabled(), eventCenterService.storageError());
+    mainWindow.setEventCenterSummary(
+        eventCenterService.summary(), eventCenterService.isWriteEnabled());
+    QObject::connect(
+        &eventCenterService, &EventCenterService::eventsChanged,
+        eventCenterPanel, &EventCenterPanel::setEvents);
+    QObject::connect(
+        &eventCenterService, &EventCenterService::eventsChanged,
+        &mainWindow,
+        [&mainWindow, &eventCenterService](
+            const QList<SecurityEventRecord> &,
+            const EventCenterSummary &summary) {
+            mainWindow.setEventCenterSummary(
+                summary, eventCenterService.isWriteEnabled());
+        });
+    QObject::connect(
+        &eventCenterService, &EventCenterService::storageStateChanged,
+        eventCenterPanel, &EventCenterPanel::setStorageState);
+    QObject::connect(
+        &eventCenterService, &EventCenterService::storageStateChanged,
+        &mainWindow,
+        [&mainWindow, &eventCenterService](bool writeEnabled,
+                                           const QString &) {
+            mainWindow.setEventCenterSummary(
+                eventCenterService.summary(), writeEnabled);
+        });
     StreamConnectionController connectionController(
         &mainWindow,
         &playbackManager,
@@ -346,6 +394,61 @@ int ApplicationBootstrap::run(int argc, char *argv[])
         [&connectionController](StreamId streamId) {
             return connectionController.controlMediaObservation(streamId);
         });
+    PlatformEventBridge platformEventBridge(&eventCenterService);
+    platformEventBridge.setMediaServerEndpoint(mediaServerEndpoint);
+    eventCenterPanel->setResources(platformEventBridge.resources());
+    QObject::connect(
+        &platformEventBridge, &PlatformEventBridge::resourcesChanged,
+        eventCenterPanel, &EventCenterPanel::setResources);
+    const auto showEventOperationFailure =
+        [eventCenterPanel](const EventOperationResult &result) {
+            if (!result.succeeded())
+                eventCenterPanel->showOperationError(result.message);
+        };
+    QObject::connect(
+        eventCenterPanel, &EventCenterPanel::manualIncidentRequested,
+        &eventCenterService,
+        [&eventCenterService, showEventOperationFailure](
+            SecurityEventSeverity severity,
+            const QString &resourceId,
+            const QString &deviceId,
+            const QString &displayName,
+            const QString &identitySource,
+            const QString &note) {
+            showEventOperationFailure(eventCenterService.createManualIncident(
+                severity, resourceId, deviceId, displayName, identitySource,
+                note, PlatformEventBridge::localActorName()));
+        });
+    QObject::connect(
+        eventCenterPanel, &EventCenterPanel::acknowledgeRequested,
+        &eventCenterService,
+        [&eventCenterService, showEventOperationFailure](const QString &eventId) {
+            showEventOperationFailure(eventCenterService.acknowledge(
+                eventId, PlatformEventBridge::localActorName()));
+        });
+    QObject::connect(
+        eventCenterPanel, &EventCenterPanel::resolveManualRequested,
+        &eventCenterService,
+        [&eventCenterService, showEventOperationFailure](const QString &eventId) {
+            showEventOperationFailure(eventCenterService.resolveManualIncident(
+                eventId, PlatformEventBridge::localActorName()));
+        });
+    QObject::connect(
+        eventCenterPanel, &EventCenterPanel::closeRequested,
+        &eventCenterService,
+        [&eventCenterService, showEventOperationFailure](const QString &eventId) {
+            showEventOperationFailure(eventCenterService.closeResolved(
+                eventId, PlatformEventBridge::localActorName()));
+        });
+    QObject::connect(
+        eventCenterPanel, &EventCenterPanel::forceCloseRequested,
+        &eventCenterService,
+        [&eventCenterService, showEventOperationFailure](
+            const QString &eventId, const QString &reason) {
+            showEventOperationFailure(
+                eventCenterService.closeWithoutObservedRecovery(
+                    eventId, reason, PlatformEventBridge::localActorName()));
+        });
     QObject::connect(deviceControlPanel,
                      &DeviceControlPanel::joystickCommandPressed,
                      &deviceControlController,
@@ -384,9 +487,25 @@ int ApplicationBootstrap::run(int argc, char *argv[])
                      &devicePresenceTracker,
                      &DevicePresenceTracker::registerDevice);
     QObject::connect(&connectionController,
+                     &StreamConnectionController::deviceBound,
+                     &platformEventBridge,
+                     &PlatformEventBridge::observeDeviceBound);
+    QObject::connect(&connectionController,
                      &StreamConnectionController::deviceUnbound,
                      &devicePresenceTracker,
                      &DevicePresenceTracker::unregisterDevice);
+    QObject::connect(&connectionController,
+                     &StreamConnectionController::deviceUnbound,
+                     &platformEventBridge,
+                     &PlatformEventBridge::observeDeviceUnbound);
+    QObject::connect(&connectionController,
+                     &StreamConnectionController::streamEventObserved,
+                     &platformEventBridge,
+                     &PlatformEventBridge::observeStream);
+    QObject::connect(&connectionController,
+                     &StreamConnectionController::streamRemovedObserved,
+                     &platformEventBridge,
+                     &PlatformEventBridge::observeStreamRemoved);
     QObject::connect(&connectionController,
                      &StreamConnectionController::controlTargetChanged,
                      &deviceControlController,
@@ -405,6 +524,10 @@ int ApplicationBootstrap::run(int argc, char *argv[])
                      &DevicePresenceTracker::presenceChanged,
                      &deviceControlController,
                      &DeviceControlController::setDevicePresence);
+    QObject::connect(&devicePresenceTracker,
+                     &DevicePresenceTracker::presenceChanged,
+                     &platformEventBridge,
+                     &PlatformEventBridge::observePresence);
     QObject::connect(&deviceControlInput,
                      &DeviceControlInputRouter::commandPressed,
                      &deviceControlController,
@@ -427,6 +550,17 @@ int ApplicationBootstrap::run(int argc, char *argv[])
                          deviceControlInput.setConnected(
                              state == MqttConnectionState::Connected);
                      });
+    QObject::connect(
+        &deviceControlTransport, &DeviceControlTransport::stateChanged,
+        &platformEventBridge,
+        [&platformEventBridge](MqttConnectionState state, const QString &) {
+            platformEventBridge.observeMqttState(state);
+        });
+    QObject::connect(
+        &deviceControlController,
+        &DeviceControlController::controlAttemptRecorded,
+        &platformEventBridge,
+        &PlatformEventBridge::observeControlAttempt);
     QObject::connect(&deviceControlController,
                      &DeviceControlController::controlSessionChanged,
                      &deviceControlInput,
@@ -523,6 +657,9 @@ int ApplicationBootstrap::run(int argc, char *argv[])
             }
         }
     );
+    QObject::connect(
+        &mediaServerMonitor, &MediaServerMonitor::healthChanged,
+        &platformEventBridge, &PlatformEventBridge::observeMediaHealth);
     if (!logFileReady) {
         logManager.logSystem(
             LogLevel::Error,
@@ -616,7 +753,9 @@ int ApplicationBootstrap::run(int argc, char *argv[])
     mediaServerMonitor.startMonitoring();
     deviceControlController.start();
     const int exitCode = app.exec();
+    platformEventBridge.beginShutdown();
     deviceControlController.stop();
+    platformEventBridge.stopAccepting();
     mediaServerMonitor.stopMonitoring();
     playbackManager.stopAll();
     metricsReporter.setRenderMetricsProvider({});

@@ -14,11 +14,22 @@ file(GLOB_RECURSE control_policy_files
     "${PROJECT_SOURCE_DIR}/include/common/control_policy/*.h"
     "${PROJECT_SOURCE_DIR}/src/common/control_policy/*.h"
     "${PROJECT_SOURCE_DIR}/src/common/control_policy/*.cpp")
+file(GLOB_RECURSE event_center_files
+    "${PROJECT_SOURCE_DIR}/include/common/event_center/*.h"
+    "${PROJECT_SOURCE_DIR}/src/common/event_center/*.h"
+    "${PROJECT_SOURCE_DIR}/src/common/event_center/*.cpp")
 
 foreach(source_file IN LISTS media_files)
     file(READ "${source_file}" source_text)
     if(source_text MATCHES "#[ \t]*include[ \t]*[<\"](render|ui)/")
         message(FATAL_ERROR "media layer depends on render/ui: ${source_file}")
+    endif()
+endforeach()
+
+foreach(source_file IN LISTS event_center_files)
+    file(READ "${source_file}" source_text)
+    if(source_text MATCHES "#[ \t]*include[ \t]*[<\"](app|control_policy|device_control|logging|media|profiles|render|server|ui)/")
+        message(FATAL_ERROR "event_center depends on an outer layer: ${source_file}")
     endif()
 endforeach()
 
@@ -33,6 +44,13 @@ foreach(source_file IN LISTS media_files render_files device_control_files)
     file(READ "${source_file}" source_text)
     if(source_text MATCHES "#[ \t]*include[ \t]*[<\"]control_policy/")
         message(FATAL_ERROR "existing lower layer depends on control_policy: ${source_file}")
+    endif()
+endforeach()
+
+foreach(source_file IN LISTS media_files render_files device_control_files)
+    file(READ "${source_file}" source_text)
+    if(source_text MATCHES "#[ \t]*include[ \t]*[<\"]event_center/")
+        message(FATAL_ERROR "existing lower layer depends on event_center: ${source_file}")
     endif()
 endforeach()
 

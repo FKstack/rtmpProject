@@ -18,6 +18,18 @@ class UserMessageService;
 class VideoWidget;
 class ConnectionEventReporter;
 
+struct StreamEventObservation
+{
+    StreamId streamId = kInvalidStreamId;
+    QString localResourceId;
+    QString deviceId;
+    QString displayName;
+    DeviceStatus playbackStatus = DeviceStatus::Disconnected;
+    bool removing = false;
+};
+
+Q_DECLARE_METATYPE(StreamEventObservation)
+
 /**
  * @brief 在 UI 线程中协调连接对话框、稳定 StreamId、播放器和视频格。
  */
@@ -74,6 +86,11 @@ public:
         StreamId streamId
     ) const;
     [[nodiscard]] static QString deviceIdFromRtmpUrl(const QString &streamUrl);
+    [[nodiscard]] static QString stableEventResourceId(
+        const QString &cameraId,
+        const QString &deviceId,
+        const QString &streamUrl
+    );
 
 public slots:
     void setDevicePresence(const QString &deviceId, DevicePresenceState state);
@@ -84,12 +101,18 @@ signals:
     void controlTargetChanged(StreamId streamId, const QString &deviceId,
                               const QString &streamUrl);
     void controlTargetMediaChanged(StreamId streamId);
+    void streamEventObserved(const StreamEventObservation &observation);
+    void streamRemovedObserved(const StreamEventObservation &observation);
 
 private:
     void showConnectionDialog();
     void connectVideoWidget(ConnectionBinding &binding);
     void toggleAudio(VideoWidget *videoWidget);
     void selectControlTarget(StreamId streamId);
+    [[nodiscard]] StreamEventObservation streamEventObservation(
+        const ConnectionBinding &binding
+    ) const;
+    void publishStreamEventObservation(const ConnectionBinding &binding);
 
     MainWindow *mainWindow_ = nullptr;
     MultiStreamPlaybackManager *playbackManager_ = nullptr;

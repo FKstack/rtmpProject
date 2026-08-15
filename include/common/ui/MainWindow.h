@@ -15,6 +15,7 @@ class QDockWidget;
 class QEvent;
 class QKeyEvent;
 class QToolBar;
+class QToolButton;
 class FullscreenVideoWindow;
 class LogPanel;
 class UserMessageService;
@@ -26,6 +27,7 @@ enum class DeviceStatus;
 enum class RendererPreference;
 class LatestFrameMailbox;
 struct RenderRuntimeMetrics;
+struct EventCenterSummary;
 using StreamId = std::uint64_t;
 
 /**
@@ -89,8 +91,11 @@ public:
     void setDisplayFrameRateRequest(const QString &requested, int effectiveFps);
     void setValidationLayoutMode(bool enabled);
     void installDeviceControlPanel(QWidget *panel);
+    void installEventCenterPanel(QWidget *panel);
+    void setEventCenterSummary(const EventCenterSummary &summary,
+                               bool storageWriteEnabled);
 
-    /** @brief 连接普通用户事件源并显示到底部事件面板。 */
+    /** @brief 连接普通运行消息源并显示到底部运行消息面板。 */
     void setUserMessageService(UserMessageService *service);
 
     /** @brief 更新指定视频格的设备状态和可选错误详情。 */
@@ -140,9 +145,12 @@ private:
     QPushButton *emptyAddButton_ = nullptr;
     QDockWidget *logDockWidget_ = nullptr;
     QDockWidget *deviceControlDockWidget_ = nullptr;
+    QDockWidget *eventCenterDockWidget_ = nullptr;
     LogPanel *logPanel_ = nullptr;
     QToolBar *videoToolBar_ = nullptr;
     QAction *showLogAction_ = nullptr;
+    QAction *showEventCenterAction_ = nullptr;
+    QToolButton *eventCenterBadge_ = nullptr;
     QAction *monitoringWallAction_ = nullptr;
     QMetaObject::Connection logConnection_;
     QMetaObject::Connection fullscreenRestorePaintConnection_;
@@ -154,6 +162,7 @@ private:
     bool statusBarVisibleBeforeMonitoringWall_ = false;
     bool logVisibleBeforeMonitoringWall_ = false;
     bool deviceControlVisibleBeforeMonitoringWall_ = false;
+    bool eventCenterVisibleBeforeMonitoringWall_ = false;
     bool monitoringWallMode_ = false;
     bool wasVisibleBeforeFullscreen_ = false;
     FullscreenPresentationMode fullscreenPresentationMode_ =

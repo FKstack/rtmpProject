@@ -403,6 +403,38 @@ QWidget#logPanel QToolButton:hover {
     border-color: #4CCBFF;
 }
 
+QToolButton#eventCenterStatusBadge {
+    border: 1px solid #45505f;
+    border-radius: 5px;
+    padding: 3px 9px;
+    color: #cbd5e1;
+    background: #252b34;
+}
+
+QToolButton#eventCenterStatusBadge[severity="medium"] {
+    color: #f6c177;
+    border-color: #8a6738;
+}
+
+QToolButton#eventCenterStatusBadge[severity="high"] {
+    color: #ffad66;
+    border-color: #a65f32;
+}
+
+QToolButton#eventCenterStatusBadge[severity="critical"] {
+    color: #ff8b8b;
+    border-color: #b84c4c;
+    background: #3a2428;
+}
+
+QWidget#eventCenterPanel QLabel#eventStorageBanner {
+    color: #ffb4b4;
+    background: #3a2428;
+    border: 1px solid #b84c4c;
+    border-radius: 5px;
+    padding: 7px;
+}
+
 QWidget#deviceControlPanel {
     background-color: #0B1118;
     color: #E8F3FA;

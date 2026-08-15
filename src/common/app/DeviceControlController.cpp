@@ -452,6 +452,7 @@ void DeviceControlController::submitForTarget(
 void DeviceControlController::recordAttempt(ControlAttemptSnapshot attempt)
 {
     attempt.attemptId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    attempt.observedAtUtc = QDateTime::currentDateTimeUtc();
     emit controlAttemptRecorded(attempt);
 
     AuditRecord audit;
@@ -464,6 +465,8 @@ void DeviceControlController::recordAttempt(ControlAttemptSnapshot attempt)
     audit.source = sourceName(attempt.source);
     audit.afterValues = {
         {QStringLiteral("attemptId"), attempt.attemptId},
+        {QStringLiteral("observedAtUtc"),
+         attempt.observedAtUtc.toString(Qt::ISODateWithMs)},
         {QStringLiteral("command"), commandName(attempt.command)},
         {QStringLiteral("targetStreamId"),
          QString::number(attempt.targetStreamId)},

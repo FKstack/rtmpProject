@@ -359,10 +359,14 @@ recordsTruthfulOutcomesWithoutSensitiveTransportData()
              ControlAttemptOutcome::Rejected);
     for (int index = 0; index < attempts.count(); ++index) {
         QVERIFY(!attemptAt(attempts, index).attemptId.isEmpty());
+        QVERIFY(attemptAt(attempts, index).observedAtUtc.isValid());
+        QCOMPARE(attemptAt(attempts, index).observedAtUtc.timeSpec(),
+                 Qt::UTC);
     }
 
     const QByteArray audit = fixture.finishAndReadAudit();
     QVERIFY(!audit.isEmpty());
+    QVERIFY(audit.contains("observedAtUtc"));
     QVERIFY(audit.contains("\"action\":\"CONTROL_COMMAND_ATTEMPT\""));
     QVERIFY(audit.contains("\"result\":\"SUBMITTED\""));
     QVERIFY(audit.contains("\"result\":\"PUBLISH_FAILED\""));

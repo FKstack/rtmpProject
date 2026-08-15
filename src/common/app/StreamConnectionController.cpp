@@ -2,7 +2,10 @@
 
 #include "app/ConnectionEventReporter.h"
 
+#include <QCryptographicHash>
+#include <QDir>
 #include <QMessageBox>
+#include <QUrl>
 #include <optional>
 
 #include "media/FFmpegPlayer.h"
@@ -62,6 +65,7 @@ StreamConnectionController::StreamConnectionController(
             ConnectionBinding *binding = bindings_.find(streamId);
             if (binding != nullptr) {
                 binding->playbackStatus = state;
+                publishStreamEventObservation(*binding);
                 mainWindow_->updateDeviceStatus(
                     binding->videoWidget,
                     state,
@@ -98,6 +102,8 @@ StreamConnectionController::StreamConnectionController(
         [this](StreamId streamId, const PlaybackError &error) {
             ConnectionBinding *binding = bindings_.find(streamId);
             if (binding != nullptr) {
+                binding->playbackStatus = DeviceStatus::Error;
+                publishStreamEventObservation(*binding);
                 const UserFailureReason mappedReason =
                     ConnectionEventReporter::userReason(error.code);
                 if (error.code != PlaybackErrorCode::RetryLimitReached ||
@@ -144,6 +150,8 @@ StreamConnectionController::StreamConnectionController(
             if (binding == nullptr) {
                 return;
             }
+            binding->playbackStatus = DeviceStatus::Reconnecting;
+            publishStreamEventObservation(*binding);
             mainWindow_->updateDeviceStatus(
                 binding->videoWidget,
                 DeviceStatus::Reconnecting
@@ -273,6 +281,7 @@ StreamId StreamConnectionController::addConnection(
         playbackManager_->frameMailbox(streamId)
     );
     connectVideoWidget(*bindings_.find(streamId));
+    publishStreamEventObservation(*bindings_.find(streamId));
     emit deviceBound(deviceId);
     if (selectedControlStreamId_ == kInvalidStreamId) {
         selectControlTarget(streamId);
@@ -349,6 +358,7 @@ StreamId StreamConnectionController::addConnection(
         ConnectionBinding *binding = bindings_.find(streamId);
         if (binding != nullptr) {
             binding->cameraId = cameraId;
+            publishStreamEventObservation(*binding);
         }
     }
     return streamId;
@@ -424,6 +434,7 @@ bool StreamConnectionController::removeConnection(
         }
         emit controlTargetChanged(kInvalidStreamId, {}, {});
     }
+    emit streamRemovedObserved(streamEventObservation(removedBinding));
     bindings_.remove(streamId);
     emit deviceUnbound(removedBinding.deviceId);
     emit connectionRemoved(streamId, removedBinding.url);
@@ -504,6 +515,53 @@ QString StreamConnectionController::deviceIdFromRtmpUrl(
 {
     const std::optional<QString> id = DeviceIdentity::fromRtmpUrl(streamUrl);
     return id.value_or(QString());
+}
+
+QString StreamConnectionController::stableEventResourceId(
+    const QString &cameraId,
+    const QString &deviceId,
+    const QString &streamUrl)
+{
+    const QString normalizedCamera = cameraId.trimmed();
+    if (!normalizedCamera.isEmpty())
+        return QStringLiteral("camera:") + normalizedCamera;
+    const QString normalizedDevice = deviceId.trimmed();
+    if (!normalizedDevice.isEmpty())
+        return QStringLiteral("device-stream:") + normalizedDevice;
+
+    QUrl url(streamUrl.trimmed());
+    url.setUserInfo({});
+    url.setQuery(QString());
+    url.setFragment({});
+    url.setScheme(url.scheme().toLower());
+    url.setHost(url.host().toLower());
+    QString path = QDir::cleanPath(url.path());
+    if (!path.startsWith(QLatin1Char('/'))) path.prepend(QLatin1Char('/'));
+    url.setPath(path);
+    const QByteArray digest = QCryptographicHash::hash(
+        url.toString(QUrl::FullyEncoded).toUtf8(),
+        QCryptographicHash::Sha256).toHex();
+    return QStringLiteral("stream-url-sha256:") +
+           QString::fromLatin1(digest);
+}
+
+StreamEventObservation StreamConnectionController::streamEventObservation(
+    const ConnectionBinding &binding) const
+{
+    return {
+        binding.streamId,
+        stableEventResourceId(binding.cameraId, binding.deviceId, binding.url),
+        binding.deviceId,
+        binding.displayName,
+        binding.playbackStatus,
+        binding.removing,
+    };
+}
+
+void StreamConnectionController::publishStreamEventObservation(
+    const ConnectionBinding &binding)
+{
+    emit streamEventObserved(streamEventObservation(binding));
 }
 
 void StreamConnectionController::setDevicePresence(

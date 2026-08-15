@@ -409,6 +409,20 @@ target_include_directories(rtmp_monitor_control_policy PUBLIC
 target_link_libraries(rtmp_monitor_control_policy PUBLIC Qt6::Core)
 rtmp_monitor_apply_project_options(rtmp_monitor_control_policy)
 
+qt_add_library(rtmp_monitor_event_center STATIC
+    include/common/event_center/EventCenterTypes.h
+    src/common/event_center/EventCenterTypes.cpp
+    include/common/event_center/EventCenterStore.h
+    src/common/event_center/EventCenterStore.cpp
+    include/common/event_center/EventCenterService.h
+    src/common/event_center/EventCenterService.cpp
+)
+target_include_directories(rtmp_monitor_event_center PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/common
+)
+target_link_libraries(rtmp_monitor_event_center PUBLIC Qt6::Core)
+rtmp_monitor_apply_project_options(rtmp_monitor_event_center)
+
 qt_add_library(rtmp_monitor_device_control STATIC
     include/common/device_control/DeviceControlTypes.h
     include/common/device_control/DeviceCommandCodec.h
@@ -580,6 +594,8 @@ set(RTMP_MONITOR_UI_SOURCES
     src/common/ui/MainWindow.cpp
     include/common/ui/LogPanel.h
     src/common/ui/LogPanel.cpp
+    include/common/ui/EventCenterPanel.h
+    src/common/ui/EventCenterPanel.cpp
     include/common/ui/CpuVideoCanvas.h
     src/common/ui/CpuVideoCanvas.cpp
     include/common/ui/VideoCanvasHost.h
@@ -611,6 +627,7 @@ target_link_libraries(rtmp_monitor_ui
         rtmp_monitor_render
         rtmp_monitor_profiles
         rtmp_monitor_device_control
+        rtmp_monitor_event_center
 )
 
 if(RTMP_MONITOR_HAS_OPENGL)
@@ -690,6 +707,8 @@ qt_add_executable(rtmp_monitor
     src/common/app/DeviceControlController.cpp
     include/common/app/DeviceControlTransport.h
     src/common/app/DeviceControlTransport.cpp
+    include/common/app/PlatformEventBridge.h
+    src/common/app/PlatformEventBridge.cpp
     ${RTMP_MONITOR_STYLE_RESOURCE}
 )
 
@@ -708,6 +727,7 @@ target_link_libraries(rtmp_monitor
         rtmp_monitor_profiles
         rtmp_monitor_device_control
         rtmp_monitor_control_policy
+        rtmp_monitor_event_center
 )
 
 target_include_directories(rtmp_monitor
@@ -818,6 +838,51 @@ endif()
 include(CTest)
 
 if(BUILD_TESTING)
+    qt_add_executable(rtmp_monitor_event_center_service_test
+        tests/EventCenterServiceTest.cpp
+    )
+    target_link_libraries(rtmp_monitor_event_center_service_test PRIVATE
+        Qt6::Test rtmp_monitor_event_center
+    )
+    rtmp_monitor_apply_project_options(rtmp_monitor_event_center_service_test)
+    add_test(NAME rtmp_monitor_event_center_service_test
+        COMMAND rtmp_monitor_event_center_service_test)
+
+    qt_add_executable(rtmp_monitor_platform_event_bridge_test
+        tests/PlatformEventBridgeTest.cpp
+        include/common/app/PlatformEventBridge.h
+        src/common/app/PlatformEventBridge.cpp
+        include/common/app/StreamConnectionController.h
+        src/common/app/StreamConnectionController.cpp
+        src/common/app/ConnectionBindingRegistry.cpp
+        src/common/app/ConnectionEventReporter.cpp
+    )
+    target_link_libraries(rtmp_monitor_platform_event_bridge_test PRIVATE
+        Qt6::Test
+        rtmp_monitor_event_center
+        rtmp_monitor_control_policy
+        rtmp_monitor_device_control
+        rtmp_monitor_logging
+        rtmp_monitor_media
+        rtmp_monitor_server
+        rtmp_monitor_ui
+    )
+    rtmp_monitor_apply_project_options(rtmp_monitor_platform_event_bridge_test)
+    add_test(NAME rtmp_monitor_platform_event_bridge_test
+        COMMAND rtmp_monitor_platform_event_bridge_test)
+    rtmp_monitor_copy_ffmpeg_runtime(rtmp_monitor_platform_event_bridge_test)
+
+    qt_add_executable(rtmp_monitor_event_center_panel_test
+        tests/EventCenterPanelTest.cpp
+        ${RTMP_MONITOR_STYLE_RESOURCE}
+    )
+    target_link_libraries(rtmp_monitor_event_center_panel_test PRIVATE
+        Qt6::Test rtmp_monitor_app rtmp_monitor_ui rtmp_monitor_event_center
+    )
+    rtmp_monitor_apply_project_options(rtmp_monitor_event_center_panel_test)
+    add_test(NAME rtmp_monitor_event_center_panel_test
+        COMMAND rtmp_monitor_event_center_panel_test)
+
     qt_add_executable(rtmp_monitor_saved_stream_repository_test
         tests/SavedStreamRepositoryTest.cpp
     )

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QObject>
+#include <QDateTime>
 #include <QTimer>
 
 #include <functional>
@@ -36,6 +37,7 @@ enum class ControlAttemptSource {
 struct ControlAttemptSnapshot
 {
     QString attemptId;
+    QDateTime observedAtUtc;
     DeviceCommand command = DeviceCommand::StopCar;
     StreamId targetStreamId = kInvalidStreamId;
     QString targetDeviceId;

@@ -19,6 +19,7 @@
 #include <QSizePolicy>
 #include <QStackedWidget>
 #include <QStatusBar>
+#include <QStyle>
 #include <QSignalBlocker>
 #include <QToolBar>
 #include <QToolButton>
@@ -31,6 +32,7 @@
 #endif
 
 #include "ui/FullscreenVideoWindow.h"
+#include "event_center/EventCenterTypes.h"
 #include "logging/UserMessageService.h"
 #include "media/PlaybackTypes.h"
 #include "ui/LogPanel.h"
@@ -167,7 +169,7 @@ MainWindow::MainWindow(
     setCorner(Qt::BottomRightCorner, Qt::RightDockWidgetArea);
 
     logPanel_ = new LogPanel(this);
-    logDockWidget_ = new QDockWidget(tr("事件消息"), this);
+    logDockWidget_ = new QDockWidget(tr("运行消息"), this);
     logDockWidget_->setObjectName(QStringLiteral("logDockWidget"));
     logDockWidget_->setAllowedAreas(
         Qt::BottomDockWidgetArea | Qt::TopDockWidgetArea
@@ -178,7 +180,7 @@ MainWindow::MainWindow(
     menuBar()->setObjectName(QStringLiteral("mainMenuBar"));
     QMenu *viewMenu = menuBar()->addMenu(tr("视图"));
     showLogAction_ = logDockWidget_->toggleViewAction();
-    showLogAction_->setText(tr("事件消息"));
+    showLogAction_->setText(tr("运行消息"));
     showLogAction_->setObjectName(QStringLiteral("showLogAction"));
     viewMenu->addAction(showLogAction_);
     monitoringWallAction_ = viewMenu->addAction(tr("监控墙模式"));
@@ -190,6 +192,18 @@ MainWindow::MainWindow(
     monitoringWallAction_->setShortcutContext(Qt::WindowShortcut);
     // 监控模式默认优先使用垂直空间；日志继续收集并可从“视图”菜单随时呼出。
     logDockWidget_->hide();
+
+    eventCenterBadge_ = new QToolButton(this);
+    eventCenterBadge_->setObjectName(QStringLiteral("eventCenterStatusBadge"));
+    eventCenterBadge_->setText(tr("事件 0"));
+    eventCenterBadge_->setAutoRaise(true);
+    eventCenterBadge_->setToolTip(tr("打开平台事件中心"));
+    statusBar()->addPermanentWidget(eventCenterBadge_);
+    connect(eventCenterBadge_, &QToolButton::clicked, this, [this] {
+        if (eventCenterDockWidget_ == nullptr) return;
+        eventCenterDockWidget_->show();
+        eventCenterDockWidget_->raise();
+    });
 
     fullscreenVideoWindow_ = new FullscreenVideoWindow(
         rendererPreference, this
@@ -397,6 +411,61 @@ void MainWindow::updateDeviceStatus(
     }
 }
 
+void MainWindow::installEventCenterPanel(QWidget *panel)
+{
+    if (eventCenterDockWidget_ != nullptr || panel == nullptr) return;
+    eventCenterDockWidget_ = new QDockWidget(tr("平台事件中心"), this);
+    eventCenterDockWidget_->setObjectName(QStringLiteral("eventCenterDockWidget"));
+    eventCenterDockWidget_->setAllowedAreas(
+        Qt::BottomDockWidgetArea | Qt::TopDockWidgetArea);
+    eventCenterDockWidget_->setWidget(panel);
+    addDockWidget(Qt::BottomDockWidgetArea, eventCenterDockWidget_);
+    showEventCenterAction_ = eventCenterDockWidget_->toggleViewAction();
+    showEventCenterAction_->setText(tr("平台事件中心"));
+    showEventCenterAction_->setObjectName(QStringLiteral("showEventCenterAction"));
+    const QList<QMenu *> menus = menuBar()->findChildren<QMenu *>(
+        QString(), Qt::FindDirectChildrenOnly);
+    if (!menus.isEmpty()) menus.first()->addAction(showEventCenterAction_);
+    eventCenterDockWidget_->hide();
+}
+
+void MainWindow::setEventCenterSummary(
+    const EventCenterSummary &summary,
+    bool storageWriteEnabled)
+{
+    if (eventCenterBadge_ == nullptr) return;
+    QString severity = QStringLiteral("normal");
+    QString detail;
+    if (!storageWriteEnabled) {
+        severity = QStringLiteral("critical");
+        detail = tr("事件存储不可写");
+    } else if (summary.activeCount <= 0) {
+        detail = tr("事件 0");
+    } else {
+        switch (summary.highestSeverity) {
+        case SecurityEventSeverity::Low:
+            detail = tr("事件 %1 · 低").arg(summary.activeCount);
+            break;
+        case SecurityEventSeverity::Medium:
+            severity = QStringLiteral("medium");
+            detail = tr("事件 %1 · 中").arg(summary.activeCount);
+            break;
+        case SecurityEventSeverity::High:
+            severity = QStringLiteral("high");
+            detail = tr("事件 %1 · 高").arg(summary.activeCount);
+            break;
+        case SecurityEventSeverity::Critical:
+            severity = QStringLiteral("critical");
+            detail = tr("事件 %1 · 严重").arg(summary.activeCount);
+            break;
+        }
+    }
+    eventCenterBadge_->setText(detail);
+    eventCenterBadge_->setProperty("severity", severity);
+    eventCenterBadge_->style()->unpolish(eventCenterBadge_);
+    eventCenterBadge_->style()->polish(eventCenterBadge_);
+}
+
 void MainWindow::updateAudioState(
     VideoWidget *videoWidget,
     AudioPlaybackState state,
@@ -455,6 +524,8 @@ void MainWindow::setMonitoringWallMode(bool enabled)
             logDockWidget_ != nullptr && logDockWidget_->isVisible();
         deviceControlVisibleBeforeMonitoringWall_ =
             deviceControlDockWidget_ != nullptr && deviceControlDockWidget_->isVisible();
+        eventCenterVisibleBeforeMonitoringWall_ =
+            eventCenterDockWidget_ != nullptr && eventCenterDockWidget_->isVisible();
 
         videoGrid_->setMonitoringWallMode(true);
         menuBar()->hide();
@@ -469,6 +540,9 @@ void MainWindow::setMonitoringWallMode(bool enabled)
         }
         if (deviceControlDockWidget_ != nullptr) {
             deviceControlDockWidget_->hide();
+        }
+        if (eventCenterDockWidget_ != nullptr) {
+            eventCenterDockWidget_->hide();
         }
         showFullScreen();
         return;
@@ -501,6 +575,9 @@ void MainWindow::setMonitoringWallMode(bool enabled)
     }
     if (deviceControlDockWidget_ != nullptr) {
         deviceControlDockWidget_->setVisible(deviceControlVisibleBeforeMonitoringWall_);
+    }
+    if (eventCenterDockWidget_ != nullptr) {
+        eventCenterDockWidget_->setVisible(eventCenterVisibleBeforeMonitoringWall_);
     }
 }
 

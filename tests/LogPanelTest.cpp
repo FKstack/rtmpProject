@@ -85,7 +85,7 @@ mainWindowMapsDeviceStatusWithoutTechnicalDetails()
 {
     MainWindow window;
     QVERIFY(window.logDockWidget() != nullptr);
-    QCOMPARE(window.logDockWidget()->windowTitle(), QStringLiteral("事件消息"));
+    QCOMPARE(window.logDockWidget()->windowTitle(), QStringLiteral("运行消息"));
     QVERIFY(window.logPanel() != nullptr);
 
     VideoWidget *videoWidget =
