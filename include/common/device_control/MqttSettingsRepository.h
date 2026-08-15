@@ -15,7 +15,7 @@ struct MqttSettingsLoadResult
 class MqttSettingsRepository final
 {
 public:
-    static constexpr int kSchemaVersion = 1;
+    static constexpr int kSchemaVersion = 2;
 
     explicit MqttSettingsRepository(QString filePath = {});
     [[nodiscard]] MqttSettingsLoadResult load() const;

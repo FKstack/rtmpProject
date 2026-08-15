@@ -187,6 +187,11 @@ QFrame[styleRole="videoWidget"] {
     border-radius: 3px;
 }
 
+QFrame[styleRole="videoWidget"][controlSelected="true"] {
+    border: 2px solid #20B8F0;
+    background-color: rgba(32, 184, 240, 12);
+}
+
 QFrame[styleRole="videoWidget"] QLabel#deviceNameLabel {
     background-color: rgba(8, 14, 20, 205);
     border: 1px solid rgba(125, 216, 255, 55);
@@ -194,6 +199,27 @@ QFrame[styleRole="videoWidget"] QLabel#deviceNameLabel {
     color: #E8F3FA;
     font-weight: 600;
     padding: 3px 7px;
+}
+
+QFrame[styleRole="videoWidget"] QLabel#devicePresenceBadge {
+    background-color: rgba(8, 14, 20, 220);
+    border: 1px solid #2A3A4A;
+    border-radius: 4px;
+    color: #8EA4B5;
+    padding: 3px 7px;
+}
+
+QFrame[styleRole="videoWidget"] QLabel#devicePresenceBadge[presenceState="online"] {
+    color: #3DDC97;
+    border-color: rgba(61, 220, 151, 110);
+}
+
+QFrame[styleRole="videoWidget"] QLabel#devicePresenceBadge[presenceState="waiting"] {
+    color: #F6C85F;
+}
+
+QFrame[styleRole="videoWidget"] QLabel#devicePresenceBadge[presenceState="offline"] {
+    color: #FF5D6C;
 }
 
 QFrame[styleRole="videoWidget"] QToolButton#audioToggleButton {
@@ -396,9 +422,30 @@ QWidget#deviceControlPanel QLabel#mqttStatusLabel {
 
 QWidget#deviceControlPanel QLabel#mqttStatusDetailLabel,
 QWidget#deviceControlPanel QLabel#mqttTopicLabel,
+QWidget#deviceControlPanel QLabel#deviceControlTargetLabel,
 QWidget#deviceControlPanel QLabel#mouseControlHint,
 QWidget#deviceControlPanel QLabel#keyboardControlHint {
     color: #8EA4B5;
+}
+
+QWidget#deviceControlPanel QLabel#devicePresenceStateLabel {
+    color: #8EA4B5;
+    border: 1px solid #2A3A4A;
+    border-radius: 4px;
+    padding: 3px 7px;
+}
+
+QWidget#deviceControlPanel QLabel#devicePresenceStateLabel[presenceState="online"] {
+    color: #3DDC97;
+    border-color: rgba(61, 220, 151, 110);
+}
+
+QWidget#deviceControlPanel QLabel#devicePresenceStateLabel[presenceState="waiting"] {
+    color: #F6C85F;
+}
+
+QWidget#deviceControlPanel QLabel#devicePresenceStateLabel[presenceState="offline"] {
+    color: #FF5D6C;
 }
 
 QWidget#deviceControlPanel QLabel#mqttStatusDot {

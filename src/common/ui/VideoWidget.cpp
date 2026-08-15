@@ -84,6 +84,11 @@ VideoWidget::VideoWidget(QWidget *parent)
     titleLabel_->setAttribute(Qt::WA_TransparentForMouseEvents);
     titleLabel_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
 
+    presenceBadge_ = new QLabel(videoSurface_);
+    presenceBadge_->setObjectName(QStringLiteral("devicePresenceBadge"));
+    presenceBadge_->setAttribute(Qt::WA_TransparentForMouseEvents);
+    presenceBadge_->setAlignment(Qt::AlignCenter);
+
     audioButton_ = new QToolButton(videoSurface_);
     audioButton_->setObjectName(QStringLiteral("audioToggleButton"));
     audioButton_->setProperty("styleRole", "audioToggle");
@@ -108,6 +113,7 @@ VideoWidget::VideoWidget(QWidget *parent)
     setDeviceName(tr("未命名设备"));
     setStatusText(tr("未连接"));
     setAudioPlaybackState(AudioPlaybackState::Unavailable, false);
+    setDevicePresenceState(DevicePresenceState::Unavailable);
     updateMonitoringMinimumSize();
 }
 
@@ -277,6 +283,46 @@ bool VideoWidget::isAudioSelected() const noexcept
     return audioSelected_;
 }
 
+void VideoWidget::setDevicePresenceState(DevicePresenceState state)
+{
+    presenceState_ = state;
+    QString text;
+    QString name;
+    switch (state) {
+    case DevicePresenceState::Unavailable:
+        text = tr("状态不可用"); name = QStringLiteral("unavailable"); break;
+    case DevicePresenceState::Waiting:
+        text = tr("等待心跳"); name = QStringLiteral("waiting"); break;
+    case DevicePresenceState::Online:
+        text = tr("在线"); name = QStringLiteral("online"); break;
+    case DevicePresenceState::Offline:
+        text = tr("离线"); name = QStringLiteral("offline"); break;
+    }
+    presenceBadge_->setText(QStringLiteral("● %1").arg(text));
+    presenceBadge_->setProperty("presenceState", name);
+    presenceBadge_->style()->unpolish(presenceBadge_);
+    presenceBadge_->style()->polish(presenceBadge_);
+    updateTitleOverlay();
+}
+
+DevicePresenceState VideoWidget::devicePresenceState() const noexcept
+{
+    return presenceState_;
+}
+
+void VideoWidget::setControlTargetSelected(bool selected)
+{
+    if (controlTargetSelected_ == selected) return;
+    controlTargetSelected_ = selected;
+    setProperty("controlSelected", selected);
+    refreshStyle();
+}
+
+bool VideoWidget::isControlTargetSelected() const noexcept
+{
+    return controlTargetSelected_;
+}
+
 void VideoWidget::changeEvent(QEvent *event)
 {
     QFrame::changeEvent(event);
@@ -340,6 +386,7 @@ void VideoWidget::mouseReleaseEvent(QMouseEvent *event)
 {
     if (event->button() == Qt::LeftButton && mousePressed_) {
         mousePressed_ = false;
+        emit controlTargetRequested(this);
         // 点击反馈保持一个短暂高亮，随后恢复空闲状态；实际拖拽会由拖放流程管理状态。
         QTimer::singleShot(kClickEffectDurationMs, this, [this] {
             if (dragState_ == DragState::Pressed) {
@@ -536,6 +583,7 @@ void VideoWidget::updateTitleOverlay()
     if (!titleOverlayEnabled_) {
         titleLabel_->hide();
         audioButton_->hide();
+        presenceBadge_->hide();
         return;
     }
     if (titleLabel_ == nullptr || videoSurface_ == nullptr) {
@@ -543,7 +591,9 @@ void VideoWidget::updateTitleOverlay()
     }
 
     audioButton_->adjustSize();
+    presenceBadge_->adjustSize();
     const int buttonWidth = std::max(40, audioButton_->sizeHint().width());
+    const int presenceWidth = std::max(58, presenceBadge_->sizeHint().width());
     audioButton_->setGeometry(
         std::max(kTitleOverlayInset,
                  videoSurface_->width() - kTitleOverlayInset - buttonWidth),
@@ -551,8 +601,21 @@ void VideoWidget::updateTitleOverlay()
         buttonWidth,
         std::max(32, audioButton_->sizeHint().height())
     );
+    presenceBadge_->setGeometry(
+        std::max(kTitleOverlayInset,
+                 videoSurface_->width() - kTitleOverlayInset * 2 -
+                     buttonWidth - presenceWidth),
+        kTitleOverlayInset,
+        presenceWidth,
+        std::max(32, presenceBadge_->sizeHint().height())
+    );
+    audioButton_->show();
+    audioButton_->raise();
+    presenceBadge_->show();
+    presenceBadge_->raise();
     const int availableWidth = std::max(
-        0, videoSurface_->width() - kTitleOverlayInset * 3 - buttonWidth
+        0, videoSurface_->width() - kTitleOverlayInset * 4 - buttonWidth -
+               presenceWidth
     );
     if (availableWidth <= 0) {
         titleLabel_->hide();
@@ -573,6 +636,4 @@ void VideoWidget::updateTitleOverlay()
     );
     titleLabel_->show();
     titleLabel_->raise();
-    audioButton_->show();
-    audioButton_->raise();
 }

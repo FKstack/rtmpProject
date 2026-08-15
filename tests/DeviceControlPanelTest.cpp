@@ -42,6 +42,16 @@ void DeviceControlPanelTest::disablesCommandsUntilConnected()
     QVERIFY(!joystick->isEnabled());
 
     panel.setConnectionState(MqttConnectionState::Connected);
+    QVERIFY(!start->isEnabled());
+    QVERIFY(!stop->isEnabled());
+    QVERIFY(!stopCar->isEnabled());
+    panel.setControlTarget(QStringLiteral("040001"),
+                           DevicePresenceState::Waiting);
+    QVERIFY(!start->isEnabled());
+    QVERIFY(stop->isEnabled());
+    QVERIFY(stopCar->isEnabled());
+    QVERIFY(!joystick->isEnabled());
+    panel.setDevicePresenceState(DevicePresenceState::Online);
     QVERIFY(start->isEnabled());
     QVERIFY(stop->isEnabled());
     QVERIFY(stopCar->isEnabled());
@@ -52,6 +62,8 @@ void DeviceControlPanelTest::switchesModesWithoutArmingKeyboard()
 {
     DeviceControlPanel panel;
     panel.setConnectionState(MqttConnectionState::Connected);
+    panel.setControlTarget(QStringLiteral("040001"),
+                           DevicePresenceState::Online);
     QSignalSpy modeSpy(&panel, &DeviceControlPanel::keyboardModeSelected);
     QSignalSpy armSpy(&panel, &DeviceControlPanel::keyboardArmRequested);
     auto *keyboardMode = panel.findChild<QPushButton *>(

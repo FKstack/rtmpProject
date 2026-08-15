@@ -3,10 +3,14 @@
 #include <QCoreApplication>
 #include <QGuiApplication>
 #include <QMessageBox>
+#include <QElapsedTimer>
 
 #include <utility>
 
 #include "device_control/MqttDeviceClient.h"
+#include "device_control/DeviceCommandCodec.h"
+#include "device_control/DeviceHeartbeatCodec.h"
+#include "device_control/DevicePresenceTracker.h"
 #include "logging/LogManager.h"
 #include "ui/DeviceControlPanel.h"
 #include "ui/MainWindow.h"
@@ -14,11 +18,13 @@
 
 DeviceControlController::DeviceControlController(
     MainWindow *mainWindow, DeviceControlPanel *panel, MqttDeviceClient *client,
-    LogManager *logManager, MqttSettingsRepository repository, QObject *parent)
+    DevicePresenceTracker *presenceTracker, LogManager *logManager,
+    MqttSettingsRepository repository, QObject *parent)
     : QObject(parent), mainWindow_(mainWindow), panel_(panel), client_(client),
-      logManager_(logManager), repository_(std::move(repository))
+      presenceTracker_(presenceTracker), logManager_(logManager),
+      repository_(std::move(repository))
 {
-    Q_ASSERT(mainWindow_ && panel_ && client_ && logManager_);
+    Q_ASSERT(mainWindow_ && panel_ && client_ && presenceTracker_ && logManager_);
     connect(panel_, &DeviceControlPanel::commandPressed,
             this, &DeviceControlController::send);
     connect(panel_, &DeviceControlPanel::movementReleased,
@@ -28,6 +34,11 @@ DeviceControlController::DeviceControlController(
     connect(client_, &MqttDeviceClient::stateChanged, this,
             [this](MqttConnectionState state, const QString &detail) {
                 panel_->setConnectionState(state, detail);
+                if (state == MqttConnectionState::Connected) {
+                    presenceTracker_->setAvailable(true);
+                } else if (state == MqttConnectionState::Disabled) {
+                    presenceTracker_->setAvailable(false);
+                }
                 logManager_->logSystem(
                     state == MqttConnectionState::Error
                         ? LogLevel::Warning : LogLevel::Info,
@@ -56,8 +67,8 @@ DeviceControlController::DeviceControlController(
                 logManager_->logSystem(LogLevel::Warning, QStringLiteral("mqtt"),
                     QStringLiteral("command_failed"), detail);
             });
-    connect(client_, &MqttDeviceClient::messageReceived, panel_,
-            &DeviceControlPanel::appendObservedMessage);
+    connect(client_, &MqttDeviceClient::messageReceived, this,
+            &DeviceControlController::handleObservedMessage);
     connect(client_, &MqttDeviceClient::observedMessagesDropped, this,
             [this](quint64 count) {
                 panel_->showObservedMessagesDropped(count);
@@ -91,7 +102,7 @@ void DeviceControlController::start()
         logManager_->logSystem(LogLevel::Warning, QStringLiteral("mqtt"),
             QStringLiteral("settings_load_failed"), loaded.error);
     }
-    panel_->setTopic(options_.topic);
+    panel_->setTopics(options_.topic, options_.statusTopic);
     client_->connectToBroker(options_);
 }
 
@@ -111,12 +122,24 @@ void DeviceControlController::send(DeviceCommand command)
     const bool movement = command == DeviceCommand::MoveForward ||
         command == DeviceCommand::MoveBackward || command == DeviceCommand::TurnLeft ||
         command == DeviceCommand::TurnRight;
+    if (targetStreamId_ == kInvalidStreamId || targetDeviceId_.isEmpty()) {
+        panel_->setLastResult(tr("请先单击一个视频卡选择控制目标。"), true);
+        return;
+    }
+    if ((command == DeviceCommand::StartStream || movement) &&
+        targetPresence_ != DevicePresenceState::Online) {
+        panel_->setLastResult(tr("所选设备当前不在线，未发送该指令。"), true);
+        return;
+    }
+
+    const bool submitted = command == DeviceCommand::StartStream
+        ? client_->publishStartStream(targetStreamUrl_)
+        : client_->publish(command);
     if (command == DeviceCommand::StopCar) moving_ = false;
-    else if (movement) {
+    else if (movement && submitted) {
         moving_ = true;
         safetyStopPending_ = false;
     }
-    if (!client_->publish(command) && movement) moving_ = false;
 }
 
 void DeviceControlController::stopMovement()
@@ -130,6 +153,7 @@ void DeviceControlController::showSettings()
 {
     MqttSettingsDialog dialog(mainWindow_);
     dialog.setOptions(options_);
+    bool testedDifferentPresenceSession = false;
     connect(client_, &MqttDeviceClient::stateChanged, &dialog,
             [&dialog](MqttConnectionState state, const QString &detail) {
                 if (state == MqttConnectionState::Connecting) {
@@ -146,7 +170,8 @@ void DeviceControlController::showSettings()
                 }
             });
     connect(&dialog, &MqttSettingsDialog::testRequested, this,
-            [this](const MqttConnectionOptions &candidate) {
+            [this, &testedDifferentPresenceSession](
+                const MqttConnectionOptions &candidate) {
                 MqttConnectionOptions testOptions = candidate;
                 testOptions.enabled = true;
                 QString error;
@@ -155,11 +180,19 @@ void DeviceControlController::showSettings()
                     return;
                 }
                 stopMovement();
-                panel_->setTopic(testOptions.topic);
+                const bool sessionChanged =
+                    options_.brokerUrl != testOptions.brokerUrl ||
+                    options_.statusTopic != testOptions.statusTopic;
+                if (sessionChanged) {
+                    presenceTracker_->clearSession();
+                    testedDifferentPresenceSession = true;
+                }
+                panel_->setTopics(testOptions.topic, testOptions.statusTopic);
                 client_->connectToBroker(testOptions);
             });
     if (dialog.exec() != QDialog::Accepted) {
-        panel_->setTopic(options_.topic);
+        if (testedDifferentPresenceSession) presenceTracker_->clearSession();
+        panel_->setTopics(options_.topic, options_.statusTopic);
         client_->connectToBroker(options_);
         return;
     }
@@ -169,11 +202,61 @@ void DeviceControlController::showSettings()
     client_->disconnectFromBroker();
     if (!repository_.save(candidate, &error)) {
         QMessageBox::warning(mainWindow_, tr("保存失败"), error);
-        panel_->setTopic(options_.topic);
+        panel_->setTopics(options_.topic, options_.statusTopic);
         client_->connectToBroker(options_);
         return;
     }
+    const bool sessionChanged = options_.brokerUrl != candidate.brokerUrl ||
+        options_.statusTopic != candidate.statusTopic;
     options_ = candidate;
-    panel_->setTopic(options_.topic);
+    if (sessionChanged) presenceTracker_->clearSession();
+    panel_->setTopics(options_.topic, options_.statusTopic);
     client_->connectToBroker(options_);
+}
+
+void DeviceControlController::setControlTarget(
+    StreamId streamId, const QString &deviceId, const QString &streamUrl)
+{
+    if (moving_) stopMovement();
+    targetStreamId_ = streamId;
+    targetDeviceId_ = deviceId.trimmed();
+    targetStreamUrl_ = streamUrl.trimmed();
+    targetPresence_ = targetDeviceId_.isEmpty()
+        ? DevicePresenceState::Unavailable
+        : presenceTracker_->state(targetDeviceId_);
+    panel_->setControlTarget(targetDeviceId_, targetPresence_);
+}
+
+void DeviceControlController::setDevicePresence(
+    const QString &deviceId, DevicePresenceState state)
+{
+    if (deviceId != targetDeviceId_) return;
+    targetPresence_ = state;
+    panel_->setDevicePresenceState(state);
+    if (state != DevicePresenceState::Online && moving_) stopMovement();
+}
+
+void DeviceControlController::handleObservedMessage(
+    const MqttObservedMessage &message)
+{
+    if (message.topic == options_.statusTopic) {
+        QString error;
+        QElapsedTimer monotonicClock;
+        monotonicClock.start();
+        const auto heartbeat = DeviceHeartbeatCodec::decode(
+            message.payload, monotonicClock.msecsSinceReference(), &error);
+        if (heartbeat.has_value()) {
+            presenceTracker_->processHeartbeat(*heartbeat);
+        } else {
+            logManager_->logSystem(
+                LogLevel::Warning, QStringLiteral("mqtt"),
+                QStringLiteral("invalid_device_heartbeat"), error);
+        }
+    }
+    MqttObservedMessage safe = message;
+    if (message.topic == options_.topic) {
+        safe.payload = DeviceCommandCodec::redactForDisplay(message.payload);
+        safe.originalPayloadSize = safe.payload.size();
+    }
+    panel_->appendObservedMessage(safe);
 }

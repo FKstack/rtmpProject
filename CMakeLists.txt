@@ -403,6 +403,12 @@ qt_add_library(rtmp_monitor_device_control STATIC
     include/common/device_control/DeviceControlTypes.h
     include/common/device_control/DeviceCommandCodec.h
     src/common/device_control/DeviceCommandCodec.cpp
+    include/common/device_control/DeviceIdentity.h
+    src/common/device_control/DeviceIdentity.cpp
+    include/common/device_control/DeviceHeartbeatCodec.h
+    src/common/device_control/DeviceHeartbeatCodec.cpp
+    include/common/device_control/DevicePresenceTracker.h
+    src/common/device_control/DevicePresenceTracker.cpp
     include/common/device_control/MqttSettingsRepository.h
     src/common/device_control/MqttSettingsRepository.cpp
     include/common/device_control/MqttDeviceClient.h

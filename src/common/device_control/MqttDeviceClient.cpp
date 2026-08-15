@@ -14,6 +14,7 @@
 #include <utility>
 
 #include "device_control/DeviceCommandCodec.h"
+#include "device_control/DeviceIdentity.h"
 #include "device_control/MqttSettingsRepository.h"
 
 namespace {
@@ -161,13 +162,40 @@ void MqttDeviceClient::disconnectFromBroker()
 
 bool MqttDeviceClient::publish(DeviceCommand command)
 {
+    if (command == DeviceCommand::StartStream) {
+        emit commandFailed(command, QStringLiteral("启动推流前必须选择有效的视频连接。"));
+        return false;
+    }
+    return publishPayload(command, DeviceCommandCodec::encode(
+        command, QDateTime::currentMSecsSinceEpoch()));
+}
+
+bool MqttDeviceClient::publishStartStream(const QString &streamUrl)
+{
+    const QUrl url(streamUrl.trimmed(), QUrl::StrictMode);
+    if (!url.isValid() ||
+        url.scheme().compare(QStringLiteral("rtmp"), Qt::CaseInsensitive) != 0 ||
+        url.host().isEmpty() ||
+        !DeviceIdentity::fromRtmpUrl(streamUrl).has_value()) {
+        emit commandFailed(DeviceCommand::StartStream,
+                           QStringLiteral("所选视频连接的 RTMP URL 无效。"));
+        return false;
+    }
+    return publishPayload(
+        DeviceCommand::StartStream,
+        DeviceCommandCodec::encode(DeviceCommand::StartStream,
+                                   QDateTime::currentMSecsSinceEpoch(),
+                                   streamUrl.trimmed()));
+}
+
+bool MqttDeviceClient::publishPayload(DeviceCommand command,
+                                      const QByteArray &payload)
+{
     if (client_ == nullptr || state_ != MqttConnectionState::Connected ||
         !MQTTAsync_isConnected(asClient(client_))) {
         emit commandFailed(command, QStringLiteral("MQTT 尚未连接。"));
         return false;
     }
-    const QByteArray payload = DeviceCommandCodec::encode(
-        command, QDateTime::currentMSecsSinceEpoch());
     const QByteArray topic = options_.topic.trimmed().toUtf8();
     MQTTAsync_responseOptions response = MQTTAsync_responseOptions_initializer;
     MQTTAsync_message message = MQTTAsync_message_initializer;
@@ -227,9 +255,15 @@ void MqttDeviceClient::beginSubscription(std::uint64_t generation)
     response.context = callbackContext_;
     response.onSuccess = &MqttDeviceClient::onSubscribeSuccess;
     response.onFailure = &MqttDeviceClient::onSubscribeFailure;
-    const QByteArray topic = options_.topic.trimmed().toUtf8();
-    const int code = MQTTAsync_subscribe(asClient(client_), topic.constData(), 0,
-                                         &response);
+    const QByteArray controlTopic = options_.topic.trimmed().toUtf8();
+    const QByteArray statusTopic = options_.statusTopic.trimmed().toUtf8();
+    char *topics[] = {
+        const_cast<char *>(controlTopic.constData()),
+        const_cast<char *>(statusTopic.constData())
+    };
+    const int qos[] = {0, 0};
+    const int code = MQTTAsync_subscribeMany(asClient(client_), 2, topics, qos,
+                                             &response);
     if (code != MQTTASYNC_SUCCESS) {
         handleSubscribeFailure(
             generation,
@@ -367,9 +401,18 @@ void MqttDeviceClient::onSubscribeSuccess(void *raw,
     if (context == nullptr || context->owner.isNull()) return;
     const QPointer<MqttDeviceClient> owner = context->owner;
     const std::uint64_t generation = context->generation;
-    const int grantedQos = response != nullptr ? response->alt.qos : -1;
-    QMetaObject::invokeMethod(owner, [owner, generation, grantedQos] {
-        if (owner) owner->handleSubscribeSuccess(generation, grantedQos);
+    const int controlQos = response != nullptr && response->alt.qosList != nullptr
+        ? response->alt.qosList[0] : -1;
+    const int statusQos = response != nullptr && response->alt.qosList != nullptr
+        ? response->alt.qosList[1] : -1;
+    QMetaObject::invokeMethod(owner, [owner, generation, controlQos, statusQos] {
+        if (!owner) return;
+        if (controlQos < 0 || controlQos > 2 || statusQos < 0 || statusQos > 2) {
+            owner->handleSubscribeFailure(
+                generation, QStringLiteral("MQTT SUBACK 拒绝控制或状态 Topic。"));
+            return;
+        }
+        owner->handleSubscribeSuccess(generation, 0);
     }, Qt::QueuedConnection);
 }
 

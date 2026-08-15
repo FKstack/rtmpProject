@@ -7,6 +7,7 @@
 
 #include "media/FFmpegPlayer.h"
 #include "media/MultiStreamPlaybackManager.h"
+#include "device_control/DeviceIdentity.h"
 #include "server/RtmpUrlBuilder.h"
 #include "ui/ConnectionDialog.h"
 #include "ui/MainWindow.h"
@@ -213,6 +214,19 @@ StreamId StreamConnectionController::addConnection(
             QStringLiteral("Device name or connection URL is invalid.")
         );
     }
+    const QString deviceId = deviceIdFromRtmpUrl(normalizedUrl);
+    if (deviceId.isEmpty()) {
+        return fail(
+            UserFailureReason::InvalidConfiguration,
+            QStringLiteral("The RTMP URL must end with a valid device identifier.")
+        );
+    }
+    if (bindings_.containsDeviceId(deviceId)) {
+        return fail(
+            UserFailureReason::DuplicateDevice,
+            QStringLiteral("Duplicate device identifier in RTMP URL.")
+        );
+    }
     if (bindings_.containsNameOrUrl(normalizedName, normalizedUrl)) {
         return fail(
             UserFailureReason::DuplicateDevice,
@@ -246,6 +260,7 @@ StreamId StreamConnectionController::addConnection(
         videoWidget,
         UserFailureReason::None,
         false,
+        deviceId,
         {}
     });
     mainWindow_->bindVideoStream(
@@ -254,6 +269,10 @@ StreamId StreamConnectionController::addConnection(
         playbackManager_->frameMailbox(streamId)
     );
     connectVideoWidget(*bindings_.find(streamId));
+    emit deviceBound(deviceId);
+    if (selectedControlStreamId_ == kInvalidStreamId) {
+        selectControlTarget(streamId);
+    }
     eventReporter_->logSystem(
         LogLevel::Info,
         QStringLiteral("device"),
@@ -394,7 +413,15 @@ bool StreamConnectionController::removeConnection(
         );
         return false;
     }
+    if (selectedControlStreamId_ == streamId) {
+        selectedControlStreamId_ = kInvalidStreamId;
+        if (removedBinding.videoWidget != nullptr) {
+            removedBinding.videoWidget->setControlTargetSelected(false);
+        }
+        emit controlTargetChanged(kInvalidStreamId, {}, {});
+    }
     bindings_.remove(streamId);
+    emit deviceUnbound(removedBinding.deviceId);
     emit connectionRemoved(streamId, removedBinding.url);
     eventReporter_->logSystem(
         LogLevel::Info,
@@ -446,6 +473,26 @@ StreamId StreamConnectionController::streamIdFor(
 ) const noexcept
 {
     return bindings_.streamIdFor(videoWidget);
+}
+
+StreamId StreamConnectionController::selectedControlStreamId() const noexcept
+{
+    return selectedControlStreamId_;
+}
+
+QString StreamConnectionController::deviceIdFromRtmpUrl(
+    const QString &streamUrl)
+{
+    const std::optional<QString> id = DeviceIdentity::fromRtmpUrl(streamUrl);
+    return id.value_or(QString());
+}
+
+void StreamConnectionController::setDevicePresence(
+    const QString &deviceId, DevicePresenceState state)
+{
+    ConnectionBinding *binding = bindings_.findDeviceId(deviceId);
+    if (binding == nullptr || binding->videoWidget == nullptr) return;
+    binding->videoWidget->setDevicePresenceState(state);
 }
 
 void StreamConnectionController::setMediaServerEndpoint(
@@ -576,6 +623,22 @@ void StreamConnectionController::connectVideoWidget(ConnectionBinding &binding)
         this,
         &StreamConnectionController::toggleAudio
     );
+    connect(videoWidget, &VideoWidget::controlTargetRequested, this,
+            [this, streamId](VideoWidget *) { selectControlTarget(streamId); });
+}
+
+void StreamConnectionController::selectControlTarget(StreamId streamId)
+{
+    ConnectionBinding *next = bindings_.find(streamId);
+    if (next == nullptr || next->videoWidget == nullptr ||
+        selectedControlStreamId_ == streamId) return;
+    if (ConnectionBinding *previous = bindings_.find(selectedControlStreamId_);
+        previous != nullptr && previous->videoWidget != nullptr) {
+        previous->videoWidget->setControlTargetSelected(false);
+    }
+    selectedControlStreamId_ = streamId;
+    next->videoWidget->setControlTargetSelected(true);
+    emit controlTargetChanged(streamId, next->deviceId, next->url);
 }
 
 void StreamConnectionController::toggleAudio(VideoWidget *videoWidget)

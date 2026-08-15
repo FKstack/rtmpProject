@@ -34,6 +34,7 @@ public slots:
     void connectToBroker(const MqttConnectionOptions &options);
     void disconnectFromBroker();
     bool publish(DeviceCommand command);
+    bool publishStartStream(const QString &streamUrl);
 
 signals:
     void stateChanged(MqttConnectionState state, const QString &detail);
@@ -65,6 +66,7 @@ private:
                                 MqttObservedMessage message);
     void drainObservedMessages(std::uint64_t generation);
     void clearObservedInbox();
+    bool publishPayload(DeviceCommand command, const QByteArray &payload);
 
     struct PendingObservedMessage
     {

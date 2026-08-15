@@ -56,6 +56,7 @@ private slots:
     void separatesUserSystemAndAuditOutputs();
     void profileConnectionGeneratesUrlAndValidates();
     void profileConnectionsRespectCapacity();
+    void selectsStableControlTargetAndTracksPresence();
 };
 
 void StreamConnectionControllerTest::
@@ -341,6 +342,64 @@ void StreamConnectionControllerTest::profileConnectionsRespectCapacity()
         controller.addConnection(overflow, endpoint, false),
         kInvalidStreamId
     );
+
+    playbackManager.stopAll();
+    logManager.shutdown();
+}
+
+void StreamConnectionControllerTest::selectsStableControlTargetAndTracksPresence()
+{
+    QCOMPARE(StreamConnectionController::deviceIdFromRtmpUrl(
+                 QStringLiteral("rtmp://127.0.0.1:1935/live/040001")),
+             QStringLiteral("040001"));
+    QVERIFY(StreamConnectionController::deviceIdFromRtmpUrl(
+                QStringLiteral("rtmp://127.0.0.1:1935/live/bad%2Fid"))
+                .isEmpty());
+
+    QTemporaryDir directory;
+    LoggingOptions loggingOptions;
+    loggingOptions.directoryPath = directory.path();
+    loggingOptions.consoleEnabled = false;
+    LogManager logManager;
+    QVERIFY(logManager.initialize(loggingOptions));
+    UserMessageService userMessages(60'000);
+    PlaybackPerformanceOptions playbackOptions;
+    playbackOptions.decodeWorkerCount = 1;
+    MultiStreamPlaybackManager playbackManager(playbackOptions);
+    MainWindow window;
+    StreamConnectionController controller(
+        &window, &playbackManager, &logManager, &userMessages);
+    QSignalSpy targetSpy(&controller,
+                         &StreamConnectionController::controlTargetChanged);
+
+    const StreamId firstId = controller.addConnection(
+        QStringLiteral("First"),
+        QStringLiteral("rtmp://127.0.0.1:1935/live/040001"), false);
+    QVERIFY(firstId != kInvalidStreamId);
+    QCOMPARE(controller.selectedControlStreamId(), firstId);
+    VideoWidget *first = window.videoWidgetAt(0);
+    QVERIFY(first != nullptr && first->isControlTargetSelected());
+    QCOMPARE(targetSpy.count(), 1);
+
+    const StreamId secondId = controller.addConnection(
+        QStringLiteral("Second"),
+        QStringLiteral("rtmp://127.0.0.1:1935/live/040002"), false);
+    QVERIFY(secondId != kInvalidStreamId);
+    VideoWidget *second = window.videoWidgetAt(1);
+    QVERIFY(second != nullptr && !second->isControlTargetSelected());
+    QVERIFY(QMetaObject::invokeMethod(
+        second, "controlTargetRequested", Qt::DirectConnection,
+        Q_ARG(VideoWidget *, second)));
+    QCOMPARE(controller.selectedControlStreamId(), secondId);
+    QVERIFY(!first->isControlTargetSelected());
+    QVERIFY(second->isControlTargetSelected());
+
+    controller.setDevicePresence(QStringLiteral("040002"),
+                                 DevicePresenceState::Online);
+    QCOMPARE(second->devicePresenceState(), DevicePresenceState::Online);
+    QVERIFY(controller.removeConnection(secondId, false));
+    QCOMPARE(controller.selectedControlStreamId(), kInvalidStreamId);
+    QCOMPARE(targetSpy.constLast().at(0).value<StreamId>(), kInvalidStreamId);
 
     playbackManager.stopAll();
     logManager.shutdown();

@@ -19,6 +19,7 @@ struct ConnectionBinding
     QPointer<VideoWidget> videoWidget;
     UserFailureReason lastFailureReason = UserFailureReason::None;
     bool removing = false;
+    QString deviceId;
     QString cameraId;
 };
 
@@ -35,12 +36,14 @@ public:
         const QString &url
     ) const;
     [[nodiscard]] bool containsCameraId(const QString &cameraId) const;
+    [[nodiscard]] bool containsDeviceId(const QString &deviceId) const;
 
     ConnectionBinding &add(ConnectionBinding binding);
     bool remove(StreamId streamId);
     [[nodiscard]] ConnectionBinding *find(StreamId streamId) noexcept;
     [[nodiscard]] const ConnectionBinding *find(StreamId streamId) const noexcept;
     [[nodiscard]] ConnectionBinding *find(VideoWidget *videoWidget) noexcept;
+    [[nodiscard]] ConnectionBinding *findDeviceId(const QString &deviceId) noexcept;
     [[nodiscard]] StreamId streamIdFor(const VideoWidget *videoWidget) const noexcept;
     [[nodiscard]] int nextAvailableCameraNumber() const;
     [[nodiscard]] QSet<QString> names() const;

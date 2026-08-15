@@ -2,14 +2,19 @@
 
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QRegularExpression>
 
-QByteArray DeviceCommandCodec::encode(DeviceCommand command, qint64 timestampMs)
+QByteArray DeviceCommandCodec::encode(DeviceCommand command, qint64 timestampMs,
+                                      const QString &streamUrl)
 {
     QString action;
     QJsonObject data;
     switch (command) {
     case DeviceCommand::StartStream:
         action = QStringLiteral("startStream");
+        if (!streamUrl.isEmpty()) {
+            data.insert(QStringLiteral("url"), streamUrl);
+        }
         break;
     case DeviceCommand::StopStream:
         action = QStringLiteral("stopStream");
@@ -39,4 +44,25 @@ QByteArray DeviceCommandCodec::encode(DeviceCommand command, qint64 timestampMs)
         {QStringLiteral("data"), data},
         {QStringLiteral("timestamp"), timestampMs}
     }).toJson(QJsonDocument::Compact);
+}
+
+QByteArray DeviceCommandCodec::redactForDisplay(const QByteArray &payload)
+{
+    QString safeText = QString::fromUtf8(payload);
+    static const QRegularExpression endpointPattern(
+        QStringLiteral(R"(\brtmps?://[^\s"\\}\]]+)"),
+        QRegularExpression::CaseInsensitiveOption);
+    safeText.replace(endpointPattern, QStringLiteral("<stream-url>"));
+    const QByteArray endpointRedacted = safeText.toUtf8();
+    QJsonParseError error;
+    const QJsonDocument document = QJsonDocument::fromJson(endpointRedacted, &error);
+    if (error.error != QJsonParseError::NoError || !document.isObject()) {
+        return endpointRedacted;
+    }
+    QJsonObject root = document.object();
+    QJsonObject data = root.value(QStringLiteral("data")).toObject();
+    if (!data.contains(QStringLiteral("url"))) return endpointRedacted;
+    data.insert(QStringLiteral("url"), QStringLiteral("<stream-url>"));
+    root.insert(QStringLiteral("data"), data);
+    return QJsonDocument(root).toJson(QJsonDocument::Compact);
 }

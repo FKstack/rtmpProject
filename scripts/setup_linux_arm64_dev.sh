@@ -140,16 +140,18 @@ mode_preset()
 build_modes()
 {
     local mode preset directory
+    local -a modes=()
     export PKG_CONFIG_SYSROOT_DIR="${sysroot}"
     export PKG_CONFIG_LIBDIR="${pkgconfig_dir}"
-    while IFS= read -r mode; do
+    mapfile -t modes < <(mode_list)
+    for mode in "${modes[@]}"; do
         preset=$(mode_preset "${mode}")
         directory="${build_root}/${mode}-debug"
         cmake --preset "${preset}" -S "${source_root}" -B "${directory}" \
             -DARM64_SYSROOT="${sysroot}" \
             -DQt6_DIR="${sysroot}/usr/lib/aarch64-linux-gnu/cmake/Qt6"
         cmake --build "${directory}" --parallel "$(nproc)"
-    done < <(mode_list)
+    done
 }
 
 require_aarch64_elf()
@@ -211,12 +213,14 @@ run_qemu_logic_tests()
 test_modes()
 {
     local mode
+    local -a modes=()
     ARM64_SYSROOT="${sysroot}" \
     ARM64_BUILD_ROOT="${build_root}/ffmpeg-smoke" \
         bash "${source_root}/scripts/verify_ffmpeg_arm64_env.sh"
-    while IFS= read -r mode; do
+    mapfile -t modes < <(mode_list)
+    for mode in "${modes[@]}"; do
         verify_mode "${mode}"
-    done < <(mode_list)
+    done
     run_qemu_logic_tests
     echo "Linux ARM64 ${render_mode} cross-development gate passed."
     echo "Real QPA/GPU/video/device qualification remains Phase 5."

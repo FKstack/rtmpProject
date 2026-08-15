@@ -45,7 +45,7 @@ MqttSettingsLoadResult MqttSettingsRepository::load() const
     }
     const QJsonObject root = document.object();
     const int version = root.value(QStringLiteral("schemaVersion")).toInt(-1);
-    if (version != kSchemaVersion) {
+    if (version != 1 && version != kSchemaVersion) {
         result.error = version > kSchemaVersion
             ? QStringLiteral("MQTT 配置版本 %1 高于当前支持的版本 %2。")
                   .arg(version).arg(kSchemaVersion)
@@ -55,6 +55,9 @@ MqttSettingsLoadResult MqttSettingsRepository::load() const
     result.options.enabled = root.value(QStringLiteral("enabled")).toBool(false);
     result.options.brokerUrl = root.value(QStringLiteral("brokerUrl")).toString();
     result.options.topic = root.value(QStringLiteral("topic")).toString();
+    result.options.statusTopic = version >= 2
+        ? root.value(QStringLiteral("statusTopic")).toString()
+        : QStringLiteral("device/status");
     if (!validate(result.options, &result.error)) result.options = {};
     return result;
 }
@@ -74,7 +77,8 @@ bool MqttSettingsRepository::save(const MqttConnectionOptions &options,
         {QStringLiteral("schemaVersion"), kSchemaVersion},
         {QStringLiteral("enabled"), options.enabled},
         {QStringLiteral("brokerUrl"), options.brokerUrl.trimmed()},
-        {QStringLiteral("topic"), options.topic.trimmed()}
+        {QStringLiteral("topic"), options.topic.trimmed()},
+        {QStringLiteral("statusTopic"), options.statusTopic.trimmed()}
     });
     if (!file.open(QIODevice::WriteOnly) ||
         file.write(document.toJson(QJsonDocument::Indented)) < 0 ||
@@ -113,10 +117,19 @@ bool MqttSettingsRepository::validate(const MqttConnectionOptions &options,
             return false;
         }
     }
-    const QString topic = options.topic.trimmed();
-    if (topic.isEmpty() || topic.size() > 256 || topic.contains(QLatin1Char('#')) ||
-        topic.contains(QLatin1Char('+')) || topic.contains(QChar::Null)) {
-        setError(error, QStringLiteral("MQTT Topic 不能为空且不得包含通配符。"));
+    const auto validTopic = [](const QString &value) {
+        const QString topic = value.trimmed();
+        return !topic.isEmpty() && topic.size() <= 256 &&
+               !topic.contains(QLatin1Char('#')) &&
+               !topic.contains(QLatin1Char('+')) &&
+               !topic.contains(QChar::Null);
+    };
+    if (!validTopic(options.topic)) {
+        setError(error, QStringLiteral("MQTT 控制 Topic 不能为空且不得包含通配符。"));
+        return false;
+    }
+    if (!validTopic(options.statusTopic)) {
+        setError(error, QStringLiteral("MQTT 状态 Topic 不能为空且不得包含通配符。"));
         return false;
     }
     setError(error, {});

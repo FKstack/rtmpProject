@@ -9,5 +9,7 @@ class DeviceCommandCodec final
 {
 public:
     [[nodiscard]] static QByteArray encode(DeviceCommand command,
-                                           qint64 timestampMs);
+                                           qint64 timestampMs,
+                                           const QString &streamUrl = {});
+    [[nodiscard]] static QByteArray redactForDisplay(const QByteArray &payload);
 };

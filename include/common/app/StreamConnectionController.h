@@ -8,6 +8,7 @@
 #include "app/ConnectionBindingRegistry.h"
 #include "media/PlaybackTypes.h"
 #include "server/MediaServerTypes.h"
+#include "device_control/DeviceControlTypes.h"
 
 class MainWindow;
 class LogManager;
@@ -67,13 +68,23 @@ public:
     [[nodiscard]] StreamId streamIdFor(
         const VideoWidget *videoWidget
     ) const noexcept;
+    [[nodiscard]] StreamId selectedControlStreamId() const noexcept;
+    [[nodiscard]] static QString deviceIdFromRtmpUrl(const QString &streamUrl);
+
+public slots:
+    void setDevicePresence(const QString &deviceId, DevicePresenceState state);
 signals:
     void connectionRemoved(StreamId streamId, const QString &url);
+    void deviceBound(const QString &deviceId);
+    void deviceUnbound(const QString &deviceId);
+    void controlTargetChanged(StreamId streamId, const QString &deviceId,
+                              const QString &streamUrl);
 
 private:
     void showConnectionDialog();
     void connectVideoWidget(ConnectionBinding &binding);
     void toggleAudio(VideoWidget *videoWidget);
+    void selectControlTarget(StreamId streamId);
 
     MainWindow *mainWindow_ = nullptr;
     MultiStreamPlaybackManager *playbackManager_ = nullptr;
@@ -81,4 +92,5 @@ private:
     MediaServerEndpoint mediaServerEndpoint_;
     bool hasMediaServerEndpoint_ = false;
     ConnectionBindingRegistry bindings_;
+    StreamId selectedControlStreamId_ = kInvalidStreamId;
 };

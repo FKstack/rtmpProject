@@ -141,26 +141,41 @@ private:
                 const quint16 packetId =
                     (static_cast<unsigned char>(body.at(0)) << 8) |
                     static_cast<unsigned char>(body.at(1));
-                const int topicLength =
-                    (static_cast<unsigned char>(body.at(2)) << 8) |
-                    static_cast<unsigned char>(body.at(3));
-                if (body.size() >= 5 + topicLength) {
-                    const QByteArray subscribedTopic = body.mid(4, topicLength);
-                    ++subscribeCount_;
+                QList<QByteArray> requestedTopics;
+                int offset = 2;
+                while (offset + 3 <= body.size()) {
+                    const int topicLength =
+                        (static_cast<unsigned char>(body.at(offset)) << 8) |
+                        static_cast<unsigned char>(body.at(offset + 1));
+                    offset += 2;
+                    if (topicLength <= 0 || offset + topicLength + 1 > body.size()) {
+                        requestedTopics.clear();
+                        break;
+                    }
+                    requestedTopics.push_back(body.mid(offset, topicLength));
+                    offset += topicLength + 1; // topic bytes and requested QoS
+                }
+                if (!requestedTopics.isEmpty()) {
+                    subscribeCount_ += requestedTopics.size();
                     emit subscribeReceived();
                     if (subscribeBehavior_ == SubscribeBehavior::Accept) {
-                        subscriptions_[socket].insert(subscribedTopic);
-                        QByteArray suback = QByteArray::fromHex("9003");
+                        for (const QByteArray &topic : requestedTopics)
+                            subscriptions_[socket].insert(topic);
+                        QByteArray suback(1, static_cast<char>(0x90));
+                        suback += remainingLength(2 + requestedTopics.size());
                         suback.append(static_cast<char>((packetId >> 8) & 0xff));
                         suback.append(static_cast<char>(packetId & 0xff));
-                        suback.append(static_cast<char>(0x00));
+                        suback.append(QByteArray(requestedTopics.size(),
+                                                static_cast<char>(0x00)));
                         socket->write(suback);
                         socket->flush();
                     } else if (subscribeBehavior_ == SubscribeBehavior::Reject) {
-                        QByteArray suback = QByteArray::fromHex("9003");
+                        QByteArray suback(1, static_cast<char>(0x90));
+                        suback += remainingLength(2 + requestedTopics.size());
                         suback.append(static_cast<char>((packetId >> 8) & 0xff));
                         suback.append(static_cast<char>(packetId & 0xff));
-                        suback.append(static_cast<char>(0x80));
+                        suback.append(QByteArray(requestedTopics.size(),
+                                                static_cast<char>(0x80)));
                         socket->write(suback);
                         socket->flush();
                     }
@@ -251,7 +266,7 @@ void MqttDeviceClientTest::connectsSubscribesPublishesObservesAndStopsIdempotent
     QSignalSpy publishSpy(&broker, &FakeMqttBroker::publishReceived);
     QSignalSpy disconnectSpy(&broker, &FakeMqttBroker::disconnectReceived);
     client.connectToBroker(optionsFor(broker));
-    QTRY_COMPARE_WITH_TIMEOUT(broker.subscribeCount(), 1, 3000);
+    QTRY_COMPARE_WITH_TIMEOUT(broker.subscribeCount(), 2, 3000);
     QTRY_VERIFY_WITH_TIMEOUT(client.state() == MqttConnectionState::Connected, 3000);
     QCOMPARE(broker.publishCount(), 0);
     QVERIFY(client.publish(DeviceCommand::TurnLeft));
@@ -264,6 +279,13 @@ void MqttDeviceClientTest::connectsSubscribesPublishesObservesAndStopsIdempotent
     QCOMPARE(observed.topic, QStringLiteral("device/control"));
     QVERIFY(observed.payload.contains("\"action\":\"moveCar\""));
     QCOMPARE(observed.originalPayloadSize, observed.payload.size());
+    broker.publishToSubscribers(
+        "device/status",
+        R"({"type":"heartbeat","client_id":"local-device","timestamp":1})");
+    QTRY_COMPARE_WITH_TIMEOUT(observedSpy.count(), 1, 3000);
+    QCOMPARE(qvariant_cast<MqttObservedMessage>(
+                 observedSpy.takeFirst().at(0)).topic,
+             QStringLiteral("device/status"));
     broker.publishToSubscribers("device/control", "external-observation-only");
     QTRY_COMPARE_WITH_TIMEOUT(observedSpy.count(), 1, 3000);
     QCOMPARE(submittedSpy.count(), 1);
@@ -287,7 +309,8 @@ void MqttDeviceClientTest::fansOutToMultipleEqualClients()
     second.connectToBroker(optionsFor(broker));
     QTRY_VERIFY_WITH_TIMEOUT(first.state() == MqttConnectionState::Connected, 3000);
     QTRY_VERIFY_WITH_TIMEOUT(second.state() == MqttConnectionState::Connected, 3000);
-    QVERIFY(first.publish(DeviceCommand::StartStream));
+    QVERIFY(first.publishStartStream(
+        QStringLiteral("rtmp://127.0.0.1:1935/live/local-device")));
     QTRY_COMPARE_WITH_TIMEOUT(firstObserved.count(), 1, 3000);
     QTRY_COMPARE_WITH_TIMEOUT(secondObserved.count(), 1, 3000);
 }
@@ -331,10 +354,10 @@ void MqttDeviceClientTest::reconnectsAndSubscribesAgain()
     MqttDeviceClient client;
     client.connectToBroker(optionsFor(broker));
     QTRY_VERIFY_WITH_TIMEOUT(client.state() == MqttConnectionState::Connected, 3000);
-    QCOMPARE(broker.subscribeCount(), 1);
+    QCOMPARE(broker.subscribeCount(), 2);
     broker.dropClients();
     QTRY_VERIFY_WITH_TIMEOUT(broker.connectionCount() >= 2, 5000);
-    QTRY_VERIFY_WITH_TIMEOUT(broker.subscribeCount() >= 2, 3000);
+    QTRY_VERIFY_WITH_TIMEOUT(broker.subscribeCount() >= 4, 3000);
     QTRY_VERIFY_WITH_TIMEOUT(client.state() == MqttConnectionState::Connected, 3000);
 }
 
@@ -354,7 +377,7 @@ void MqttDeviceClientTest::retriesInitialConnectionFailure()
     FakeMqttBroker broker;
     QVERIFY(broker.listen(port));
     QTRY_VERIFY_WITH_TIMEOUT(client.state() == MqttConnectionState::Connected, 6000);
-    QCOMPARE(broker.subscribeCount(), 1);
+    QCOMPARE(broker.subscribeCount(), 2);
 }
 
 void MqttDeviceClientTest::truncatesLargeObservedPayload()

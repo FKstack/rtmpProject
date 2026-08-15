@@ -11,6 +11,7 @@
 #include "media/LatestFrameMailbox.h"
 #include "media/PlaybackTypes.h"
 #include "render/RenderTypes.h"
+#include "device_control/DeviceControlTypes.h"
 
 class QDragEnterEvent;
 class QDragLeaveEvent;
@@ -116,6 +117,10 @@ public:
     );
     [[nodiscard]] AudioPlaybackState audioPlaybackState() const noexcept;
     [[nodiscard]] bool isAudioSelected() const noexcept;
+    void setDevicePresenceState(DevicePresenceState state);
+    [[nodiscard]] DevicePresenceState devicePresenceState() const noexcept;
+    void setControlTargetSelected(bool selected);
+    [[nodiscard]] bool isControlTargetSelected() const noexcept;
 
 public slots:
     /** @brief 标记该流已有可显示帧；实际像素由共享画布从邮箱读取。 */
@@ -154,6 +159,7 @@ signals:
      */
     void fullscreenRequested(VideoWidget *videoWidget);
     void audioToggleRequested(VideoWidget *videoWidget);
+    void controlTargetRequested(VideoWidget *videoWidget);
 
 protected:
     void changeEvent(QEvent *event) override;
@@ -185,6 +191,7 @@ private:
     friend class VideoGridWidget;
 
     QLabel *titleLabel_ = nullptr;
+    QLabel *presenceBadge_ = nullptr;
     QToolButton *audioButton_ = nullptr;
     QFrame *videoSurface_ = nullptr;
     QLabel *statusLabel_ = nullptr;
@@ -198,6 +205,8 @@ private:
     bool titleOverlayEnabled_ = true;
     AudioPlaybackState audioState_ = AudioPlaybackState::Unavailable;
     bool audioSelected_ = false;
+    DevicePresenceState presenceState_ = DevicePresenceState::Unavailable;
+    bool controlTargetSelected_ = false;
     VideoDisplayMode displayMode_ = VideoDisplayMode::Contain;
     StreamId streamId_ = kInvalidStreamId;
     std::shared_ptr<LatestFrameMailbox> frameMailbox_;

@@ -24,5 +24,6 @@ private:
     QCheckBox *enabled_ = nullptr;
     QLineEdit *broker_ = nullptr;
     QLineEdit *topic_ = nullptr;
+    QLineEdit *statusTopic_ = nullptr;
     QLabel *testResult_ = nullptr;
 };

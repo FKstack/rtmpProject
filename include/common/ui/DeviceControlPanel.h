@@ -1,6 +1,5 @@
 #pragma once
 
-#include <QList>
 #include <QWidget>
 
 #include "device_control/DeviceControlTypes.h"
@@ -23,6 +22,9 @@ public:
     [[nodiscard]] QSize sizeHint() const override;
     void setConnectionState(MqttConnectionState state, const QString &detail = {});
     void setTopic(const QString &topic);
+    void setTopics(const QString &controlTopic, const QString &statusTopic);
+    void setControlTarget(const QString &deviceId, DevicePresenceState state);
+    void setDevicePresenceState(DevicePresenceState state);
     void setLastResult(const QString &text, bool error = false);
     void appendObservedMessage(const MqttObservedMessage &message);
     void showObservedMessagesDropped(quint64 count);
@@ -53,6 +55,8 @@ private:
     QLabel *statusLabel_ = nullptr;
     QLabel *statusDetailLabel_ = nullptr;
     QLabel *topicLabel_ = nullptr;
+    QLabel *targetLabel_ = nullptr;
+    QLabel *targetStateLabel_ = nullptr;
     QLabel *resultLabel_ = nullptr;
     QLabel *keyboardStatusLabel_ = nullptr;
     QListWidget *observedMessages_ = nullptr;
@@ -65,8 +69,12 @@ private:
     QPushButton *backwardKey_ = nullptr;
     QPushButton *leftKey_ = nullptr;
     QPushButton *rightKey_ = nullptr;
+    QPushButton *startStreamButton_ = nullptr;
+    QPushButton *stopStreamButton_ = nullptr;
+    QPushButton *stopCarButton_ = nullptr;
     VirtualJoystickWidget *joystick_ = nullptr;
-    QList<QPushButton *> commandButtons_;
     bool connected_ = false;
+    bool hasTarget_ = false;
+    bool targetOnline_ = false;
     bool keyboardMode_ = false;
 };

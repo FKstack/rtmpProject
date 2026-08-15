@@ -26,6 +26,21 @@ enum class MqttConnectionState
     Subscribing = 6
 };
 
+enum class DevicePresenceState
+{
+    Unavailable = 0,
+    Waiting = 1,
+    Online = 2,
+    Offline = 3
+};
+
+struct DeviceHeartbeat
+{
+    QString clientId;
+    qint64 deviceTimestamp = 0;
+    qint64 receivedAtMonotonicMs = 0;
+};
+
 struct MqttObservedMessage
 {
     QString topic;
@@ -39,9 +54,12 @@ struct MqttConnectionOptions
     bool enabled = false;
     QString brokerUrl;
     QString topic = QStringLiteral("device/control");
+    QString statusTopic = QStringLiteral("device/status");
     int keepAliveSeconds = 30;
 };
 
 Q_DECLARE_METATYPE(DeviceCommand)
 Q_DECLARE_METATYPE(MqttConnectionState)
+Q_DECLARE_METATYPE(DevicePresenceState)
+Q_DECLARE_METATYPE(DeviceHeartbeat)
 Q_DECLARE_METATYPE(MqttObservedMessage)

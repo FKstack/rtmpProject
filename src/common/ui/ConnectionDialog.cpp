@@ -8,6 +8,8 @@
 #include <QUrl>
 #include <QVBoxLayout>
 
+#include "device_control/DeviceIdentity.h"
+
 ConnectionDialog::ConnectionDialog(QWidget *parent)
     : QDialog(parent)
 {
@@ -114,6 +116,8 @@ void ConnectionDialog::validateInput()
         error = tr("当前会话中已经存在同名设备。");
     } else if (!isValidRtmpUrl(url)) {
         error = tr("请输入包含主机和路径的 rtmp:// 地址。");
+    } else if (!DeviceIdentity::fromRtmpUrl(url).has_value()) {
+        error = tr("RTMP URL 最后一段必须是有效设备 ID（字母、数字、点、横线或下划线）。");
     } else if (existingStreamUrls_.contains(url)) {
         error = tr("当前会话中已经存在相同的 RTMP URL。");
     }

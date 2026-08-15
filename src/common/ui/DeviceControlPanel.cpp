@@ -102,20 +102,29 @@ DeviceControlPanel::DeviceControlPanel(QWidget *parent) : QWidget(parent)
     topicLabel_->setTextInteractionFlags(Qt::TextSelectableByMouse);
     connectionLayout->addWidget(topicLabel_);
 
+    auto *targetRow = new QHBoxLayout;
+    targetLabel_ = new QLabel(tr("控制目标：未选择"), connectionCard);
+    targetLabel_->setObjectName(QStringLiteral("deviceControlTargetLabel"));
+    targetStateLabel_ = new QLabel(tr("状态不可用"), connectionCard);
+    targetStateLabel_->setObjectName(QStringLiteral("devicePresenceStateLabel"));
+    targetStateLabel_->setProperty("presenceState", QStringLiteral("unavailable"));
+    targetRow->addWidget(targetLabel_, 1);
+    targetRow->addWidget(targetStateLabel_);
+    connectionLayout->addLayout(targetRow);
+
     auto *streamRow = new QHBoxLayout;
-    auto *start = new QPushButton(tr("发送启动推流"), connectionCard);
-    start->setObjectName(QStringLiteral("startDeviceStreamButton"));
-    start->setToolTip(tr("向 Broker 提交 startStream；不代表设备已执行"));
-    auto *stop = new QPushButton(tr("发送停止推流"), connectionCard);
-    stop->setObjectName(QStringLiteral("stopDeviceStreamButton"));
-    stop->setToolTip(tr("向 Broker 提交 stopStream；不代表设备已执行"));
-    commandButtons_ << start << stop;
-    connect(start, &QPushButton::clicked, this,
+    startStreamButton_ = new QPushButton(tr("发送启动推流"), connectionCard);
+    startStreamButton_->setObjectName(QStringLiteral("startDeviceStreamButton"));
+    startStreamButton_->setToolTip(tr("将当前视频地址写入 startStream.data.url 后提交"));
+    stopStreamButton_ = new QPushButton(tr("发送停止推流"), connectionCard);
+    stopStreamButton_->setObjectName(QStringLiteral("stopDeviceStreamButton"));
+    stopStreamButton_->setToolTip(tr("向 Broker 提交 stopStream；不代表设备已执行"));
+    connect(startStreamButton_, &QPushButton::clicked, this,
             [this] { emit commandPressed(DeviceCommand::StartStream); });
-    connect(stop, &QPushButton::clicked, this,
+    connect(stopStreamButton_, &QPushButton::clicked, this,
             [this] { emit commandPressed(DeviceCommand::StopStream); });
-    streamRow->addWidget(start);
-    streamRow->addWidget(stop);
+    streamRow->addWidget(startStreamButton_);
+    streamRow->addWidget(stopStreamButton_);
     connectionLayout->addLayout(streamRow);
     root->addWidget(connectionCard);
 
@@ -204,13 +213,12 @@ DeviceControlPanel::DeviceControlPanel(QWidget *parent) : QWidget(parent)
     inputStack_->addWidget(keyboardPage);
     movementLayout->addWidget(inputStack_);
 
-    auto *stopCar = new QPushButton(tr("立即停车  ·  Space"), movementCard);
-    stopCar->setObjectName(QStringLiteral("stopCarButton"));
-    stopCar->setAccessibleName(tr("立即停车"));
-    stopCar->setToolTip(tr("立即向 Broker 提交 stopCar"));
-    stopCar->setMinimumHeight(38);
-    commandButtons_ << stopCar;
-    movementLayout->addWidget(stopCar);
+    stopCarButton_ = new QPushButton(tr("立即停车  ·  Space"), movementCard);
+    stopCarButton_->setObjectName(QStringLiteral("stopCarButton"));
+    stopCarButton_->setAccessibleName(tr("立即停车"));
+    stopCarButton_->setToolTip(tr("立即向 Broker 提交 stopCar"));
+    stopCarButton_->setMinimumHeight(38);
+    movementLayout->addWidget(stopCarButton_);
     root->addWidget(movementCard);
 
     auto *safetyLabel = new QLabel(
@@ -256,7 +264,7 @@ DeviceControlPanel::DeviceControlPanel(QWidget *parent) : QWidget(parent)
             [this] { selectKeyboardMode(true); });
     connect(keyboardArmButton_, &QPushButton::clicked, this,
             [this](bool checked) { emit keyboardArmRequested(checked); });
-    connect(stopCar, &QPushButton::clicked, this, [this] {
+    connect(stopCarButton_, &QPushButton::clicked, this, [this] {
         const bool joystickWasDriving = joystick_->isDriving();
         joystick_->cancelMovement();
         emit inputResetRequested();
@@ -274,14 +282,14 @@ DeviceControlPanel::DeviceControlPanel(QWidget *parent) : QWidget(parent)
         observedMessages_->setVisible(expanded);
     });
 
-    setTabOrder(settings, start);
-    setTabOrder(start, stop);
-    setTabOrder(stop, mouseModeButton_);
+    setTabOrder(settings, startStreamButton_);
+    setTabOrder(startStreamButton_, stopStreamButton_);
+    setTabOrder(stopStreamButton_, mouseModeButton_);
     setTabOrder(mouseModeButton_, keyboardModeButton_);
     setTabOrder(keyboardModeButton_, joystick_);
     setTabOrder(joystick_, keyboardArmButton_);
-    setTabOrder(keyboardArmButton_, stopCar);
-    setTabOrder(stopCar, observedToggle_);
+    setTabOrder(keyboardArmButton_, stopCarButton_);
+    setTabOrder(stopCarButton_, observedToggle_);
     updateCommandEnabled();
 }
 
@@ -323,8 +331,49 @@ void DeviceControlPanel::setConnectionState(MqttConnectionState state,
 
 void DeviceControlPanel::setTopic(const QString &topic)
 {
-    topicLabel_->setText(tr("Topic：%1").arg(topic));
-    topicLabel_->setToolTip(topic);
+    setTopics(topic, QStringLiteral("device/status"));
+}
+
+void DeviceControlPanel::setTopics(const QString &controlTopic,
+                                   const QString &statusTopic)
+{
+    topicLabel_->setText(tr("控制：%1\n状态：%2")
+                             .arg(controlTopic, statusTopic));
+    topicLabel_->setToolTip(tr("控制 Topic：%1\n状态 Topic：%2")
+                                .arg(controlTopic, statusTopic));
+}
+
+void DeviceControlPanel::setControlTarget(const QString &deviceId,
+                                          DevicePresenceState state)
+{
+    hasTarget_ = !deviceId.trimmed().isEmpty();
+    targetLabel_->setText(hasTarget_
+        ? tr("控制目标：%1").arg(deviceId.trimmed())
+        : tr("控制目标：未选择"));
+    setDevicePresenceState(hasTarget_ ? state
+                                      : DevicePresenceState::Unavailable);
+}
+
+void DeviceControlPanel::setDevicePresenceState(DevicePresenceState state)
+{
+    QString text;
+    QString name;
+    switch (state) {
+    case DevicePresenceState::Unavailable:
+        text = tr("状态不可用"); name = QStringLiteral("unavailable"); break;
+    case DevicePresenceState::Waiting:
+        text = tr("等待心跳"); name = QStringLiteral("waiting"); break;
+    case DevicePresenceState::Online:
+        text = tr("在线"); name = QStringLiteral("online"); break;
+    case DevicePresenceState::Offline:
+        text = tr("离线"); name = QStringLiteral("offline"); break;
+    }
+    targetOnline_ = state == DevicePresenceState::Online;
+    targetStateLabel_->setText(QStringLiteral("● %1").arg(text));
+    targetStateLabel_->setProperty("presenceState", name);
+    targetStateLabel_->style()->unpolish(targetStateLabel_);
+    targetStateLabel_->style()->polish(targetStateLabel_);
+    updateCommandEnabled();
 }
 
 void DeviceControlPanel::appendObservedMessage(const MqttObservedMessage &message)
@@ -428,7 +477,10 @@ void DeviceControlPanel::selectKeyboardMode(bool keyboard)
 
 void DeviceControlPanel::updateCommandEnabled()
 {
-    for (QPushButton *button : commandButtons_) button->setEnabled(connected_);
-    keyboardArmButton_->setEnabled(connected_ && keyboardMode_);
-    joystick_->setControlEnabled(connected_ && !keyboardMode_);
+    const bool targetReady = connected_ && hasTarget_;
+    startStreamButton_->setEnabled(targetReady && targetOnline_);
+    stopStreamButton_->setEnabled(targetReady);
+    stopCarButton_->setEnabled(targetReady);
+    keyboardArmButton_->setEnabled(targetReady && targetOnline_ && keyboardMode_);
+    joystick_->setControlEnabled(targetReady && targetOnline_ && !keyboardMode_);
 }

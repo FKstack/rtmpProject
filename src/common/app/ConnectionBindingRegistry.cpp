@@ -34,6 +34,15 @@ bool ConnectionBindingRegistry::containsCameraId(const QString &cameraId) const
     });
 }
 
+bool ConnectionBindingRegistry::containsDeviceId(const QString &deviceId) const
+{
+    return !deviceId.isEmpty() &&
+           std::any_of(bindings_.begin(), bindings_.end(),
+                       [&](const ConnectionBinding &binding) {
+        return binding.deviceId == deviceId;
+    });
+}
+
 ConnectionBinding &ConnectionBindingRegistry::add(ConnectionBinding binding)
 {
     bindings_.push_back(std::move(binding));
@@ -73,6 +82,16 @@ ConnectionBinding *ConnectionBindingRegistry::find(VideoWidget *videoWidget) noe
     const auto it = std::find_if(bindings_.begin(), bindings_.end(),
                                  [videoWidget](const ConnectionBinding &binding) {
         return binding.videoWidget == videoWidget;
+    });
+    return it == bindings_.end() ? nullptr : &*it;
+}
+
+ConnectionBinding *ConnectionBindingRegistry::findDeviceId(
+    const QString &deviceId) noexcept
+{
+    const auto it = std::find_if(bindings_.begin(), bindings_.end(),
+                                 [&](const ConnectionBinding &binding) {
+        return binding.deviceId == deviceId;
     });
     return it == bindings_.end() ? nullptr : &*it;
 }

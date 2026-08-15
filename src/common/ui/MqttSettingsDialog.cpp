@@ -21,9 +21,12 @@ MqttSettingsDialog::MqttSettingsDialog(QWidget *parent) : QDialog(parent)
     broker_->setObjectName(QStringLiteral("mqttBrokerEdit"));
     topic_ = new QLineEdit(this);
     topic_->setObjectName(QStringLiteral("mqttTopicEdit"));
+    statusTopic_ = new QLineEdit(this);
+    statusTopic_->setObjectName(QStringLiteral("mqttStatusTopicEdit"));
     form->addRow(tr("状态"), enabled_);
     form->addRow(tr("Broker"), broker_);
-    form->addRow(tr("Topic"), topic_);
+    form->addRow(tr("控制 Topic"), topic_);
+    form->addRow(tr("状态 Topic"), statusTopic_);
     root->addLayout(form);
     auto *test = new QPushButton(tr("测试连接"), this);
     test->setObjectName(QStringLiteral("testMqttConnectionButton"));
@@ -53,6 +56,7 @@ void MqttSettingsDialog::setOptions(const MqttConnectionOptions &options)
     enabled_->setChecked(options.enabled);
     broker_->setText(options.brokerUrl);
     topic_->setText(options.topic);
+    statusTopic_->setText(options.statusTopic);
 }
 
 MqttConnectionOptions MqttSettingsDialog::options() const
@@ -61,6 +65,7 @@ MqttConnectionOptions MqttSettingsDialog::options() const
     result.enabled = enabled_->isChecked();
     result.brokerUrl = broker_->text().trimmed();
     result.topic = topic_->text().trimmed();
+    result.statusTopic = statusTopic_->text().trimmed();
     return result;
 }
 

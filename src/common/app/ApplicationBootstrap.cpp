@@ -16,6 +16,7 @@
 #include "app/StyleLoader.h"
 #include "diagnostics/RuntimeMetricsReporter.h"
 #include "device_control/MqttDeviceClient.h"
+#include "device_control/DevicePresenceTracker.h"
 #include "logging/LogConfiguration.h"
 #include "logging/LogManager.h"
 #include "logging/UserMessageService.h"
@@ -320,6 +321,7 @@ int ApplicationBootstrap::run(int argc, char *argv[])
     mainWindow.installDeviceControlPanel(deviceControlPanel);
     DeviceControlInputRouter deviceControlInput(&mainWindow);
     MqttDeviceClient mqttClient;
+    DevicePresenceTracker devicePresenceTracker;
     QObject::connect(deviceControlPanel,
                      &DeviceControlPanel::keyboardModeSelected,
                      &deviceControlInput,
@@ -345,7 +347,28 @@ int ApplicationBootstrap::run(int argc, char *argv[])
                      deviceControlPanel,
                      &DeviceControlPanel::setKeyboardDirectionState);
     DeviceControlController deviceControlController(
-        &mainWindow, deviceControlPanel, &mqttClient, &logManager);
+        &mainWindow, deviceControlPanel, &mqttClient,
+        &devicePresenceTracker, &logManager);
+    QObject::connect(&connectionController,
+                     &StreamConnectionController::deviceBound,
+                     &devicePresenceTracker,
+                     &DevicePresenceTracker::registerDevice);
+    QObject::connect(&connectionController,
+                     &StreamConnectionController::deviceUnbound,
+                     &devicePresenceTracker,
+                     &DevicePresenceTracker::unregisterDevice);
+    QObject::connect(&connectionController,
+                     &StreamConnectionController::controlTargetChanged,
+                     &deviceControlController,
+                     &DeviceControlController::setControlTarget);
+    QObject::connect(&devicePresenceTracker,
+                     &DevicePresenceTracker::presenceChanged,
+                     &connectionController,
+                     &StreamConnectionController::setDevicePresence);
+    QObject::connect(&devicePresenceTracker,
+                     &DevicePresenceTracker::presenceChanged,
+                     &deviceControlController,
+                     &DeviceControlController::setDevicePresence);
     QObject::connect(&deviceControlInput,
                      &DeviceControlInputRouter::commandPressed,
                      deviceControlPanel,
