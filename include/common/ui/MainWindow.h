@@ -26,6 +26,7 @@ class VideoWidget;
 enum class DeviceStatus;
 enum class RendererPreference;
 class LatestFrameMailbox;
+class QImage;
 struct RenderRuntimeMetrics;
 struct EventCenterSummary;
 using StreamId = std::uint64_t;
@@ -87,6 +88,7 @@ public:
     );
 
     [[nodiscard]] int videoWidgetCount() const noexcept;
+    [[nodiscard]] QImage capturePresentedVideoFrame(StreamId streamId);
     [[nodiscard]] RenderRuntimeMetrics rendererRuntimeMetrics() const;
     void setDisplayFrameRateRequest(const QString &requested, int effectiveFps);
     void setValidationLayoutMode(bool enabled);

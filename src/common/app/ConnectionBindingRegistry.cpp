@@ -131,3 +131,8 @@ QSet<QString> ConnectionBindingRegistry::urls() const
     for (const auto &binding : bindings_) result.insert(binding.url);
     return result;
 }
+
+const std::vector<ConnectionBinding> &ConnectionBindingRegistry::entries() const noexcept
+{
+    return bindings_;
+}

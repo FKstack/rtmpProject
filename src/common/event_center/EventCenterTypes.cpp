@@ -30,6 +30,7 @@ QString securityEventTypeName(SecurityEventType type)
     case SecurityEventType::LocalControlPublishFailed: return QStringLiteral("LocalControlPublishFailed");
     case SecurityEventType::LocalSafetyStopPublishFailed: return QStringLiteral("LocalSafetyStopPublishFailed");
     case SecurityEventType::LocalSafetyStopUnavailable: return QStringLiteral("LocalSafetyStopUnavailable");
+    case SecurityEventType::LocalEvidenceSubsystemFault: return QStringLiteral("LocalEvidenceSubsystemFault");
     case SecurityEventType::ManualIncident: return QStringLiteral("ManualIncident");
     }
     return {};
@@ -103,6 +104,7 @@ std::optional<SecurityEventType> securityEventTypeFromName(const QString &name)
         {SecurityEventType::LocalControlPublishFailed, "LocalControlPublishFailed"},
         {SecurityEventType::LocalSafetyStopPublishFailed, "LocalSafetyStopPublishFailed"},
         {SecurityEventType::LocalSafetyStopUnavailable, "LocalSafetyStopUnavailable"},
+        {SecurityEventType::LocalEvidenceSubsystemFault, "LocalEvidenceSubsystemFault"},
         {SecurityEventType::ManualIncident, "ManualIncident"},
     });
 }

@@ -15,11 +15,13 @@
 #include "app/DeviceControlController.h"
 #include "app/DeviceControlTransport.h"
 #include "app/PlatformEventBridge.h"
+#include "app/EvidenceCoordinator.h"
 #include "app/StyleLoader.h"
 #include "diagnostics/RuntimeMetricsReporter.h"
 #include "device_control/MqttDeviceClient.h"
 #include "device_control/DevicePresenceTracker.h"
 #include "event_center/EventCenterService.h"
+#include "evidence/EvidenceService.h"
 #include "logging/LogConfiguration.h"
 #include "logging/LogManager.h"
 #include "logging/UserMessageService.h"
@@ -191,6 +193,19 @@ int ApplicationBootstrap::run(int argc, char *argv[])
              {QStringLiteral("controlAffected"), false}}
         );
     }
+    EvidenceService evidenceService;
+    QString evidenceError;
+    const bool evidenceWriteReady = evidenceService.initialize(&evidenceError);
+    if (!evidenceWriteReady) {
+        logManager.logSystem(
+            LogLevel::Critical,
+            QStringLiteral("evidence"),
+            QStringLiteral("storage_unavailable"),
+            evidenceError,
+            {{QStringLiteral("playbackAffected"), false},
+             {QStringLiteral("controlAffected"), false}}
+        );
+    }
 
     // 媒体服务器只读接入：配置解析失败一律回退默认接入点，
     // 监控全部异步执行，SRS 未运行也不影响启动和其他功能。
@@ -316,6 +331,10 @@ int ApplicationBootstrap::run(int argc, char *argv[])
         eventCenterService.events(), eventCenterService.summary());
     eventCenterPanel->setStorageState(
         eventCenterService.isWriteEnabled(), eventCenterService.storageError());
+    eventCenterPanel->setEvidenceData(
+        evidenceService.records(), evidenceService.captureAttempts());
+    eventCenterPanel->setEvidenceStorageState(
+        evidenceService.isWriteEnabled(), evidenceService.storageError());
     mainWindow.setEventCenterSummary(
         eventCenterService.summary(), eventCenterService.isWriteEnabled());
     QObject::connect(
@@ -341,6 +360,12 @@ int ApplicationBootstrap::run(int argc, char *argv[])
             mainWindow.setEventCenterSummary(
                 eventCenterService.summary(), writeEnabled);
         });
+    QObject::connect(
+        &evidenceService, &EvidenceService::catalogChanged,
+        eventCenterPanel, &EventCenterPanel::setEvidenceData);
+    QObject::connect(
+        &evidenceService, &EvidenceService::storageStateChanged,
+        eventCenterPanel, &EventCenterPanel::setEvidenceStorageState);
     StreamConnectionController connectionController(
         &mainWindow,
         &playbackManager,
@@ -395,11 +420,56 @@ int ApplicationBootstrap::run(int argc, char *argv[])
             return connectionController.controlMediaObservation(streamId);
         });
     PlatformEventBridge platformEventBridge(&eventCenterService);
+    EvidenceCoordinator evidenceCoordinator(
+        &evidenceService, &eventCenterService, &connectionController,
+        &mainWindow, &logManager);
     platformEventBridge.setMediaServerEndpoint(mediaServerEndpoint);
-    eventCenterPanel->setResources(platformEventBridge.resources());
+    const QList<EventResourceDescriptor> initialEventResources =
+        platformEventBridge.resources();
+    evidenceCoordinator.setResources(initialEventResources);
+    eventCenterPanel->setResources(initialEventResources);
+    eventCenterPanel->setCaptureResources(
+        evidenceCoordinator.captureResources(initialEventResources));
     QObject::connect(
         &platformEventBridge, &PlatformEventBridge::resourcesChanged,
         eventCenterPanel, &EventCenterPanel::setResources);
+    QObject::connect(
+        &platformEventBridge, &PlatformEventBridge::resourcesChanged,
+        &evidenceCoordinator,
+        [&evidenceCoordinator, eventCenterPanel](
+            const QList<EventResourceDescriptor> &resources) {
+            evidenceCoordinator.setResources(resources);
+            eventCenterPanel->setCaptureResources(
+                evidenceCoordinator.captureResources(resources));
+        });
+    QObject::connect(
+        eventCenterPanel, &EventCenterPanel::captureEvidenceRequested,
+        &evidenceCoordinator,
+        [&evidenceCoordinator](const QString &eventId,
+                               const QString &sourceResourceId) {
+            evidenceCoordinator.capture(
+                eventId, sourceResourceId,
+                PlatformEventBridge::localActorName());
+        });
+    QObject::connect(
+        eventCenterPanel, &EventCenterPanel::exportEventRequested,
+        &evidenceCoordinator,
+        [&evidenceCoordinator](const QString &eventId,
+                               const QString &destinationParentDirectory) {
+            evidenceCoordinator.exportIncident(
+                eventId, destinationParentDirectory,
+                PlatformEventBridge::localActorName());
+        });
+    QObject::connect(
+        &evidenceCoordinator, &EvidenceCoordinator::operationMessage,
+        eventCenterPanel,
+        [eventCenterPanel](const QString &title, const QString &message,
+                           bool error) {
+            if (error) QMessageBox::warning(eventCenterPanel, title, message);
+            else QMessageBox::information(eventCenterPanel, title, message);
+        });
+    evidenceCoordinator.synchronizeProjection();
+    evidenceCoordinator.reportInitialStorageState();
     const auto showEventOperationFailure =
         [eventCenterPanel](const EventOperationResult &result) {
             if (!result.succeeded())
@@ -756,6 +826,8 @@ int ApplicationBootstrap::run(int argc, char *argv[])
     platformEventBridge.beginShutdown();
     deviceControlController.stop();
     platformEventBridge.stopAccepting();
+    evidenceService.stopAccepting();
+    eventCenterService.stopAccepting();
     mediaServerMonitor.stopMonitoring();
     playbackManager.stopAll();
     metricsReporter.setRenderMetricsProvider({});

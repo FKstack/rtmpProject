@@ -9,9 +9,10 @@
 #include <QPointer>
 #include <QRegularExpression>
 #include <QRunnable>
-#include <QSaveFile>
 #include <QStandardPaths>
 #include <QThreadPool>
+
+#include "evidence/AtomicPngWriter.h"
 
 namespace {
 
@@ -67,16 +68,9 @@ void FullscreenScreenshotService::save(
     QPointer<FullscreenScreenshotService> service(this);
     QThreadPool::globalInstance()->start(QRunnable::create(
         [framebuffer = std::move(framebuffer), path, thumbnail, service]() mutable {
-            QString error;
-            QSaveFile output(path);
-            if (!output.open(QIODevice::WriteOnly)) {
-                error = QStringLiteral("无法创建 PNG 文件");
-            } else if (!framebuffer.save(&output, "PNG")) {
-                output.cancelWriting();
-                error = QStringLiteral("PNG 编码失败");
-            } else if (!output.commit()) {
-                error = QStringLiteral("无法原子提交 PNG 文件");
-            }
+            const AtomicPngWriteResult write =
+                AtomicPngWriter::write(framebuffer, path);
+            const QString error = write.error;
 
             if (QCoreApplication *application = QCoreApplication::instance();
                 application != nullptr) {

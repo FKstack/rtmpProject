@@ -423,6 +423,22 @@ target_include_directories(rtmp_monitor_event_center PUBLIC
 target_link_libraries(rtmp_monitor_event_center PUBLIC Qt6::Core)
 rtmp_monitor_apply_project_options(rtmp_monitor_event_center)
 
+qt_add_library(rtmp_monitor_evidence STATIC
+    include/common/evidence/EvidenceTypes.h
+    src/common/evidence/EvidenceTypes.cpp
+    include/common/evidence/AtomicPngWriter.h
+    src/common/evidence/AtomicPngWriter.cpp
+    include/common/evidence/EvidenceCatalogStore.h
+    src/common/evidence/EvidenceCatalogStore.cpp
+    include/common/evidence/EvidenceService.h
+    src/common/evidence/EvidenceService.cpp
+)
+target_include_directories(rtmp_monitor_evidence PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/common
+)
+target_link_libraries(rtmp_monitor_evidence PUBLIC Qt6::Core Qt6::Gui)
+rtmp_monitor_apply_project_options(rtmp_monitor_evidence)
+
 qt_add_library(rtmp_monitor_device_control STATIC
     include/common/device_control/DeviceControlTypes.h
     include/common/device_control/DeviceCommandCodec.h
@@ -596,6 +612,8 @@ set(RTMP_MONITOR_UI_SOURCES
     src/common/ui/LogPanel.cpp
     include/common/ui/EventCenterPanel.h
     src/common/ui/EventCenterPanel.cpp
+    include/common/ui/EventDetailDialog.h
+    src/common/ui/EventDetailDialog.cpp
     include/common/ui/CpuVideoCanvas.h
     src/common/ui/CpuVideoCanvas.cpp
     include/common/ui/VideoCanvasHost.h
@@ -628,6 +646,7 @@ target_link_libraries(rtmp_monitor_ui
         rtmp_monitor_profiles
         rtmp_monitor_device_control
         rtmp_monitor_event_center
+        rtmp_monitor_evidence
 )
 
 if(RTMP_MONITOR_HAS_OPENGL)
@@ -709,6 +728,8 @@ qt_add_executable(rtmp_monitor
     src/common/app/DeviceControlTransport.cpp
     include/common/app/PlatformEventBridge.h
     src/common/app/PlatformEventBridge.cpp
+    include/common/app/EvidenceCoordinator.h
+    src/common/app/EvidenceCoordinator.cpp
     ${RTMP_MONITOR_STYLE_RESOURCE}
 )
 
@@ -728,6 +749,7 @@ target_link_libraries(rtmp_monitor
         rtmp_monitor_device_control
         rtmp_monitor_control_policy
         rtmp_monitor_event_center
+        rtmp_monitor_evidence
 )
 
 target_include_directories(rtmp_monitor
@@ -847,6 +869,22 @@ if(BUILD_TESTING)
     rtmp_monitor_apply_project_options(rtmp_monitor_event_center_service_test)
     add_test(NAME rtmp_monitor_event_center_service_test
         COMMAND rtmp_monitor_event_center_service_test)
+
+    qt_add_executable(rtmp_monitor_evidence_catalog_test
+        tests/EvidenceCatalogStoreTest.cpp)
+    target_link_libraries(rtmp_monitor_evidence_catalog_test PRIVATE
+        Qt6::Test rtmp_monitor_evidence)
+    rtmp_monitor_apply_project_options(rtmp_monitor_evidence_catalog_test)
+    add_test(NAME rtmp_monitor_evidence_catalog_test
+        COMMAND rtmp_monitor_evidence_catalog_test)
+
+    qt_add_executable(rtmp_monitor_evidence_service_test
+        tests/EvidenceServiceTest.cpp)
+    target_link_libraries(rtmp_monitor_evidence_service_test PRIVATE
+        Qt6::Test rtmp_monitor_evidence)
+    rtmp_monitor_apply_project_options(rtmp_monitor_evidence_service_test)
+    add_test(NAME rtmp_monitor_evidence_service_test
+        COMMAND rtmp_monitor_evidence_service_test)
 
     qt_add_executable(rtmp_monitor_platform_event_bridge_test
         tests/PlatformEventBridgeTest.cpp

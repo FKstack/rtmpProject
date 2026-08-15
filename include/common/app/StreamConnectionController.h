@@ -82,6 +82,8 @@ public:
         const VideoWidget *videoWidget
     ) const noexcept;
     [[nodiscard]] StreamId selectedControlStreamId() const noexcept;
+    [[nodiscard]] StreamId streamIdForEventResourceId(
+        const QString &resourceId) const noexcept;
     [[nodiscard]] ControlMediaObservation controlMediaObservation(
         StreamId streamId
     ) const;

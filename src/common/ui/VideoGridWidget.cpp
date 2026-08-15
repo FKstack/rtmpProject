@@ -842,3 +842,26 @@ QPixmap VideoGridWidget::captureWidgetSnapshot(VideoWidget *videoWidget)
     painter.drawImage(QRect(destinationTopLeft, viewport.size()), videoImage);
     return snapshot;
 }
+
+QImage VideoGridWidget::capturePresentedVideoFrame(StreamId streamId)
+{
+    VideoWidget *target = nullptr;
+    for (VideoWidget *videoWidget : std::as_const(videoWidgets_)) {
+        if (videoWidget != nullptr && videoWidget->streamId() == streamId) {
+            target = videoWidget;
+            break;
+        }
+    }
+    if (target == nullptr || !target->isFrameVisible()) return {};
+    QImage canvas = canvasHost_->grabFramebufferImage();
+    if (canvas.isNull()) return {};
+    const qreal dpr = std::max<qreal>(1.0, canvas.devicePixelRatio());
+    const QRect viewport = target->videoViewportRect(this);
+    const QRect source(
+        qRound(viewport.x() * dpr), qRound(viewport.y() * dpr),
+        qRound(viewport.width() * dpr), qRound(viewport.height() * dpr));
+    if (source.isEmpty()) return {};
+    QImage image = canvas.copy(source.intersected(canvas.rect()));
+    image.setDevicePixelRatio(dpr);
+    return image;
+}

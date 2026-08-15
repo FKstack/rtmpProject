@@ -49,6 +49,7 @@ private slots:
     void persistsUnicodeAndProtectsUnreadableSchemas();
     void prunesClosedEventsAndCreatesEvidenceTombstone();
     void failedCommitDoesNotPublishCandidate();
+    void migratesV1AndSynchronizesEvidenceProjection();
 };
 
 void EventCenterServiceTest::systemLifecycleDeduplicatesRecoversAndRecurs()
@@ -176,7 +177,7 @@ void EventCenterServiceTest::persistsUnicodeAndProtectsUnreadableSchemas()
     QFile higher(higherPath);
     QVERIFY(higher.open(QIODevice::WriteOnly));
     higher.write(QJsonDocument(QJsonObject {
-        {QStringLiteral("schemaVersion"), 2},
+        {QStringLiteral("schemaVersion"), 3},
         {QStringLiteral("events"), QJsonArray {}},
         {QStringLiteral("tombstones"), QJsonArray {}},
     }).toJson());
@@ -229,6 +230,45 @@ void EventCenterServiceTest::failedCommitDoesNotPublishCandidate()
     QVERIFY(!result.succeeded());
     QVERIFY(!service.isWriteEnabled());
     QVERIFY(service.events().isEmpty());
+}
+
+void EventCenterServiceTest::migratesV1AndSynchronizesEvidenceProjection()
+{
+    QTemporaryDir directory;
+    const QString path = directory.filePath(QStringLiteral("events.json"));
+    QString eventId;
+    {
+        EventCenterService service(path);
+        QVERIFY(service.initialize());
+        const auto created = service.observeFault(fault(
+            SecurityEventType::LocalEvidenceSubsystemFault,
+            QStringLiteral("evidence:catalog")));
+        QVERIFY(created.succeeded());
+        eventId = created.eventId;
+    }
+    QFile input(path);
+    QVERIFY(input.open(QIODevice::ReadOnly));
+    QJsonDocument document = QJsonDocument::fromJson(input.readAll());
+    input.close();
+    QJsonObject root = document.object();
+    root.insert(QStringLiteral("schemaVersion"), 1);
+    QFile legacy(path);
+    QVERIFY(legacy.open(QIODevice::WriteOnly | QIODevice::Truncate));
+    legacy.write(QJsonDocument(root).toJson());
+    legacy.close();
+
+    EventCenterService migrated(path);
+    QVERIFY(migrated.initialize());
+    QVERIFY(migrated.replaceEvidenceProjection({
+        {eventId, {QStringLiteral("evidence-b"), QStringLiteral("evidence-a")}}
+    }).succeeded());
+    QCOMPARE(migrated.events().first().evidenceIds,
+             QStringList({QStringLiteral("evidence-a"),
+                          QStringLiteral("evidence-b")}));
+    QFile saved(path);
+    QVERIFY(saved.open(QIODevice::ReadOnly));
+    QCOMPARE(QJsonDocument::fromJson(saved.readAll()).object()
+                 .value(QStringLiteral("schemaVersion")).toInt(), 2);
 }
 
 QTEST_APPLESS_MAIN(EventCenterServiceTest)

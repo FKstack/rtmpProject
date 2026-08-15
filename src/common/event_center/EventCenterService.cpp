@@ -484,6 +484,47 @@ EventOperationResult EventCenterService::closeWithoutObservedRecovery(
     return commitOne(std::move(candidate), committedId, true);
 }
 
+EventOperationResult EventCenterService::replaceEvidenceProjection(
+    const QHash<QString, QStringList> &projection)
+{
+    const EventOperationResult unavailable = availabilityError();
+    if (!unavailable.succeeded()) return unavailable;
+    QList<SecurityEventRecord> candidateEvents = events_;
+    QList<SecurityEventTombstone> candidateTombstones = tombstones_;
+    bool changed = false;
+    for (auto &event : candidateEvents) {
+        QStringList desired = projection.value(event.eventId);
+        desired.removeDuplicates();
+        desired.sort();
+        QStringList current = event.evidenceIds;
+        current.removeDuplicates();
+        current.sort();
+        if (desired == current) continue;
+        event.evidenceIds = desired;
+        ++event.eventRevision;
+        changed = true;
+    }
+    for (auto &tombstone : candidateTombstones) {
+        QStringList desired = projection.value(tombstone.eventId);
+        desired.removeDuplicates();
+        desired.sort();
+        QStringList current = tombstone.evidenceIds;
+        current.removeDuplicates();
+        current.sort();
+        if (desired == current) continue;
+        tombstone.evidenceIds = desired;
+        ++tombstone.eventRevision;
+        changed = true;
+    }
+    if (!changed) return {false, {}, EventOperationError::None, {}};
+    QString error;
+    if (!commit(std::move(candidateEvents), std::move(candidateTombstones),
+                &error)) {
+        return failure(EventOperationError::StorageUnavailable, error);
+    }
+    return {true, {}, EventOperationError::None, {}};
+}
+
 EventOperationResult EventCenterService::commitOne(
     QList<SecurityEventRecord> candidate, const QString &eventId, bool changed)
 {

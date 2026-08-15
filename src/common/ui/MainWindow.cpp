@@ -9,6 +9,7 @@
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QIcon>
+#include <QImage>
 #include <QKeyEvent>
 #include <QKeySequence>
 #include <QLabel>
@@ -324,6 +325,12 @@ void MainWindow::bindVideoStream(
 int MainWindow::videoWidgetCount() const noexcept
 {
     return videoGrid_ != nullptr ? videoGrid_->videoWidgetCount() : 0;
+}
+
+QImage MainWindow::capturePresentedVideoFrame(StreamId streamId)
+{
+    return videoGrid_ != nullptr
+        ? videoGrid_->capturePresentedVideoFrame(streamId) : QImage {};
 }
 
 RenderRuntimeMetrics MainWindow::rendererRuntimeMetrics() const

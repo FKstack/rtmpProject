@@ -16,6 +16,7 @@ enum class SecurityEventType {
     LocalControlPublishFailed,
     LocalSafetyStopPublishFailed,
     LocalSafetyStopUnavailable,
+    LocalEvidenceSubsystemFault,
     ManualIncident,
 };
 

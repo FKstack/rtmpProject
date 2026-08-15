@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QObject>
+#include <QHash>
 
 #include <functional>
 
@@ -53,6 +54,9 @@ public:
         const QString &reason,
         const QString &actor
     );
+    /** Rebuilds the denormalized event/tombstone evidence projection atomically. */
+    EventOperationResult replaceEvidenceProjection(
+        const QHash<QString, QStringList> &projection);
 
 signals:
     void eventsChanged(const QList<SecurityEventRecord> &events,

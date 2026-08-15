@@ -435,6 +435,22 @@ QWidget#eventCenterPanel QLabel#eventStorageBanner {
     padding: 7px;
 }
 
+QDialog#eventDetailDialog QLabel#evidenceHonestyNotice {
+    color: #f6c177;
+    background: #332d22;
+    border: 1px solid #8a6738;
+    border-radius: 5px;
+    padding: 7px;
+}
+
+QDialog#eventDetailDialog QLabel#evidenceStorageBanner {
+    color: #ffb4b4;
+    background: #3a2428;
+    border: 1px solid #b84c4c;
+    border-radius: 5px;
+    padding: 7px;
+}
+
 QWidget#deviceControlPanel {
     background-color: #0B1118;
     color: #E8F3FA;

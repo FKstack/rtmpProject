@@ -5,8 +5,10 @@
 #include <QTableWidget>
 #include <QTest>
 #include <QToolButton>
+#include <QSignalSpy>
 
 #include "ui/EventCenterPanel.h"
+#include "ui/EventDetailDialog.h"
 #include "ui/MainWindow.h"
 
 namespace {
@@ -40,6 +42,7 @@ private slots:
     void filtersAndEnablesOnlyLegalActions();
     void storageFailureDisablesMutations();
     void mainWindowKeepsDockHiddenAndBadgeVisible();
+    void detailDialogGatesCaptureAndStatesNoHashVerification();
 };
 
 void EventCenterPanelTest::filtersAndEnablesOnlyLegalActions()
@@ -115,6 +118,39 @@ void EventCenterPanelTest::mainWindowKeepsDockHiddenAndBadgeVisible()
     QVERIFY(!dock->isHidden());
     window.setEventCenterSummary({}, false);
     QCOMPARE(badge->text(), QStringLiteral("事件存储不可写"));
+}
+
+void EventCenterPanelTest::detailDialogGatesCaptureAndStatesNoHashVerification()
+{
+    EventCenterPanel panel;
+    auto event = eventRecord(
+        SecurityEventState::Open, SecurityEventType::VideoStreamLost,
+        SecurityEventSeverity::High, QStringLiteral("event-detail"));
+    event.localResourceId = QStringLiteral("camera:front");
+    event.deviceId = QStringLiteral("vehicle-01");
+    panel.setEvents({event}, {1, SecurityEventSeverity::High});
+    panel.setEvidenceStorageState(true, {});
+    panel.setCaptureResources({{
+        QStringLiteral("camera:front"), QStringLiteral("vehicle-01"),
+        QStringLiteral("前置摄像头"), QStringLiteral("camera-profile")}});
+    auto *table = panel.findChild<QTableWidget *>(
+        QStringLiteral("eventCenterTable"));
+    table->selectRow(0);
+    QSignalSpy captureSpy(&panel, &EventCenterPanel::captureEvidenceRequested);
+    panel.findChild<QPushButton *>(QStringLiteral("eventDetailButton"))->click();
+    QTRY_VERIFY(panel.findChild<EventDetailDialog *>() != nullptr);
+    auto *dialog = panel.findChild<EventDetailDialog *>();
+    auto *capture = dialog->findChild<QPushButton *>(
+        QStringLiteral("captureEvidenceButton"));
+    auto *notice = dialog->findChild<QLabel *>(
+        QStringLiteral("evidenceHonestyNotice"));
+    QVERIFY(capture->isEnabled());
+    QVERIFY(notice->text().contains(QStringLiteral("不进行内容哈希校验")));
+    capture->click();
+    QCOMPARE(captureSpy.count(), 1);
+    QCOMPARE(captureSpy.first().at(0).toString(), QStringLiteral("event-detail"));
+    QCOMPARE(captureSpy.first().at(1).toString(), QStringLiteral("camera:front"));
+    dialog->close();
 }
 
 QTEST_MAIN(EventCenterPanelTest)

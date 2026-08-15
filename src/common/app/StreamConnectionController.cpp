@@ -495,6 +495,19 @@ StreamId StreamConnectionController::selectedControlStreamId() const noexcept
     return selectedControlStreamId_;
 }
 
+StreamId StreamConnectionController::streamIdForEventResourceId(
+    const QString &resourceId) const noexcept
+{
+    const QString normalized = resourceId.trimmed();
+    for (const ConnectionBinding &binding : bindings_.entries()) {
+        if (stableEventResourceId(binding.cameraId, binding.deviceId,
+                                  binding.url) == normalized) {
+            return binding.streamId;
+        }
+    }
+    return kInvalidStreamId;
+}
+
 ControlMediaObservation StreamConnectionController::controlMediaObservation(
     StreamId streamId
 ) const

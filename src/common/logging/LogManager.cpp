@@ -820,6 +820,10 @@ QString LogManager::auditActionName(AuditAction action)
         return QStringLiteral("CONTROL_COMMAND_ATTEMPT");
     case AuditAction::ControlSessionTransition:
         return QStringLiteral("CONTROL_SESSION_TRANSITION");
+    case AuditAction::CaptureEvidence:
+        return QStringLiteral("CAPTURE_EVIDENCE");
+    case AuditAction::ExportIncident:
+        return QStringLiteral("EXPORT_INCIDENT");
     }
     return QStringLiteral("UNKNOWN");
 }

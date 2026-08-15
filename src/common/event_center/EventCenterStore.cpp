@@ -409,11 +409,11 @@ EventStoreLoadResult EventCenterStore::load() const
                            .arg(version).arg(kSchemaVersion);
         return result;
     }
-    if (version != kSchemaVersion ||
+    if ((version != 1 && version != kSchemaVersion) ||
         !root.value(QStringLiteral("events")).isArray() ||
         !root.value(QStringLiteral("tombstones")).isArray()) {
         result.writeBlocked = true;
-        result.error = QStringLiteral("平台事件文件 schema v1 格式无效。");
+        result.error = QStringLiteral("平台事件文件 schema 格式无效。");
         return result;
     }
     QString recordError;

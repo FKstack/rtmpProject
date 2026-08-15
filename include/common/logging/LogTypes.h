@@ -56,6 +56,8 @@ enum class AuditAction {
     ManualReconnect,
     ControlCommandAttempt,
     ControlSessionTransition,
+    CaptureEvidence,
+    ExportIncident,
 };
 
 enum class AuditResult {

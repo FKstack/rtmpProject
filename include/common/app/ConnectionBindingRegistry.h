@@ -49,6 +49,7 @@ public:
     [[nodiscard]] int nextAvailableCameraNumber() const;
     [[nodiscard]] QSet<QString> names() const;
     [[nodiscard]] QSet<QString> urls() const;
+    [[nodiscard]] const std::vector<ConnectionBinding> &entries() const noexcept;
 
 private:
     std::vector<ConnectionBinding> bindings_;

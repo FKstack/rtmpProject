@@ -14,11 +14,11 @@ struct EventStoreLoadResult
     QString error;
 };
 
-/** Owns schema-v1 JSON parsing and QSaveFile atomic replacement. */
+/** Owns schema-v1/v2 JSON parsing and QSaveFile atomic replacement. */
 class EventCenterStore final
 {
 public:
-    static constexpr int kSchemaVersion = 1;
+    static constexpr int kSchemaVersion = 2;
 
     explicit EventCenterStore(QString filePath = {});
 

@@ -1,4 +1,5 @@
 #include "ui/EventCenterPanel.h"
+#include "ui/EventDetailDialog.h"
 
 #include <QAbstractItemView>
 #include <QComboBox>
@@ -41,6 +42,7 @@ QString typeText(SecurityEventType type)
     case SecurityEventType::LocalControlPublishFailed: return QObject::tr("控制请求本地发送失败");
     case SecurityEventType::LocalSafetyStopPublishFailed: return QObject::tr("停车请求本地发送失败");
     case SecurityEventType::LocalSafetyStopUnavailable: return QObject::tr("停车请求本地无法提交");
+    case SecurityEventType::LocalEvidenceSubsystemFault: return QObject::tr("本地证据子系统异常");
     case SecurityEventType::ManualIncident: return QObject::tr("人工标记事件");
     }
     return {};
@@ -97,11 +99,11 @@ EventCenterPanel::EventCenterPanel(QWidget *parent) : QWidget(parent)
     toolbar->addWidget(createButton_);
     layout->addLayout(toolbar);
 
-    table_ = new QTableWidget(0, 7, this);
+    table_ = new QTableWidget(0, 8, this);
     table_->setObjectName(QStringLiteral("eventCenterTable"));
     table_->setHorizontalHeaderLabels({
         tr("等级"), tr("状态"), tr("类型"), tr("资源"),
-        tr("首次发生"), tr("最近发生"), tr("次数")});
+        tr("首次发生"), tr("最近发生"), tr("次数"), tr("证据")});
     table_->setSelectionBehavior(QAbstractItemView::SelectRows);
     table_->setSelectionMode(QAbstractItemView::SingleSelection);
     table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -116,10 +118,13 @@ EventCenterPanel::EventCenterPanel(QWidget *parent) : QWidget(parent)
     resolveButton_ = new QPushButton(tr("解决人工事件"), this);
     closeButton_ = new QPushButton(tr("关闭"), this);
     forceCloseButton_ = new QPushButton(tr("未恢复但关闭…"), this);
+    detailButton_ = new QPushButton(tr("查看详情"), this);
     acknowledgeButton_->setObjectName(QStringLiteral("acknowledgeEventButton"));
     resolveButton_->setObjectName(QStringLiteral("resolveManualEventButton"));
     closeButton_->setObjectName(QStringLiteral("closeEventButton"));
     forceCloseButton_->setObjectName(QStringLiteral("forceCloseEventButton"));
+    detailButton_->setObjectName(QStringLiteral("eventDetailButton"));
+    actions->addWidget(detailButton_);
     actions->addStretch();
     actions->addWidget(acknowledgeButton_);
     actions->addWidget(resolveButton_);
@@ -147,6 +152,10 @@ EventCenterPanel::EventCenterPanel(QWidget *parent) : QWidget(parent)
     });
     connect(forceCloseButton_, &QPushButton::clicked,
             this, &EventCenterPanel::forceCloseSelected);
+    connect(detailButton_, &QPushButton::clicked,
+            this, &EventCenterPanel::openSelectedDetails);
+    connect(table_, &QTableWidget::cellDoubleClicked,
+            this, [this](int, int) { openSelectedDetails(); });
     updateActions();
 }
 
@@ -155,6 +164,32 @@ void EventCenterPanel::setEvents(const QList<SecurityEventRecord> &events,
 {
     events_ = events;
     rebuildTable();
+    refreshActiveDetail();
+}
+
+void EventCenterPanel::setEvidenceStorageState(bool writeEnabled,
+                                               const QString &error)
+{
+    evidenceWriteEnabled_ = writeEnabled;
+    evidenceStorageError_ = error;
+    refreshActiveDetail();
+}
+
+void EventCenterPanel::setEvidenceData(
+    const QList<EvidenceRecord> &records,
+    const QList<EvidenceCaptureAttempt> &attempts)
+{
+    evidenceRecords_ = records;
+    evidenceAttempts_ = attempts;
+    rebuildTable();
+    refreshActiveDetail();
+}
+
+void EventCenterPanel::setCaptureResources(
+    const QList<EventResourceDescriptor> &resources)
+{
+    captureResources_ = resources;
+    refreshActiveDetail();
 }
 
 void EventCenterPanel::setResources(
@@ -216,6 +251,11 @@ void EventCenterPanel::rebuildTable()
         table_->setItem(row, 4, new QTableWidgetItem(localTime(event.openedAtUtc)));
         table_->setItem(row, 5, new QTableWidgetItem(localTime(event.lastObservedAtUtc)));
         table_->setItem(row, 6, new QTableWidgetItem(QString::number(event.occurrenceCount)));
+        int evidenceCount = 0;
+        for (const auto &record : evidenceRecords_)
+            if (record.eventId == event.eventId) ++evidenceCount;
+        table_->setItem(row, 7,
+                        new QTableWidgetItem(QString::number(evidenceCount)));
         if (event.eventId == selectedId) table_->selectRow(row);
     }
     table_->resizeColumnsToContents();
@@ -238,6 +278,7 @@ void EventCenterPanel::updateActions()
         writable && isSystemEvent(event->eventType) &&
         (event->state == SecurityEventState::Open ||
          event->state == SecurityEventState::Acknowledged));
+    detailButton_->setEnabled(event != nullptr);
 }
 
 void EventCenterPanel::createManualIncident()
@@ -320,4 +361,45 @@ const SecurityEventRecord *EventCenterPanel::selectedEvent() const
         if (event.eventId == id) return &event;
     }
     return nullptr;
+}
+
+void EventCenterPanel::openSelectedDetails()
+{
+    const SecurityEventRecord *event = selectedEvent();
+    if (event == nullptr) return;
+    if (activeDetail_ != nullptr) {
+        activeDetail_->raise();
+        activeDetail_->activateWindow();
+        return;
+    }
+    auto *dialog = new EventDetailDialog(this);
+    activeDetail_ = dialog;
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->setModal(true);
+    dialog->setEvent(*event);
+    dialog->setCaptureResources(captureResources_);
+    dialog->setEvidence(evidenceRecords_, evidenceAttempts_);
+    dialog->setStorageState(writeEnabled_, evidenceWriteEnabled_,
+                            evidenceStorageError_);
+    connect(dialog, &EventDetailDialog::captureRequested,
+            this, &EventCenterPanel::captureEvidenceRequested);
+    connect(dialog, &EventDetailDialog::exportRequested,
+            this, &EventCenterPanel::exportEventRequested);
+    connect(dialog, &QObject::destroyed, this, [this] { activeDetail_ = nullptr; });
+    dialog->open();
+}
+
+void EventCenterPanel::refreshActiveDetail()
+{
+    if (activeDetail_ == nullptr) return;
+    const QString id = activeDetail_->eventId();
+    for (const auto &event : events_) {
+        if (event.eventId != id) continue;
+        activeDetail_->setEvent(event);
+        activeDetail_->setCaptureResources(captureResources_);
+        activeDetail_->setEvidence(evidenceRecords_, evidenceAttempts_);
+        activeDetail_->setStorageState(writeEnabled_, evidenceWriteEnabled_,
+                                       evidenceStorageError_);
+        return;
+    }
 }

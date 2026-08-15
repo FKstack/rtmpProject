@@ -17,6 +17,7 @@ class QGridLayout;
 class QKeyEvent;
 class QMouseEvent;
 class QPixmap;
+class QImage;
 class QResizeEvent;
 class QShowEvent;
 class VideoWidget;
@@ -222,6 +223,8 @@ public:
     );
     void unbindVideoStream(VideoWidget *videoWidget);
     void refreshRenderSnapshot();
+    /** Captures only the currently presented video viewport for evidence UI. */
+    [[nodiscard]] QImage capturePresentedVideoFrame(StreamId streamId);
     [[nodiscard]] QString activeRendererBackend() const;
     [[nodiscard]] RenderStatistics renderStatistics() const noexcept;
     [[nodiscard]] RenderRuntimeMetrics rendererRuntimeMetrics() const;
