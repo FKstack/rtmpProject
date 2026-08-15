@@ -2,8 +2,8 @@
 
 > 日期：2026-08-15
 > 最后更新：2026-08-16
-> 状态：产品与架构联合接受；Phase 1 与 Phase 2A 已实现并通过自动化门禁，现场验收待执行
-> 风险：本文档变更为 R0；后续控制策略、事件、证据和 SRS DVR 实现分别按 R2 评审
+> 状态：产品与架构联合接受；Phase 1、Phase 2A 与模块三已实现并通过自动化门禁，现场验收待执行
+> 风险：本文档变更为 R0；控制策略、事件和证据实现按 R2 评审，SRS DVR PoC 仍为后续 R2
 > 试点：单车、单桌面操作者、本地离线优先
 > 上位产品规划：[移动安防产品模块竞品调研与演进建议](../roadmap/mobile_security_product_module_recommendations.md)
 
@@ -141,7 +141,7 @@ sequenceDiagram
     Event->>Repo: QSaveFile 原子保存 schema v1
     Event-->>UI: 活动事件只读快照
     UI->>Evidence: 对事件请求截图
-    Evidence->>Evidence: 原子写文件并计算 SHA-256
+    Evidence->>Evidence: 原子写文件并记录大小
     Evidence->>Repo: 成功后登记 EvidenceRecord
     Evidence-->>UI: 成功或明确失败
 ```
@@ -261,7 +261,8 @@ enum class ControlAttemptOutcome {
 
 > 实施状态（2026-08-16）：Phase 2A 已落地 Qt Core-only `rtmp_monitor_event_center`、schema v1
 > `QSaveFile` 原子存储、应用层 `PlatformEventBridge`、八类自动/人工事件，以及默认隐藏的底部事件
-> Dock 和常驻状态徽标。Phase 2B 的事件详情、最小截图与通用处置备注仍未实施。
+> Dock 和常驻状态徽标。模块三进一步提供事件详情、最小截图、目录导出和第九类本地证据子系统事件，
+> 事件存储向后兼容读取 v1 并写入 schema v2；独立的通用处置备注编辑器仍未实施。
 
 ### 6.1 事件来源与语义
 
@@ -361,6 +362,11 @@ Waiting、Unavailable、应用首次启动时的 Disabled 不自动制造告警�
 
 ## 7. 模块三：截图证据与目录导出
 
+> 实施状态（2026-08-16）：已落地 Qt Core + Qt Gui 的 `rtmp_monitor_evidence`、schema v1 原子目录、
+> 有界截图任务池、事件详情、目录导出、启动一致性恢复和本地证据子系统事件。按产品决定不执行
+> SHA-256 或其他内容哈希完整性校验；系统只保证本次进程内的原子写入顺序、路径边界和启动时文件
+> 存在性检查，不宣称导出目录防篡改。
+
 ### 7.1 边界与所有权
 
 `EvidenceService` 接收 UI 已取得的 `QImage`、事件 ID 和值类型资源上下文。它不读取 QWidget、
@@ -386,7 +392,6 @@ renderer、播放器或 MQTT。UI 负责“拍什么”，证据模块负责“�
   "captureFailureReason": "",
   "relativePath": "objects/<prefix>/<uuid>.png",
   "sizeBytes": 0,
-  "sha256": "<lowercase-hex>",
   "actor": "<os-user-or-local-user>",
   "actorAssurance": "unverified-local"
 }
@@ -401,12 +406,12 @@ renderer、播放器或 MQTT。UI 负责“拍什么”，证据模块负责“�
 1. 使用专用、容量为 4 的 `QThreadPool`；并发运行最多 1 个写任务，其余排队。
 2. 接收前通过 `QStorageInfo` 检查证据根目录所在卷；可用空间低于 `max(2 GiB, 总容量 5%)` 时拒绝。
 3. PNG 使用 `QSaveFile` 写入临时文件并原子提交。
-4. 从已提交文件计算 SHA-256、大小和相对路径。
-5. 只有文件与哈希都成功后，才把 `EvidenceRecord` 原子提交到唯一事实源 `EvidenceCatalog`。
+4. 从已提交文件记录大小和相对路径；不计算或保存内容哈希。
+5. 只有文件原子提交成功后，才把 `EvidenceRecord` 原子提交到唯一事实源 `EvidenceCatalog`。
 6. Catalog 成功后再更新事件中的 `evidenceIds` 投影；投影提交失败不回滚 Catalog，由启动修复重建。
 7. Catalog 提交失败时保留文件为 orphan，并在下次启动扫描隔离；不把它显示为有效证据。
-8. 启动恢复先读取 Catalog，逐项验证规范路径、文件存在性和哈希，再按 eventId 重建所有事件投影；
-   未登记文件移入 orphan 隔离区，Catalog 中缺失/哈希不符的文件标记 unavailable 并产生平台事件，
+8. 启动恢复先读取 Catalog，逐项验证规范路径和文件存在性，再按 eventId 重建所有事件投影；
+   未登记文件移入 orphan 隔离区，Catalog 中缺失或路径不安全的文件标记 unavailable 并产生平台事件，
    不静默删除 Catalog 记录。
 9. 应用退出先停止接收，最多等待 2 秒；未开始任务取消，运行中任务允许完成原子文件但不访问已销毁 UI。
 
@@ -428,15 +433,15 @@ incident-<event-id>/
 ```
 
 - `manifest.json` 包含 manifest schema 版本、导出时间、事件 revision、操作者标签与
-  `actorAssurance`、事件快照、状态历史、证据记录和每个文件 SHA-256。
+  `actorAssurance`、事件快照、状态历史和证据记录；不包含文件内容哈希。
 - 控制审计只导出事件内显式保存的 `ControlAttemptSnapshot`；辅助时间窗筛选只能供操作者选择，不能
   自动认领未关联记录。所有快照保留 `attemptId` 和 `executionConfirmation=unavailable`，因此导出
   不受系统审计日志轮转影响。
 - 导出采用临时目录完成后再原子改名；目标已存在时创建新目录，不覆盖旧证据。
-- 最终目录暴露前重新计算全部文件哈希；任何不匹配都使导出失败，失败导出不得留下最终目录。
+- 最终目录暴露前确认全部复制和 manifest 原子提交成功；失败导出不得留下最终目录。
 - 导出成功与失败都写独立审计，包含 eventId、eventRevision、目标目录的脱敏表示和稳定失败原因。
-- UI 和 manifest 固定声明：这是“可重新计算哈希的本地完整性包”，未经加密、数字签名或可信时间戳，
-  不能证明来源真实性，也不是司法级防篡改证据。v1 不实现压缩、外部分享或自动上传。
+- UI 和 manifest 固定声明：这是本机事件资料目录，不执行内容哈希、加密、数字签名或可信时间戳，
+  不能证明文件未被修改、来源真实性或司法级防篡改。v1 不实现压缩、外部分享或自动上传。
 
 ## 8. 模块四：默认关闭的 SRS DVR PoC
 
@@ -506,15 +511,20 @@ SRS 重启、适配器重启、应用未运行和 DVR 关闭。PoC 完成前，�
 
 ### Phase 2B：事件详情、最小截图和处置备注
 
+> 当前状态：事件详情、最小截图入口和无有效画面失败登记已随模块三实现；通用处置备注编辑器延期。
+
 - 在同一个事件用户闭环中提供当前视频/心跳上下文、最小截图入口、无有效画面登记和处置说明。
-- 验收无画面时仍可确认和处置；成功截图记录真实捕获时间、画面新鲜度、播放状态、大小和哈希。
+- 验收无画面时仍可确认和处置；成功截图记录真实捕获时间、画面新鲜度、播放状态和大小。
 
 ### Phase 3：完整证据索引、目录导出和留存
 
+> 当前状态：schema v1 证据索引、目录导出、启动恢复、orphan 隔离、磁盘门禁和退出门禁已实现；
+> 默认策略是不自动删除证据。内容哈希、签名、可信时间戳和外部分享不在当前范围。
+
 - 将通用 QImage 写入从全屏窗口职责中提取到 evidence 边界，保留全屏截图 façade 和原用户行为。
-- 验收文件原子性、SHA-256、索引提交顺序、event/evidence/tombstone 引用一致性、orphan 隔离、
+- 验收文件原子性、索引提交顺序、event/evidence/tombstone 引用一致性、orphan 隔离、
   磁盘不足和退出中任务。
-- 导出后重新计算每个文件哈希并与 manifest 比对；每次成功或失败都进入审计。
+- 导出完成全部文件与 manifest 的原子提交后再发布最终目录；每次成功或失败都进入审计。
 
 ### Phase 4：SRS DVR PoC
 
@@ -530,7 +540,7 @@ SRS 重启、适配器重启、应用未运行和 DVR 关闭。PoC 完成前，�
 | 事件领域 | 去重、次数、非法转换、自动恢复、Resolved 后复发、系统事件不可人工伪造恢复、关闭后再发 |
 | 事件存储 | 无文件、正常读写、Unicode、损坏保留、高 schema 拒绝、5,000/180 天边界、证据 tombstone、原子失败 |
 | 证据写入 | 空图/过期帧拒绝、捕获时间、PNG/Catalog 原子性、每个提交点崩溃恢复、事件投影重建、orphan、磁盘阈值、队列容量、退出超时和销毁后回调 |
-| 导出 | 目录冲突、不覆盖、manifest schema/revision、控制快照不受日志轮转影响、导出审计、逐文件哈希复算、部分复制失败 |
+| 导出 | 目录冲突、不覆盖、manifest schema/revision、控制快照不受日志轮转影响、导出审计、无内容哈希声明、部分复制失败 |
 | SRS DVR | 默认关闭、分段、断流、重复/乱序 callback、路径越界、磁盘满、各进程重启和故障隔离 |
 | 跨层 | Windows Debug 全量 CTest、Release 构建、ARM64 RASTER/GLES3、ELF 依赖和层依赖扫描 |
 
@@ -546,23 +556,23 @@ SRS 重启、适配器重启、应用未运行和 DVR 关闭。PoC 完成前，�
 | 事件 | 同一活动键重复事件为 0；恢复后复发不丢失；非法状态转换为 0 |
 | 事件恢复 | 系统事件人工伪造恢复为 0；每次确认、复发、恢复和关闭均有时间、来源与 revision |
 | 持久化 | 崩溃、损坏和高版本文件不覆盖原文件；重启后活动事件恢复一致 |
-| 截图 | 空图或过期帧被明确拒绝；成功证据均有捕获时间、帧新鲜度、大小和哈希 |
+| 截图 | 空图或过期帧被明确拒绝；成功证据均有捕获时间、帧新鲜度和大小 |
 | 证据关联 | 有效证据找不到事件的比例为 0；事件淘汰后产生无解释 orphan 的比例为 0 |
-| 导出 | 文件哈希匹配率 100%；失败导出暴露最终目录为 0；每次导出均有审计 |
+| 导出 | 内容哈希校验声明为“不执行”；失败导出暴露最终目录为 0；每次导出均有审计 |
 | DVR PoC | 默认关闭；适配器故障不影响推拉流；重复收据不重复登记；时间覆盖误差有实际测量结果 |
 
 ## 12. 架构影响
 
-- **风险等级**：本文档交付 R0；未来各实施包均为 R2，且应逐阶段评审和验证。
+- **风险等级**：本文档交付 R0；Phase 1、Phase 2A 和模块三实现均按 R2 完成，后续 SRS DVR 仍按 R2 评审。
 - **职责变化**：控制门禁归纯策略；事件状态归 event_center；证据文件/索引/导出归 evidence；
   SRS callback 归独立适配器。现有 Controller 保留用例编排，UI 保留展示和意图。
 - **依赖变化**：未来仅新增从应用组合/UI 到新业务边界的合法依赖，不增加 media/render/device_control/server
   反向依赖；v1 不引入 Qt SQL/SQLite、ZIP 或新云服务。
 - **契约与生命周期**：MQTT、心跳、RTMP、CLI 和现有持久化 schema 不变；新状态在 Qt owner 线程，
   证据 I/O 有界且可停止，SRS callback 为独立进程。
-- **当前验证**：Phase 1 与 Phase 2A 已按 R2 实现；当前 Windows Debug CTest 为 34/34，Windows
-  Release、ARM64 RASTER/GLES3 构建及交叉依赖门禁通过。真实车辆动作和 ARM 真机显示仍待人工
-  验收；Phase 2B、Phase 3 和 Phase 4 尚未实施。
+- **当前验证**：Phase 1、Phase 2A 与模块三已按 R2 实现；当前 Windows Debug CTest 为 36/36，
+  Windows Release、ARM64 RASTER/GLES3 全目标构建、AArch64 ELF/动态依赖审计和 QEMU 逻辑测试
+  通过。真实车辆动作、ARM 真机显示和现场证据流程仍待人工验收；Phase 4 尚未实施。
 
 ## 13. 联合评审结论
 
@@ -571,5 +581,5 @@ SRS 重启、适配器重启、应用未运行和 DVR 关闭。PoC 完成前，�
 画面新鲜度、诚实文案、事件复发、控制快照、event/evidence/tombstone 留存一致性、EvidenceCatalog
 唯一事实源、逐提交点崩溃恢复和量化验收指标。
 
-联合接受后 Phase 1 与 Phase 2A 已按 R2 实现并通过上述自动化门禁；这仍不表示车辆已执行命令，
-也不表示 Phase 2B～4 或任何现场验收已经完成。
+联合接受后 Phase 1、Phase 2A 和模块三已按 R2 实现并通过上述自动化门禁；这仍不表示车辆已执行
+命令，也不表示证据文件未被修改、Phase 4 或任何现场验收已经完成。

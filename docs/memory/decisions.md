@@ -473,7 +473,7 @@
 ## ADR-031 不改设备契约时先建设单车本地控制、事件与证据闭环
 
 - 日期：2026-08-15
-- 状态：已接受；Phase 1 与 Phase 2A 已实施
+- 状态：已接受；Phase 1、Phase 2A 与模块三已实施
 - 背景：长期移动安防路线优先需要命令 ACK、鉴权、多车、事件和证据，但当前约束明确禁止修改 MQTT
   控制/心跳返回、设备固件和硬件。现有客户端只能观察本地 publish、MQTT 会话、心跳、RTMP 和 SRS
   状态，不能证明设备执行结果，也不能可靠提供多车、遥测、地图或巡逻输入。
@@ -500,7 +500,12 @@
   按 R2 落地：新增 Qt Core-only `event_center`、schema v1 原子 JSON、八类事实事件、应用只读观察桥、
   活动事件去重/恢复/复发/关闭和默认隐藏的事件 Dock/状态徽标；Windows Debug CTest 34/34
   （131.13 秒）、Windows Release、ARM64 RASTER/GLES3 全目标、AArch64 依赖审计及 QEMU 逻辑测试
-  通过。Phase 2B、证据、导出和 SRS DVR 仍未实施。
+  通过。模块三于 2026-08-16 按 R2 落地：新增 Qt Core + Qt Gui 的 `evidence` 边界、schema v1
+  EvidenceCatalog、有界截图 I/O、事件详情、无有效画面登记、目录导出、启动一致性恢复，以及
+  event schema v1 到 v2 的兼容迁移和证据投影。按产品决定不计算或比对 SHA-256 等内容哈希；仅验证
+  原子提交顺序、规范路径和文件存在性，并在 UI/manifest 明确不提供防篡改保证。Windows Debug
+  CTest 36/36、Windows Release、ARM64 RASTER/GLES3 全目标、AArch64 依赖审计和 QEMU 逻辑测试
+  通过。SRS DVR 仍未实施。
 - 相关文件：`docs/architecture/mobile_security_single_vehicle_operator_loop_design.md`、
   `docs/roadmap/mobile_security_product_module_recommendations.md`
 

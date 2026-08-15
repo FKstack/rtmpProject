@@ -1,5 +1,15 @@
 # RtmpMonitor 当前项目快照
 
+> 模块三实施状态（2026-08-16）：已从最新 `v0.1.0-alpha.1` 基线创建
+> `codex/module3-evidence-export`，新增 Qt Core + Qt Gui 的 `rtmp_monitor_evidence`、schema v1
+> `QSaveFile` 原子证据目录、有界单线程截图写入、事件详情、无有效画面失败登记、事件目录导出、
+> 启动一致性恢复和本地证据子系统事件。事件存储向后兼容 v1 并写入 schema v2；EvidenceCatalog
+> 是关联唯一事实源，事件 `evidenceIds` 是可重建投影。按产品决定不执行 SHA-256 或其他内容哈希
+> 完整性校验，UI 与 manifest 明确不提供防篡改、来源真实性或可信时间戳保证。Windows Debug 全目标
+> 与 CTest 36/36、Windows Release 全目标、ARM64 RASTER/GLES3 全目标、AArch64 ELF/动态依赖审计和
+> QEMU 逻辑测试通过。MQTT/心跳/RTMP/FFmpeg/media/render/硬件契约未改；SRS DVR 仍未实施，
+> ARM 真机和现场证据流程待人工验收。
+
 > 模块二 Phase 2A 实施状态（2026-08-16）：已从最新 `v0.1.0-alpha.1` 基线创建
 > `codex/module2-event-center`，新增 Qt Core-only `rtmp_monitor_event_center`、schema v1 `QSaveFile`
 > 原子 JSON、八类 MQTT/心跳/RTMP/SRS/本地控制/人工事实事件、应用层只读 `PlatformEventBridge`，
@@ -8,7 +18,8 @@
 > 不影响播放和安全停车。稳定资源只保存 camera/device ID 或脱敏 SHA-256；不保存完整 URL、Broker、
 > payload 或凭据。Windows Debug 全目标与 CTest 34/34（131.13 秒）、Windows Release 全目标、ARM64
 > RASTER/GLES3 全目标、AArch64 ELF/动态依赖审计和 QEMU 逻辑测试通过；RASTER 未引入 GL/EGL/GLES。
-> Phase 2B 事件详情/截图、证据、导出和 SRS DVR 未实施；自动化仍不证明 Broker/设备接收或车辆执行。
+> 该记录描述模块二交付时点；事件详情、截图证据和目录导出后续已由上方模块三完成，SRS DVR 未实施。
+> 自动化仍不证明 Broker/设备接收或车辆执行。
 
 > 模块一实施状态（2026-08-15）：已从固化并推送的 `v0.1.0-alpha.1` 基线创建
 > `codex/module1-control-safety`，落地 Qt Core-only `rtmp_monitor_control_policy`、应用层
