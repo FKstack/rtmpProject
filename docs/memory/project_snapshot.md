@@ -1,12 +1,21 @@
 # RtmpMonitor 当前项目快照
 
+> 模块一实施状态（2026-08-15）：已从固化并推送的 `v0.1.0-alpha.1` 基线创建
+> `codex/module1-control-safety`，落地 Qt Core-only `rtmp_monitor_control_policy`、应用层
+> `DeviceControlTransport`/MQTT 适配器、统一车辆移动解锁、100 ms RTMP/真实呈现帧新鲜度检查、
+> 首次失效单次停车、原目标待补发快照和诚实控制审计。`MqttDeviceClient` payload、心跳、Topic、QoS、
+> publish 返回契约以及 RTMP/FFmpeg/media/render 链路未修改；事件中心、证据和 SRS DVR 未实施。
+> Windows Debug 全量 CTest 31/31（115.31 秒）、Windows Release 全构建、ARM64 RASTER/GLES3 全目标
+> 构建、AArch64 ELF/依赖审计与 QEMU 逻辑测试通过。受控车辆台架的“按住移动、释放停车”、ARM 真机
+> QPA/GPU/视频仍待人工验证；自动化结果只证明本地门禁与提交语义，不证明 Broker 或设备接收/执行。
+
 > 单车值守闭环设计状态（2026-08-15）：在不改变 MQTT 控制/心跳返回、Topic、QoS、设备固件和硬件
 > 的前提下，已形成 `docs/architecture/mobile_security_single_vehicle_operator_loop_design.md` 架构
 > 基线，并经产品经理会话两轮只读评审最终接受，记录为 ADR-031。当前可实施顺序收敛为本地控制安全
 > 与诚实审计、基于现有 MQTT/心跳/RTMP/SRS 信号的平台
 > 事件、截图证据与目录导出，以及默认关闭的 SRS DVR PoC。命令 ACK、多车、TLS/RBAC、遥测、地图、
 > 巡逻、SOS、AI、对讲和动态码率明确延期，不增加占位生产接口。该文档定义未来 R2 边界与门禁，
-> 本轮没有修改生产代码、CMake、运行配置、公共协议或线程生命周期；联合接受不代表功能已实现。
+> 设计评审本轮当时没有修改生产代码；其 Phase 1 后续实施状态与验证证据以上方最新记录为准。
 
 > 移动安防产品规划状态（2026-08-15）：已依据当前源码/CMake/测试、现有单车 MQTT 心跳与控制边界，
 > 以及海康 HikCentral、大华 DSS、Axis Camera Station、Milestone XProtect、Knightscope/SMP 等公开

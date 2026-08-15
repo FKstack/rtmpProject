@@ -1,7 +1,7 @@
 # RtmpMonitor 单车值守闭环架构设计
 
 > 日期：2026-08-15
-> 状态：产品与架构联合接受，按 Phase 0～4 分阶段实施
+> 状态：产品与架构联合接受；Phase 1 已实现并通过自动化门禁，受控车辆台架验收待执行
 > 风险：本文档变更为 R0；后续控制策略、事件、证据和 SRS DVR 实现分别按 R2 评审
 > 试点：单车、单桌面操作者、本地离线优先
 > 上位产品规划：[移动安防产品模块竞品调研与演进建议](../roadmap/mobile_security_product_module_recommendations.md)
@@ -194,7 +194,7 @@ enum class ControlAttemptOutcome {
 | StartStream | 必须 | 必须 | 必须 | 不需要 | 保持现有启动语义 |
 | StopStream | 必须 | 必须 | 不需要 | 不需要 | 绕过解锁和离线门禁 |
 | Move/Turn | 必须 | 必须 | 必须 | 必须 | 只有完整本地条件成立才提交 |
-| StopCar | 必须 | 可提交时必须；断连时记录不可用 | 不需要 | 不需要 | 始终绕过普通门禁；能提交则尝试发送，不能提交则产生 Critical 本地安全事件 |
+| StopCar | 必须 | 可提交时必须；断连时记录不可用 | 不需要 | 不需要 | 始终绕过普通门禁；能提交则尝试发送，不能提交则产生结构化控制记录和 Critical 系统日志 |
 
 本阶段不增加未经硬件验证的固定运动超时，也不周期性重发移动命令。现有“按住移动、释放停车”
 保持不变；策略层的收益是集中表达门禁和失效收敛，而不是虚构设备侧 dead-man 能力。
@@ -234,6 +234,26 @@ enum class ControlAttemptOutcome {
 控制目标切换顺序固定为：冻结旧目标输入 → 将状态置为 Locked/Suspended → 对旧目标尝试 StopCar 并
 记录结果 → 清除旧目标运动状态 → 再安装新目标。不得先覆盖目标字段后才停车，否则审计和停车可能
 错误关联到新目标。
+
+### 5.4 Phase 1 实施状态（2026-08-15）
+
+- 已新增仅依赖 Qt Core 的 `rtmp_monitor_control_policy`，`ControlSessionGuard` 是非 QObject 纯状态机；
+  层依赖门禁同时禁止该模块依赖 app/device_control/media/render/ui，也禁止现有底层模块反向包含它。
+- 应用层新增 `DeviceControlTransport` 测试端口及 MQTT 适配器。适配器只转发现有连接、发布和只读
+  信号；`MqttDeviceClient` 的 payload、Topic、QoS、信号和 publish 返回契约未修改。
+- `LatestFrameMailbox` 记录最近一次真实新帧呈现的本地单调时钟年龄，`clear()` 后恢复为无帧；
+  `StreamConnectionController` 只读组合每路 Playing 状态和帧龄，不改变解码、渲染或全屏画布。
+- 鼠标摇杆、键盘、流按钮和停车按钮均由应用组合根附加明确来源后进入同一 Controller/Guard。
+  输入模式切换只释放持键，不再拥有独立解锁真值；停车按钮有目标即可触发本地尝试。
+- Controller 每 100 ms 检查已解锁目标。目标切换、MQTT/心跳/RTMP/画面失效、应用失焦、全屏切换
+  和退出只在首次失效时尝试一次停车；断线停车保留原目标快照，连接恢复后补发且不会自动重新解锁。
+- 控制尝试审计已增加稳定 UUID、目标/在线/MQTT/播放/帧龄快照、来源、稳定原因和三种本地结果，
+  固定写入 `executionConfirmation=unavailable` 与 `actorAssurance=unverified-local`，不写完整 URL、
+  Broker 或原始 payload。事件中心尚未实施，因此停车不可提交只写结构化审计和 Critical 系统日志。
+- 自动化验证包括 Guard 表驱动边界、Controller/Fake Transport、UI/输入隔离、呈现帧龄、审计脱敏和
+  原 MQTT 特征测试。Windows Debug 全量 CTest 31/31、Windows Release 全构建、ARM64 RASTER/GLES3
+  全目标构建、AArch64 ELF/依赖审计和 QEMU 逻辑测试通过。真实 QPA/GPU/视频/车辆动作仍须人工验收，
+  自动化结果不表示设备已经执行命令。
 
 ## 6. 模块二：平台事件中心
 
@@ -528,8 +548,8 @@ SRS 重启、适配器重启、应用未运行和 DVR 关闭。PoC 完成前，�
   反向依赖；v1 不引入 Qt SQL/SQLite、ZIP 或新云服务。
 - **契约与生命周期**：MQTT、心跳、RTMP、CLI 和现有持久化 schema 不变；新状态在 Qt owner 线程，
   证据 I/O 有界且可停止，SRS callback 为独立进程。
-- **当前验证**：设计依据当前源码、CMake 和 `ctest -N` 的 29 项测试清单核对；本轮不修改生产代码，
-  因此不把文档校验表述为功能测试通过。
+- **当前验证**：Phase 1 已按 R2 实现并通过 31 项 Windows Debug CTest、Windows Release、ARM64
+  RASTER/GLES3 构建与交叉依赖门禁；真实车辆动作和 ARM 真机显示仍待人工验收。Phase 2～4 尚未实施。
 
 ## 13. 联合评审结论
 
@@ -538,4 +558,5 @@ SRS 重启、适配器重启、应用未运行和 DVR 关闭。PoC 完成前，�
 画面新鲜度、诚实文案、事件复发、控制快照、event/evidence/tombstone 留存一致性、EvidenceCatalog
 唯一事实源、逐提交点崩溃恢复和量化验收指标。
 
-联合接受仅表示当前设计可以按 R2 分阶段实施，不表示任何新生产功能已经实现、构建或通过现场验收。
+联合接受后 Phase 1 已按 R2 实现并通过上述自动化门禁；这仍不表示车辆已执行命令，也不表示
+Phase 2～4 或任何现场验收已经完成。

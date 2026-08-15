@@ -493,8 +493,10 @@
   现有 schema 不变。事件 v1 使用 Qt Core + QSaveFile；证据 I/O 有界且可停止；SRS DVR 默认关闭并
   使用独立回环适配器。ACK、多车、TLS/RBAC、遥测、地图、巡逻、SOS、AI、对讲和动态码率继续延期。
 - 验证证据：设计依据当前源码、CMake 和 29 项 CTest 清单核对；产品经理会话完成两轮只读评审并
-  明确“最终接受，可记录 ADR-031”。本轮只修改文档，未运行新功能构建、测试、SRS DVR 或真机验收；
-  每个实施阶段仍必须按 R2 门禁独立验证。
+  明确“最终接受，可记录 ADR-031”。Phase 1 已于 2026-08-15 按 R2 落地：新增 Qt Core-only
+  `control_policy`、应用 Transport 端口、真实呈现帧观察、共享移动解锁、首次失效停车/待补发和诚实
+  审计；Windows Debug CTest 31/31、Windows Release、ARM64 RASTER/GLES3 构建及交叉依赖门禁通过。
+  MQTT/RTMP/硬件契约未变，真实车辆动作和 ARM 真机显示仍待人工验收；Phase 2～4 尚未实施。
 - 相关文件：`docs/architecture/mobile_security_single_vehicle_operator_loop_design.md`、
   `docs/roadmap/mobile_security_product_module_recommendations.md`
 
