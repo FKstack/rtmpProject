@@ -446,6 +446,58 @@
   `src/common/device_control/MqttSettingsRepository.cpp`、
   `docs/architecture/saved_stream_and_mqtt_device_control.md`
 
+## ADR-030 设备状态使用独立 Topic 与本地单调时钟，控制目标绑定稳定 StreamId
+
+- 日期：2026-08-15
+- 状态：已采用
+- 背景：预研设备每 15 秒在状态 Topic 上报带 `client_id` 的心跳，而启动推流需要把用户当前 RTMP
+  URL 放入 `data.url`。Broker 会话状态不能代表设备在线，且现有车辆控制 payload 没有目标字段。
+- 决策：单个 Paho session 同时订阅 `device/control` 和 `device/status`，两项 SUBACK 后才 Connected；
+  业务层以本地单调时钟跟踪每个设备 ID，30 秒无心跳离线。RTMP URL 末段映射设备 ID，稳定
+  StreamId 保存当前控制目标；`startStream` 使用该绑定 URL，观察 UI 对端点脱敏。状态缓存有界为
+  64，Broker/状态 Topic 切换清 session，短暂重连按 30 秒规则自然过期。
+- 原因：Paho 只拥有网络资源和回调代次，心跳业务规则可纯测试；稳定 StreamId 不受拖拽布局影响；
+  单调时钟避免设备时间戳回退或电脑时钟校准造成误判；安全停止不应被心跳过期阻断。
+- 替代方案：用设备 timestamp 与电脑时间比较；MQTT Connected 即设备 Online；在 Paho 回调中直接
+  改 QWidget；为每张卡创建 Paho client；在现有消息中擅自添加 `client_id`。这些方案分别存在时钟、
+  语义、线程、资源或协议兼容问题。
+- 影响：MQTT 本机配置 schema 从 v1 升到 v2并提供只读迁移；`MqttConnectionOptions` 增加
+  `statusTopic`，`MqttDeviceClient` 增加定向 start 发布入口。媒体、渲染、音频、保存推流 schema、
+  CLI 和线程模型不变。由于车辆控制消息仍无目标字段，同一控制 Topic 只能部署一台受控设备。
+- 验证证据：Windows Debug CTest 29/29、Release 全构建、ARM64 RASTER/GLES3 全目标交叉构建通过；
+  Fake Broker 覆盖双订阅、拒绝、重连和状态 Topic，纯逻辑测试覆盖解析、30 秒边界、恢复和缓存上限。
+- 相关文件：`include/common/device_control/`、`src/common/device_control/`、
+  `src/common/app/DeviceControlController.cpp`、`src/common/app/StreamConnectionController.cpp`、
+  `docs/architecture/saved_stream_and_mqtt_device_control.md`
+
+## ADR-031 不改设备契约时先建设单车本地控制、事件与证据闭环
+
+- 日期：2026-08-15
+- 状态：已接受、分阶段实施
+- 背景：长期移动安防路线优先需要命令 ACK、鉴权、多车、事件和证据，但当前约束明确禁止修改 MQTT
+  控制/心跳返回、设备固件和硬件。现有客户端只能观察本地 publish、MQTT 会话、心跳、RTMP 和 SRS
+  状态，不能证明设备执行结果，也不能可靠提供多车、遥测、地图或巡逻输入。
+- 决策：当前试点限定单车、单桌面操作者和本地离线优先，按“控制安全/诚实审计 → 事件领域与最小
+  截图 → 完整证据/导出 → 默认关闭的 SRS DVR PoC”分阶段实施。控制状态归纯策略，StopCar 绕过
+  普通门禁；断连无法提交和 publish 失败分别产生 Critical 本地安全事件。事件只使用现有可观察
+  信号，系统恢复不得由操作者伪造。EvidenceCatalog 是证据唯一事实源，事件 evidenceIds 为可重建
+  投影；事件留存通过 tombstone 保证证据可解释。
+- 原因：该范围能形成诚实、可审计、可逐步验收的单车闭环，同时不修改设备协议或媒体底座。纯策略、
+  事件领域、证据 I/O 和 SRS callback 具有独立变化原因、状态、生命周期和测试接缝，不能继续塞入
+  `DeviceControlController`、`MainWindow` 或 media/render。
+- 替代方案：先做多车/地图 UI；用 QoS 0 publish 或心跳推断设备执行；把事件状态写入普通日志；让
+  Qt 主进程承载 SRS HTTP callback；为事件 v1 立即引入 SQLite。它们分别会制造假能力、错误语义、
+  不可查询业务状态、额外进程内协议生命周期或未验证的跨平台依赖。
+- 影响：未来新增合法的 `app/composition -> control_policy/event_center/evidence` 依赖，media、render、
+  device_control 和 server 不反向依赖新模块。MQTT payload、心跳、Topic/QoS、RTMP/FFmpeg、CLI 和
+  现有 schema 不变。事件 v1 使用 Qt Core + QSaveFile；证据 I/O 有界且可停止；SRS DVR 默认关闭并
+  使用独立回环适配器。ACK、多车、TLS/RBAC、遥测、地图、巡逻、SOS、AI、对讲和动态码率继续延期。
+- 验证证据：设计依据当前源码、CMake 和 29 项 CTest 清单核对；产品经理会话完成两轮只读评审并
+  明确“最终接受，可记录 ADR-031”。本轮只修改文档，未运行新功能构建、测试、SRS DVR 或真机验收；
+  每个实施阶段仍必须按 R2 门禁独立验证。
+- 相关文件：`docs/architecture/mobile_security_single_vehicle_operator_loop_design.md`、
+  `docs/roadmap/mobile_security_product_module_recommendations.md`
+
 ## ADR-XXX 标题
 
 - 日期：

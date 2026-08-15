@@ -13,6 +13,7 @@
 ## 1. 路线规划
 
 - [项目计划](roadmap/project_plan.md)：项目目标、阶段安排、验收标准和当前进度。
+- [移动安防产品模块竞品调研与演进建议](roadmap/mobile_security_product_module_recommendations.md)：基于当前 RTMP/MQTT 实现与海康、大华、Axis、Milestone、移动巡逻机器人公开能力，给出不改 RTMP 底座的模块优先级、目标架构和分期门禁。
 - [v0.1.0-alpha.1 版本冻结与交付任务清单](roadmap/v0.1.0_alpha1_release_handoff_checklist.md)：源码交接、Windows 测试包、ARM 真机和最终发布门禁。
 
 ## 2. 通用指南
@@ -21,6 +22,7 @@
 
 - [渐进式架构解耦设计与实施过程](architecture/progressive_decoupling_architecture.md)：详细说明耦合识别、优先级、逐阶段迁移、拆分类职责、线程/组件/CMake 架构图、收益、遗留边界和评审门禁。
 - [保存推流与单车 MQTT 控制：设计、使用与测试指南](architecture/saved_stream_and_mqtt_device_control.md)：新增类职责、模块接入、配置与协议、界面操作、本地自动/手工测试、公网与实车安全边界及故障排查。
+- [单车值守闭环架构设计](architecture/mobile_security_single_vehicle_operator_loop_design.md)：在不改 MQTT 返回值和硬件的约束下，定义本地控制安全、平台事件、截图证据与可选 SRS DVR PoC 的职责、契约、生命周期和门禁。
 - [当前视频渲染架构审查](architecture/current_rendering_architecture_review.md)：以当前源码和构建边界审查渲染链路。
 - [GoObject PDF 渲染框架映射](architecture/pdf_rendering_framework_mapping.md)：外部渲染框架与项目实现的逐项映射。
 - [产品级视频渲染框架](architecture/video_rendering_framework.md)：共享画布、YUV/OpenGL、CPU 回退和全屏资源边界。

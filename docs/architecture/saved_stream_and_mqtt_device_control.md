@@ -106,8 +106,8 @@ MQTT 称为“很安全”。没有 TLS、身份认证、来源字段、设备�
 
 1. **保存常用 RTMP 推流**：把常用名称和完整 `rtmp://` 地址保存到本机，可以手工连接，
    也可以选择在 RtmpMonitor 启动时自动接入。
-2. **单车 MQTT 控制**：通过一个全局 MQTT Broker 和一个 Topic，向一台遥控车发送启动推流、
-   停止推流、前进、后退、左转、右转和停车命令。
+2. **单受控设备 MQTT 控制与心跳状态**：通过一个全局 MQTT Broker、控制 Topic 和状态 Topic，
+   向一台设备发送推流/车辆命令，并按设备 ID 的心跳显示视频卡在线状态。
 
 这两个能力没有被塞进媒体播放器或 `MainWindow`：保存列表有自己的 repository 和用例控制器，
 MQTT 有自己的协议、配置、客户端和控制器。现有 FFmpeg 解码、重连、渲染和 RTMP 连接流程没有
@@ -120,26 +120,31 @@ MQTT 有自己的协议、配置、客户端和控制器。现有 FFmpeg 解码�
 | “保存的推流”中的“连接/断开” | 本地 RtmpMonitor | 添加或移除本地 RTMP 播放连接 |
 | “设备控制”中的“启动推流/停止推流” | MQTT 设备 | 只向小车提交控制命令 |
 
-当前**没有**把 MQTT 启停推流与本地播放器自动联动。点击“启动推流”后，如果希望在本地看到画面，
-仍需通过保存列表、`--url`、部署摄像头配置或“添加新的连接”接入相应 RTMP 地址。
+添加 RTMP 连接后，播放器会立即拉流并按原有策略重试；此时设备可能尚未推送。用户单击视频卡选择
+控制目标，再点击“启动推流”，应用把该卡当前的完整运行时 URL 写入 `startStream.data.url`。设备
+开始推送后，现有播放器会自动恢复，不创建第二条播放连接。
 
 ### 2.1 当前支持范围
 
 - 最多保存 16 条 RTMP 档案。
 - 每条档案包含稳定 UUID、显示名称、完整 RTMP URL 和自动接入开关。
-- 只维护一个 MQTT 客户端、一个 Broker、一个 Topic 和一个控制目标。
+- 只维护一个 MQTT 客户端、一个 Broker、控制 Topic `device/control`、状态 Topic `device/status`
+  和一个当前控制目标；两个 Topic 的 QoS 均为 0。
 - MQTT 使用明文 TCP、无用户名密码、QoS 0、retain false。
-- MQTT 连接成功后订阅与发布相同的 Topic；SUBACK 成功后才进入“已连接”。
+- MQTT 连接成功后同时订阅控制和状态 Topic；两项 SUBACK 都成功后才进入“已连接”。
+- RTMP URL 最后一个非空路径段是设备 ID；每张视频卡独立显示等待心跳、在线、离线或状态不可用。
+- 心跳到达立即在线；使用客户端单调时钟连续 30 秒未收到同一 ID 心跳后离线。
 - 面板只观察最近 20 条会话消息，不将收到的消息执行成本地动作。
 - 方向键采用“按住行驶、松开停车”。
 - 面板隐藏、应用失活、全屏切换、鼠标捕获丢失和应用退出时触发桌面端停车保护。
 
 ### 2.2 本轮明确没有实现
 
-- 多车选择、`deviceId` 或每车独立 Topic。
+- 携带目标 `client_id` 的多设备定向控制或每设备独立 Topic。界面可识别多张卡的状态，但当前控制
+  payload 没有目标字段，同一 Broker/控制 Topic 只能部署一台真正受控设备。
 - 加速、减速、速度档位、`capture` 或 `reset`。
 - TLS、用户名密码、证书或其他鉴权方式。
-- 设备回执 Topic 和设备执行结果确认。
+- 设备命令执行回执；`device/status` 心跳只证明设备最近上报在线，不证明命令执行成功。
 - MQTT 启停推流与本地播放器自动添加/删除连接。
 - 固件断网看门狗认证。
 
@@ -177,6 +182,8 @@ flowchart TD
     MqttRepo["MqttSettingsRepository<br/>device_control / Qt Core"]
     MqttClient["MqttDeviceClient<br/>device_control / Paho MQTT C"]
     Codec["DeviceCommandCodec<br/>协议 JSON"]
+    Heartbeat["DeviceHeartbeatCodec<br/>心跳 JSON 解析"]
+    Presence["DevicePresenceTracker<br/>有界在线状态与 30 秒超时"]
     SavedUI["SavedStreamsDialog<br/>SavedStreamEditorDialog"]
     ControlUI["DeviceControlPanel<br/>桌面控制台与状态展示"]
     Joystick["VirtualJoystickWidget<br/>鼠标坐标、死区与迟滞"]
@@ -204,6 +211,10 @@ flowchart TD
     DeviceController --> MqttRepo
     DeviceController --> MqttClient
     MqttClient --> Codec
+    DeviceController --> Heartbeat
+    DeviceController --> Presence
+    ConnectionController -->|设备 ID 与控制目标| DeviceController
+    Presence -->|每卡在线状态| ConnectionController
 ```
 
 图中的箭头表示编译期或直接调用依赖。`device_control` 没有指向 UI、媒体或渲染；
@@ -283,13 +294,16 @@ sequenceDiagram
 | --- | --- | --- | --- |
 | `DeviceCommand` | 七种设备命令枚举 | 避免 UI 和网络层传递脆弱字符串 | JSON 或按钮布局 |
 | `MqttConnectionState` | Disabled、Disconnected、Connecting、Subscribing、Connected、Reconnecting、Error | 明确区分 CONNACK 与 SUBACK，未订阅成功时不误启用控制 | Paho 资源所有权 |
-| `MqttConnectionOptions` | enabled、Broker、Topic、keepalive | 单目标连接配置 | 每车配置或用户凭据 |
+| `MqttConnectionOptions` | enabled、Broker、控制 Topic、状态 Topic、keepalive | 单会话连接配置 | 每车配置或用户凭据 |
+| `DeviceHeartbeat` / `DeviceHeartbeatCodec` | 校验 `heartbeat`、`client_id`、设备时间戳并记录本地接收时刻 | 业务 JSON 解析不进入 Paho 回调或 UI | 用设备时间戳判断 PC 端超时 |
+| `DevicePresenceTracker` | Qt 所有者线程中的 30 秒超时、64 项有界缓存、会话清理和状态信号 | 在线规则和网络 session 生命周期可分别测试 | Paho 资源、视频卡或车辆命令 |
+| `DeviceIdentity` | 从已校验 RTMP URL 的末段提取合法设备 ID | URL/ID 规则集中，避免 UI 和控制器各自猜测 | 保存 Broker 或建立媒体连接 |
 | `MqttObservedMessage` | Topic、最多 4096 字节的原始 payload、接收时间和原始长度 | 网络接收契约不依赖 QWidget，且能明确表达截断 | 识别发送者、解析或执行业务动作 |
 | `DeviceCommandCodec` | 命令到紧凑 UTF-8 JSON 的确定性映射 | 协议大小写和字段可做纯逻辑契约测试 | 网络连接、当前时间来源 |
 | `MqttSettingsLoadResult` | 设置、错误和文件存在状态 | 区分缺省配置与损坏配置 | 自动覆盖损坏文件 |
-| `MqttSettingsRepository` | schema v1、地址/Topic 校验、原子保存 | 配置安全边界集中管理 | Paho 连接和 UI 提示 |
+| `MqttSettingsRepository` | schema v2、地址/双 Topic 校验、v1 迁移和原子保存 | 配置安全边界集中管理 | Paho 连接和 UI 提示 |
 | `MqttDeviceClient` | 唯一 `MQTTAsync` session、订阅、发布、重连、有界接收 inbox、销毁和 callback generation | 网络线程与资源生命周期需要单一所有者 | QWidget、车辆运动语义、本地播放 |
-| `DeviceControlController` | 用户命令映射、运动状态、待停车状态、配置切换、日志 | “何时必须停车”属于应用用例，不属于 Paho 或按钮 | JSON 编码、方向键绘制、FFmpeg |
+| `DeviceControlController` | 组合当前 StreamId/设备 ID/URL、在线状态、用户命令、待停车状态和配置切换 | “控制哪张卡、何时允许启动或移动”属于应用用例 | Paho session、心跳 JSON 细节、FFmpeg |
 | `VirtualJoystickWidget` | 鼠标捕获、摇杆帽位置、20% 死区、四向量化、约 10° 方向迟滞和 120 ms 回中动画 | 连续鼠标坐标与 MQTT 命令是不同变化原因；单独控件可精确测试边界抖动和释放停车 | Controller、MQTT session、速度或斜向协议 |
 | `DeviceControlInputRouter` | 键盘模式、显式解锁、当前按键集合、最后按下顺序和快捷键作用域 | 应用级键盘事件不能塞入面板或 `MainWindow`；单独路由器可验证文本框、模态窗口和失焦行为 | MQTT、车辆运动真值、按键持久化或自定义改键 |
 | `DeviceControlPanel` | 桌面卡片布局、模式选择、状态展示、推流/停车意图、最近 20 条观察消息和设置入口 | 控件可独立验证离线禁用、焦点、布局和显示上限 | 直接调用 Paho、持有键盘集合、写配置或执行收到的 JSON |
@@ -311,11 +325,16 @@ sequenceDiagram
     Paho->>Broker: CONNECT
     Broker-->>Paho: CONNACK 0
     Paho-->>Client: connected callback
-    Client->>Paho: SUBSCRIBE(device/control, QoS 0)
-    Paho->>Broker: SUBSCRIBE
-    Broker-->>Paho: SUBACK
+    Client->>Paho: SUBSCRIBE(device/control + device/status, QoS 0)
+    Paho->>Broker: 双 Topic SUBSCRIBE
+    Broker-->>Paho: 双项 SUBACK
     Paho-->>Client: subscribe callback
-    Client-->>Controller: Connected（此时才启用按钮）
+    Client-->>Controller: Connected（两项均成功）
+
+    Broker-->>Paho: PUBLISH device/status heartbeat
+    Paho-->>Client: 有界 inbox + session generation
+    Client-->>Controller: messageReceived
+    Controller->>Controller: 解析心跳并按本地单调时钟更新状态
 
     User->>Input: 拖动摇杆或按下已解锁的 W / ↑
     Input->>Panel: commandPressed(MoveForward)
@@ -361,11 +380,11 @@ Broker 错误地覆盖新连接状态。Paho 工作线程中的接收路径每�
 
 ### 5.3 协议契约
 
-默认 Topic 为 `device/control`。payload 是紧凑 UTF-8 JSON，`timestamp` 为发送时的 Unix epoch
+默认控制 Topic 为 `device/control`，默认状态 Topic 为 `device/status`。payload 是紧凑 UTF-8 JSON，控制命令的 `timestamp` 为发送时的 Unix epoch
 毫秒。动作名称和方向值大小写敏感：
 
 ```json
-{"action":"startStream","data":{},"timestamp":1780413729147}
+{"action":"startStream","data":{"url":"rtmp://<rtmp-host>/live/<device-id>"},"timestamp":1780413729147}
 {"action":"stopStream","data":{},"timestamp":1780413729826}
 {"action":"moveCar","data":{"direction":"up"},"timestamp":1780413730000}
 {"action":"moveCar","data":{"direction":"down"},"timestamp":1780413730000}
@@ -376,7 +395,7 @@ Broker 错误地覆盖新连接状态。Paho 工作线程中的接收路径每�
 
 | 桌面操作 | `action` | `data` |
 | --- | --- | --- |
-| 启动推流 | `startStream` | `{}` |
+| 启动推流 | `startStream` | `{"url":"当前选中卡的完整 RTMP URL"}` |
 | 停止推流 | `stopStream` | `{}` |
 | 前进 | `moveCar` | `{"direction":"up"}` |
 | 后退 | `moveCar` | `{"direction":"down"}` |
@@ -387,6 +406,21 @@ Broker 错误地覆盖新连接状态。Paho 工作线程中的接收路径每�
 QoS 0 没有业务回执。“已提交到 Broker”表示 Paho 接受了发布请求，不表示 Broker、设备订阅端、
 电机控制或推流服务已经执行成功。PC 收到自身发布的同 Topic 消息，只证明 Broker 又把消息转发给
 PC 的订阅，不是小车回执。
+
+设备每 15 秒向 `device/status` 发布一次心跳：
+
+```json
+{"type":"heartbeat","client_id":"<device-id>","timestamp":5824750}
+```
+
+设备 `timestamp` 可是运行时计数，客户端不拿它与电脑时间比较。RtmpMonitor 只按本地单调时钟记录
+收到该 ID 心跳的时刻：首次绑定且未满 30 秒为 Waiting，收到后立即 Online，连续 30 秒没有收到为
+Offline；MQTT 未启用或状态 Topic 尚不可用时为 Unavailable。短暂重连不会立即伪造离线，状态会按
+30 秒规则自然过期；切换 Broker 或状态 Topic 时清除旧 session 心跳。
+
+当前控制 payload 没有 `client_id`，所以点击不同视频卡只能改变 `startStream.data.url` 和桌面端的
+安全门禁，不能让 `moveCar`、`stopCar` 或 `stopStream` 在 Broker 上定向到不同设备。生产部署必须
+保证同一控制 Topic 只有一台受控设备；真正多设备需要为控制消息增加 `client_id` 或采用设备专属 Topic。
 
 ## 6. 如何嵌入现有应用
 
@@ -475,19 +509,21 @@ Get-ChildItem -LiteralPath $ConfigRoot -Force
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "enabled": false,
   "brokerUrl": "",
-  "topic": "device/control"
+  "topic": "device/control",
+  "statusTopic": "device/status"
 }
 ```
 
 | 字段 | 规则 |
 | --- | --- |
-| `schemaVersion` | 当前只接受整数 `1` |
+| `schemaVersion` | 当前写入整数 `2`；读取 v1 时保留原设置并补充 `device/status` |
 | `enabled` | 首次默认 false；false 时启动后保持禁用，不建立连接 |
 | `brokerUrl` | 禁用时可以为空；启用或测试连接时只接受无鉴权的 `mqtt://主机[:端口]`，默认端口 1883 |
 | `topic` | 非空、最多 256 字符，不允许 `#`、`+` 或 NUL |
+| `statusTopic` | 非空、最多 256 字符，不允许 `#`、`+` 或 NUL；安全默认值为 `device/status` |
 
 Broker URL 不允许用户名密码、路径、query 或 fragment。UI 中使用 `mqtt://`；适配层会在内部转换为
 Paho 接受的 `tcp://host:port`。
@@ -549,6 +585,7 @@ Get-Content -LiteralPath (Join-Path $ConfigRoot 'mqtt-control.json') -Raw
 面板从上到下包括：
 
 - MQTT 连接状态和可选的错误详情。
+- 控制/状态两个 Topic、当前选中设备 ID，以及与 Broker 状态分开的设备心跳状态。
 - “启动推流”“停止推流”设备命令按钮。
 - “鼠标摇杆”“键盘 WASD”模式选择和对应控制区域。
 - 始终可见的红色“立即停车  Space”按钮。
@@ -557,8 +594,10 @@ Get-Content -LiteralPath (Join-Path $ConfigRoot 'mqtt-control.json') -Raw
 - 标准齿轮“设置”入口。
 
 绿色、蓝色和红色状态点分别辅助表示在线、连接过程和错误，旁边始终有文字，不能只凭颜色判断。
-状态不是“已连接并订阅”时，设备命令和输入控制全部禁用，“设置”仍可用。启停推流保持普通命令
-按钮外观，因为没有设备回执，界面不会伪装成已经确认的开关状态。
+首次建立的卡自动成为控制目标；之后单击视频卡切换目标，拖拽换位不改变稳定 StreamId 绑定。
+移除当前目标后会清空选择，不自动控制下一张卡。Start 和移动要求 MQTT 已连接、目标已选择且设备
+Online；StopStream 和 StopCar 在 MQTT 已连接且存在目标时即允许，以免心跳过期阻断安全停止。
+Broker“已连接并订阅”不等于设备 Online，界面分别显示两种状态。
 
 #### 鼠标摇杆模式
 
@@ -600,11 +639,12 @@ JSON 也只用于观察。两者都不会驱动桌面输入、本地 RTMP 播放
 首次启动默认值：
 
 - Broker：空，必须由用户输入
-- Topic：`device/control`
+- 控制 Topic：`device/control`
+- 状态 Topic：`device/status`
 - “启动时连接”：关闭
 
 “测试连接”会先按启用状态校验候选配置；Broker 为空时直接拒绝，不发起网络请求。合法时临时完成
-CONNECT/CONNACK 和 SUBSCRIBE/SUBACK，**不会发送任何
+CONNECT/CONNACK 和双 Topic SUBSCRIBE/SUBACK，**不会发送任何
 设备命令**。成功文案是“连接并订阅成功（未发送设备命令）”。CONNACK 成功但 SUBACK 被拒绝、
 订阅提交失败或 5 秒内没有 SUBACK，均按测试失败处理，设备命令保持禁用。
 测试后：
@@ -699,10 +739,11 @@ if (Test-Path -LiteralPath $MqttConfig) {
     -Destination (Join-Path $ConfigRoot "mqtt-control.$Stamp.before-local-test.json")
 }
 $Json = @{
-  schemaVersion = 1
+  schemaVersion = 2
   enabled = $false
   brokerUrl = 'mqtt://127.0.0.1:1883'
   topic = 'device/control'
+  statusTopic = 'device/status'
 } | ConvertTo-Json
 $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 [System.IO.File]::WriteAllText($MqttConfig, $Json, $Utf8NoBom)
@@ -746,29 +787,34 @@ Protocol：MQTT（TCP，不选 WebSocket）
 认证：无
 ```
 
-公网联调先生成本次唯一 Topic，例如：
+联调应同时准备隔离的控制 Topic 和状态 Topic，例如：
 
 ```text
-rtmp-monitor/test/20260813-<随机字符串>
+rtmp-monitor/test/<随机字符串>/control
+rtmp-monitor/test/<随机字符串>/status
 ```
 
 不要用姓名、设备号或密码充当随机字符串，也不要在确认安全前使用真实车辆 Topic。随后：
 
-1. MQTTX 订阅该临时 Topic。
-2. RtmpMonitor 的 MQTT 设置填写相同 Broker 和临时 Topic，点击“测试连接”。
+1. MQTTX 订阅两个临时 Topic。
+2. RtmpMonitor 的 MQTT 设置填写相同 Broker、控制 Topic 和状态 Topic，点击“测试连接”。
 3. 确认显示“连接并订阅成功（未发送设备命令）”，消息观察区没有因此出现 PUBLISH。
-4. 保存设置，点击“启动推流”或中心“停止”。
-5. MQTTX 应收到精确 JSON，RtmpMonitor 的观察列表也应收到 Broker 回送的同一消息。
-6. 再由 MQTTX 向临时 Topic 发布任意测试文本或合法 JSON；RtmpMonitor 应显示它，但不得执行本地
+4. 添加 `rtmp://127.0.0.1:1935/live/local-device`，单击该卡选为控制目标。
+5. 由 MQTTX 每 15 秒向状态 Topic 发布
+   `{"type":"heartbeat","client_id":"local-device","timestamp":1}`；卡片应立即 Online。
+6. 点击“启动推流”。MQTTX 应在控制 Topic 收到含该本地 URL 的 `data.url`；RtmpMonitor 观察列表
+   必须显示 `<stream-url>`，不能显示完整端点。
+7. 停止心跳，30 秒边界后卡片应 Offline；恢复一条合法心跳后应立即 Online。
+8. 再由 MQTTX 向控制 Topic 发布任意测试文本或合法 JSON；RtmpMonitor 应显示它，但不得执行本地
    按钮、方向动作或 RTMP 操作。
 
 这证明 PC 的连接、订阅、发布和观察链路可用，不证明小车收到或执行。测试结束后恢复目标配置。
 
 ### 10.4 级别 D：朋友用 MQTTX 独立测试小车
 
-此流程完全不需要 RtmpMonitor。朋友让小车连接 Broker 并订阅 `device/control`，然后 MQTTX 连接
-同一个 Broker，按第 5.3 节逐条发布精确 JSON。小车只根据 Topic 和 payload 执行动作，不依赖 PC
-客户端是否存在，也不应依赖发送者 clientId。
+此流程完全不需要 RtmpMonitor。朋友让设备订阅 `device/control`，并每 15 秒向 `device/status`
+发布自己的心跳；MQTTX 同时订阅两个 Topic，并按第 5.3 节逐条发布精确 JSON。当前控制协议没有
+目标设备字段，因此此流程只能连接一台受控设备，不能把状态跟踪能力误称为多设备定向控制。
 
 实车仍必须架空或清场。先发 `stopCar`，再测启停推流；方向动作每次不超过 300 ms，并紧接一条
 `stopCar`。MQTTX 显示发布成功只能作为消息侧证据，小车动作需要朋友单独记录。
@@ -925,7 +971,8 @@ Broker。不要用快速反复点击“测试连接”代替定位。
 4. 确认设备固件接受 `up/down/left/right`。
 5. 将“Broker 已收到”与“设备已执行”分别记录。
 
-客户端 v1 没有设备回执，无法进一步判断设备解析、GPIO、电机驱动或推流进程内部故障。
+当前协议没有设备命令回执，无法进一步判断设备解析、GPIO、电机驱动或推流进程内部故障；
+`device/status` 心跳也不能替代命令回执。
 
 ### 12.3 保存项不自动连接
 
@@ -954,15 +1001,15 @@ application/stream key 是否完全一致。不要因为 MQTT 面板显示已连
 
 ## 13. 当前验证状态和限制
 
-截至 2026-08-14，已经得到以下结果：
+截至 2026-08-15，已经得到以下结果：
 
-- Windows Debug 独立验证目录完成 217/217 构建步骤（全目标）和最终 CTest **27/27**（122.34 秒）；原常用
-  Debug 目录也完成 CTest **27/27**（120.20 秒）。该目录中的旧程序最初被运行中进程锁定，先在
-  独立目录验证最终应用链接；进程自然退出后，常用 Debug 主程序也已成功更新，未强制终止进程。
-- Windows Release 全目标构建通过；并行度过高曾触发 MSVC 编译器内存不足，限制为 2 后成功。
-- Linux ARM64 RASTER 和 GLES3 重新配置及全目标交叉构建通过；项目门禁确认两者均为 AArch64
-  ELF，QEMU 纯逻辑测试通过；两者使用
-  `libpaho-mqtt3a.so.1`。
+- Windows Debug 干净全目标构建通过，完整 CTest **29/29**（127.76 秒）通过；覆盖 schema v1→v2、
+  双 Topic Fake Broker、心跳解析/30 秒超时/64 项缓存、视频卡目标选择、UI、全屏、音频和依赖方向。
+- Windows Release 全目标构建通过。
+- Linux ARM64 RASTER 和 GLES3 重新配置及全目标交叉构建通过；两者均为 AArch64 ELF。RASTER 的
+ 直接 NEEDED 项不包含 Qt6OpenGL、Qt6OpenGLWidgets、EGL 或 GLES，GLES3 保留预期 OpenGL 依赖。
+- 真实设备心跳、真实控制执行和公网 Broker 本轮未运行；自动化使用回环 Fake Broker，不能替代
+  现场安全台架验收。
 - RASTER 没有因 MQTT 引入 Qt OpenGL、EGL 或 GLES 动态依赖。
 - 2026-08-14 用户通过 EMQX 后台与 MQTTX 完成 Broker 连接、订阅、发布和消息观察联调，确认
   七类指令在消息层的返回符合当前 Topic/JSON 契约；该证据由现场工具提供，不是本轮 Codex

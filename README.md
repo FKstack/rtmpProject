@@ -19,9 +19,15 @@ RtmpMonitor 是一个使用 C++17、Qt 6 Widgets、FFmpeg 和 Eclipse Paho MQTT 
 
 ## MQTT 联调状态
 
-截至 2026-08-14，已通过 EMQX 后台和 MQTTX 完成当前 MQTT Broker 的连接、订阅、发布与消息观察联调；MQTTX 观察到的七类控制指令及消息返回符合当前 Topic 和 JSON 协议约定，PC 端 MQTT 通信链路工作正常。
+当前客户端使用同一个 Paho 会话以 QoS 0 同时订阅控制 Topic `device/control` 和状态 Topic
+`device/status`，两项 SUBACK 都成功后才显示已连接。设备每 15 秒发布心跳；客户端按本地单调
+时钟在连续 30 秒未收到同一设备 ID 心跳时把对应视频卡置为离线。Broker 连接状态与设备在线状态
+分别显示，不能互相替代。
 
-该结论覆盖桌面客户端、Broker 和 MQTTX 消息链路，不替代小车实际动作验收。当前仍采用 QoS 0，PC 收到同 Topic 消息表示 Broker 已完成转发，不等于设备执行回执；车辆运动测试仍需在架空或清场条件下单独确认。
+RTMP URL 最后一个路径段作为设备 ID；单击视频卡选择控制目标。`startStream` 会把该卡当前完整 URL
+写入 `data.url`，但观察列表会显示脱敏占位符。Start 和移动仅在目标 Online 时允许，StopStream 和
+StopCar 在心跳过期后仍可发送。当前控制 payload 没有 `client_id`，所以同一 Broker/控制 Topic
+只能部署一台真正受控设备，不能把多卡状态显示理解为多设备定向控制。
 
 首次启动时 MQTT 默认关闭且 Broker 为空，不会执行 DNS、TCP 连接、MQTT CONNECT 或自动订阅。真实 Broker 只能由用户在“MQTT 设置”中输入，并保存到本机应用配置目录；仓库、示例和发布包不提供任何用户或现场公网端点默认值。已有合法本机配置保持兼容；启用 MQTT 或点击“测试连接”时必须填写合法的 `mqtt://主机[:端口]`。
 
@@ -34,8 +40,9 @@ RtmpMonitor 是一个使用 C++17、Qt 6 Widgets、FFmpeg 和 Eclipse Paho MQTT 
 - 拖拽换位、单路全屏、F11 监控墙和异步截图。
 - 深石墨统一界面、Windows 原生深色标题栏和侧边操作 Dock 优先布局。
 - schema v1 保存推流列表，按条目选择启动时自动接入。
-- 单目标 MQTT 桌面控制台；支持固定中心鼠标摇杆，以及显式解锁的 WASD/方向键控制，松开、失焦、
-  隐藏或全屏切换时停车，并可折叠观察同一 Topic 最近 20 条消息。
+- 单目标 MQTT 桌面控制台；支持双 Topic 订阅、15 秒设备心跳/30 秒离线判定、视频卡目标选择、
+  带 `data.url` 的启动推流、固定中心鼠标摇杆和显式解锁的 WASD/方向键控制；松开、失焦、隐藏或
+  全屏切换时停车，并可折叠观察最近 20 条脱敏消息。
 - 结构化系统日志、审计日志、敏感字段脱敏和运行指标。
 - Windows x64 原生开发与 Ubuntu 22.04 → Linux ARM64 交叉开发入口。
 

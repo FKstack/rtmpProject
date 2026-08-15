@@ -1,5 +1,41 @@
 # RtmpMonitor 当前项目快照
 
+> 单车值守闭环设计状态（2026-08-15）：在不改变 MQTT 控制/心跳返回、Topic、QoS、设备固件和硬件
+> 的前提下，已形成 `docs/architecture/mobile_security_single_vehicle_operator_loop_design.md` 架构
+> 基线，并经产品经理会话两轮只读评审最终接受，记录为 ADR-031。当前可实施顺序收敛为本地控制安全
+> 与诚实审计、基于现有 MQTT/心跳/RTMP/SRS 信号的平台
+> 事件、截图证据与目录导出，以及默认关闭的 SRS DVR PoC。命令 ACK、多车、TLS/RBAC、遥测、地图、
+> 巡逻、SOS、AI、对讲和动态码率明确延期，不增加占位生产接口。该文档定义未来 R2 边界与门禁，
+> 本轮没有修改生产代码、CMake、运行配置、公共协议或线程生命周期；联合接受不代表功能已实现。
+
+> 移动安防产品规划状态（2026-08-15）：已依据当前源码/CMake/测试、现有单车 MQTT 心跳与控制边界，
+> 以及海康 HikCentral、大华 DSS、Axis Camera Station、Milestone XProtect、Knightscope/SMP 等公开
+> 产品资料，形成 `docs/roadmap/mobile_security_product_module_recommendations.md`。建议在不改变
+> RTMP/SRS/FFmpeg/渲染底座的前提下，优先建设定向控制回执与失联安全、鉴权/RBAC/控制权、事件
+> 中心、录像证据，再扩展地图、多车、巡逻、运维、对讲、AI 和弱网策略。该文档是待产品负责人按
+> 具体试点场景确认的建议，不等于路线图已批准，也没有改变生产代码、协议、schema 或运行时行为。
+
+> MQTT 设备心跳与定向推流状态（2026-08-15）：设置 schema 升级为 v2，v1 本机配置读取时自动
+> 补充状态 Topic；安全默认仍为 MQTT 禁用、Broker 为空。单个 Paho session 以 QoS 0 同时订阅
+> `device/control` 与 `device/status`，两项 SUBACK 均成功后才 Connected。RTMP URL 末段绑定设备
+> ID，视频卡保存稳定 StreamId 控制目标并独立显示 Waiting/Online/Offline/Unavailable；心跳按本地
+> 单调时钟在 30 秒边界离线，缓存上限 64。`startStream` 写入所选卡运行时 URL 到 `data.url`，观察
+> 列表统一脱敏；Start/移动要求设备 Online，StopStream/StopCar 在存在目标时不受心跳过期阻断。
+> 当前控制 payload 没有 `client_id`，同一控制 Topic 仍只允许一台真正受控设备。Windows Debug
+> 干净全构建与 CTest 29/29（127.76 秒）、Windows Release、ARM64 RASTER/GLES3 全目标构建通过；
+> 两者均为 AArch64 ELF，RASTER 直接 NEEDED 无 Qt6OpenGL/EGL/GLES。用户已在真实设备链路确认
+> MQTT 连接、控制/状态双 Topic 订阅、设备 Online、目标视频拉流均成功；车辆动作安全验收仍应
+> 在受控台架中单独执行。
+> ARM64 总控脚本的 `both` 模式已改为先物化模式数组，避免 CMake 消费循环 stdin 后只构建 RASTER；
+> 脚本自测试及修复后的 RASTER→GLES3 双模式无工作增量复验通过。
+
+> 最新普通便携包（2026-08-15）：清理并完整重建 Windows Release 后，在仅包含 Release、Qt、vcpkg
+> 与 Windows System32 的运行库路径下 CTest 29/29（98.13 秒）通过。重新生成
+> `out/packages/RtmpMonitor-0.1.0-alpha.1-windows-x64.zip`，共 38 个条目、23,004,877 字节；不生成
+> SHA-256、不调用微软签名、不携带用户 MQTT/保存推流配置、PDB、测试媒体、VC 安装器或 Qt FFmpeg
+> 媒体后端。包内 app-local MSVC 运行库为 14.44.35211.0，必需 Qt Multimedia、Windows 音频插件、
+> FFmpeg/swresample 与 Paho DLL 齐全；全新解压后的 `--version` 冒烟通过，已知现场端点命中为 0。
+
 > 网络端点安全基线（2026-08-15）：MQTT 首次启动改为 `enabled=false`、Broker 为空、Topic
 > `device/control`，无配置时不会执行 DNS、TCP、MQTT CONNECT 或订阅。禁用状态允许空 Broker；
 > 启用或测试连接时必须填写合法 `mqtt://主机[:端口]`。已有合法本机 AppConfig 继续兼容，真实端点
@@ -9,6 +45,9 @@
 > 已通过，RASTER 未引入 GL/EGL/GLES。普通便携 ZIP 包含 38 个文件，不生成 SHA-256、不执行微软
 > 签名；脱敏根 Tree、打包目录和全新解压目录的旧现场端点命中均为 0。临时原子移开既有本机配置后，
 > 全新 ZIP 在真正无配置场景隐藏启动 5 秒，外部 TCP 连接数为 0；原本机配置随后原样恢复。
+> 远程脱敏分支复核完成后，本地三个历史重建临时 ref 与敏感 Bundle 已删除，reflog 已过期并执行
+> `git gc --prune=now`；两个已知现场地址在当前工作树、全部 refs 与现有便携 ZIP 中均为 0 命中，
+> `git fsck --unreachable --no-reflogs` 未发现残留不可达对象。该本地历史备份与旧对象不可恢复。
 
 > Windows 单路全屏回归状态（2026-08-15）：已修复“已有画面时第一次进入全屏仍沿用隐藏画布
 > 旧尺寸，画面缩在左上角”以及跨会话 `BlankCursor` 残留。全屏窗口现在先显示画布并同步零边距
@@ -76,8 +115,9 @@
 > 订阅、发布与消息观察，七类控制指令在消息层的返回符合既定 Topic/JSON 契约。该结果证明
 > PC/Broker/MQTTX 通信链路正常，不作为小车实际动作或设备业务回执证明；安全台架实车验收仍待执行。
 
-> 单车 MQTT 与保存推流状态（2026-08-13）：新增独立 profiles/device_control 边界、保存列表
-> schema v1、全局 MQTT 设置、Paho MQTT C 1.3.16 异步发布/订阅客户端、方向控制 Dock、
+> 单车 MQTT 与保存推流基线（2026-08-13，已由上方 2026-08-15 双 Topic 状态扩展）：新增独立
+> profiles/device_control 边界、保存列表 schema v1、全局 MQTT 设置、Paho MQTT C 1.3.16
+> 异步发布/订阅客户端、方向控制 Dock、
 > 有界 Topic 消息观察和 Fake Broker
 > 集成测试。Windows Debug 全构建及 CTest 25/25、Windows Release 构建、ARM64 RASTER/GLES3
 > 交叉构建和 ELF 依赖检查均通过。公网 Broker 仅确认 CONNECT/CONNACK 0；未在缺少现场安全
