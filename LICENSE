@@ -1,0 +1,22 @@
+RtmpMonitor Development Preview License Notice
+
+Copyright (c) 2026 the respective RtmpMonitor contributors.
+All rights reserved.
+
+No project-wide open-source license is granted for RtmpMonitor at this stage.
+Unless the project owner has provided a separate written agreement, this
+development preview may be installed, run, and copied only by recipients who
+are individually authorized to evaluate and test it. It may not be published,
+sold, sublicensed, used in production, or redistributed to third parties.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR ITS USE.
+
+Third-party components remain governed by their own licenses. See
+THIRD_PARTY_NOTICES and the licenses directory in the Windows test package.
+
+This notice is intentionally conservative and must be reviewed by the project
+owner before distribution outside the authorized test group.

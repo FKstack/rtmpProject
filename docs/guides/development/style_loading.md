@@ -1,0 +1,166 @@
+# QSS 样式加载与主题扩展说明
+
+> 文档分类：开发指南。
+
+## 1. 目标
+
+项目的 QSS 不再写在 `VideoWidget` 等 C++ 构造函数中，而是集中存放在 `resources/styles/`。应用启动时由 `StyleLoader` 统一读取并应用“深石墨监控舱”主题，从而将界面结构与视觉样式分离。当前只提供深色主题，不支持主题切换或运行时热重载。
+
+当前方案同时支持部署后调整样式和可靠回退：
+
+```text
+exe 同级 styles/app.qss
+  -> 优先加载，修改后重启应用即可生效
+  -> 缺失或不可读时回退
+:/styles/app.qss
+  -> 编译进 QRC 的默认主题
+```
+
+本版本不监听文件变化，也不支持运行中热重载。动态加载仅指应用启动时从外部文件读取 QSS。
+
+## 2. 目录结构
+
+```text
+include/common/
+├── app/
+│   └── StyleLoader.h              # 应用级 QSS 服务
+└── core/
+    └── Singleton.h                # 通用 CRTP 单例模板
+
+resources/
+├── icons/
+│   ├── rtmp-monitor.svg            # 可审查的应用图标矢量源
+│   ├── rtmp-monitor-foreground.svg # Android 安全区内的透明前景源
+│   ├── rtmp-monitor-*.png          # QRC 使用的确定性多尺寸位图
+│   └── rtmp-monitor.ico            # Windows 多尺寸应用图标
+├── styles/
+│   └── app.qss                    # 默认应用样式源文件
+├── styles.qrc                     # 编译内置样式和运行时图标的映射
+└── windows/
+    └── rtmp_monitor.rc            # EXE/任务栏图标资源
+
+src/
+├── common/app/StyleLoader.cpp
+└── platform/windows/WindowsWindowAppearance.cpp
+```
+
+`app.qss` 的 QRC 路径固定为：
+
+```text
+:/styles/app.qss
+```
+
+## 3. StyleLoader 与 Singleton
+
+`StyleLoader` 继承 `Singleton<StyleLoader>`，因此整个进程只有一个样式服务实例：
+
+```cpp
+StyleLoader::instance().applyApplicationStyle(app);
+```
+
+单例模板使用 C++17 函数内静态对象，首次创建实例时由语言保证线程安全。`StyleLoader` 不继承 `QObject`、不保存 `QWidget` 指针，也不管理窗口生命周期；它只读取主题、创建 Fusion 基础样式，并依次应用深色 `QPalette` 与 QSS。只有成功读取外部或 QRC 主题后才改变应用样式；读取完全失败时保留调用前的 style、palette 和 stylesheet。
+
+单例不应被当作通用对象创建方式。多路播放器、设备管理器和视频控件都需要独立实例，不能使用该模板。只有进程级、无 UI 所有权且生命周期明确的服务才需要单独评估是否适合使用单例。
+
+## 4. 加载流程
+
+`StyleLoader::applyApplicationStyle()` 接收 `StyleLoadOptions`，默认样式文件名为 `app.qss`。
+
+```text
+开始
+  -> 校验文件名仅为单个 .qss 文件名
+  -> 确定外部样式目录
+       默认：<应用程序目录>/styles
+       测试：可显式传入临时目录
+  -> 外部 app.qss 存在且可读？
+       是：应用外部 QSS，返回 ExternalFile
+       否：记录警告并读取 :/styles/app.qss
+  -> QRC 可读？
+       是：应用 Fusion、深色 Palette 和内置 QSS，返回 QtResource
+       否：保留当前 QApplication 样式，返回失败结果
+```
+
+外部 QSS 成功时采用相同的 Fusion 与 Palette，只替换 QSS 内容，因此外部微调不会造成原生控件的基础色板与应用主题脱节。主题令牌为：主背景 `#0B1118`、画布 `#05080C`、卡片 `#131C25`/`#182430`、边框 `#2A3A4A`、主色 `#20B8F0`、焦点 `#7DD8FF`、成功 `#3DDC97`、警告 `#F6C85F`、危险 `#FF5D6C`。
+
+样式文件名不允许包含路径分隔符，且必须以 `.qss` 结尾。该限制避免未来从配置文件选择主题时出现路径穿越。
+
+## 5. QSS 选择器契约
+
+`VideoWidget` 使用动态属性和对象名作为 QSS 的稳定选择器：
+
+| 控件 | 选择器 | 用途 |
+| --- | --- | --- |
+| 视频格根控件 | `QFrame[styleRole="videoWidget"]` | 背景和边框。 |
+| 设备名称 | `QLabel#deviceNameLabel` | 标题颜色和字重。 |
+| 视频占位区 | `QFrame[styleRole="videoSurface"]` | 黑色视频背景，换 parent 后仍然生效。 |
+| 状态文本 | `QLabel#statusLabel` | 状态文字颜色。 |
+| 主工具栏 | `QToolBar#videoToolBar` | 添加动作及其禁用反馈。 |
+| 品牌区 | `QWidget#brandWidget` | 应用图标和产品名称。 |
+| 空状态卡 | `QFrame#emptyStateCard` | 无连接时的标题、说明和主操作。 |
+| 设备控制滚动区 | `QScrollArea#deviceControlScrollArea` | 矮屏下保证控制项可达。 |
+| 语义反馈 | `[severity="success"/"warning"/"error"]` | 测试结果和横幅的稳定状态色。 |
+| 按钮角色 | `[styleRole="primary"/"danger"]` | 主操作和破坏性操作。 |
+
+修改这些 `objectName`、`styleRole` 或 `severity` 等同于修改 UI 样式 API，必须同步更新 QSS、测试和相关文档。新组件应使用限定对象名或动态属性，不要在 `app.qss` 中使用无范围的 `QFrame`、`QLabel`、`QPushButton` 全局选择器。视频格和 `videoSurface` 必须保持透明，避免遮挡共享 CPU/OpenGL 画布。
+
+## 6. 平台外观与图标
+
+- Windows 由应用组合层创建 `WindowsWindowAppearance`，使用 DWM 原生沉浸式深色属性处理主窗口和子对话框；系统不支持时安全回退，不自绘标题栏。
+- Windows 目标只额外链接系统 `dwmapi`，窗口拖动、缩放、系统菜单和无障碍行为仍由原生窗口负责。
+- 运行时窗口图标使用 QRC 内的 PNG，EXE 与任务栏图标使用 RC 内的多尺寸 ICO。SVG 只作为可审查源文件，不要求部署 Qt SVG 图像插件。
+- 图形由深石墨圆角底板、镜头环、四宫格和信号弧组成；透明前景位于 Android 自适应图标安全区，但本版本不创建 Android 工程或清单。
+
+## 7. 构建、部署与安装
+
+CMake 会执行三项操作：
+
+1. 将 `resources/styles.qrc` 分别编译进应用和测试可执行目标。
+2. 每次构建 `rtmp_monitor` 后，把源文件复制到：
+
+   ```text
+   <可执行文件目录>/styles/app.qss
+   ```
+
+3. 执行安装时，把 `app.qss` 安装到：
+
+   ```text
+   <安装目录>/bin/styles/app.qss
+   ```
+
+部署时建议保留外部 `styles/app.qss`，便于在不重新编译程序的情况下微调颜色、间距和字体。删除该文件不会导致程序无法启动，应用会自动使用 QRC 默认主题。
+
+## 8. 后续扩展方式
+
+当样式规模扩大时，可继续在 `resources/styles/` 中新增文件，例如：
+
+```text
+main_window.qss
+video_widget.qss
+status_panel.qss
+```
+
+扩展时应在 `StyleLoader` 中明确固定加载顺序，并在 QRC、构建复制规则和安装规则中同步增加文件。不要在各个控件构造函数中重新引入 `setStyleSheet()`，否则会破坏统一主题的优先级和可维护性。
+
+未来若需要用户切换深色、浅色主题，可在配置模块中保存主题文件名，并显式再次调用 `StyleLoader`。文件监听和热重载属于后续功能，需单独设计线程与 UI 刷新策略。
+
+## 9. 验证结果
+
+2026-08-14 在 MSVC 19.41、Qt 6.6.1 `msvc2019_64` 环境下完成 Windows Debug 全目标构建与完整 CTest：
+
+```text
+27/27 tests passed
+```
+
+自动化测试覆盖：
+
+- `StyleLoader` 不可复制、不可移动，且 `instance()` 返回同一对象。
+- 外部样式缺失时从 QRC 回退。
+- 外部样式存在时优先加载。
+- 外部样式不可读时回退 QRC。
+- 主题成功时使用 Fusion 和深色 Palette，失败时不污染现有应用样式。
+- QRC 图标可读，关键对象名、按钮角色和动态语义状态保持稳定。
+- 1～16 路动态视频网格、设备名称、工具栏禁用状态和 `styleRole` 保持正确。
+- 拖拽状态、全屏控制栏和黑色视频区域的样式作用域保持隔离。
+- `QDockWidget → QScrollArea → DeviceControlPanel` 所有权和约 40 px 触控目标保持正确。
+- Windows Release 与 ARM64 RASTER/GLES3 全目标构建通过；RASTER 动态依赖没有新增 Qt OpenGL/EGL/GLES，GLES3 只保留预期 Qt OpenGL 依赖。
+- 1280×720 实际窗口截图确认深色原生标题栏、空状态、工具栏和设备控制 Dock 视觉统一且滚动可达；100%/125%/150% 的完整人工视觉矩阵仍需在对应系统缩放会话复验。

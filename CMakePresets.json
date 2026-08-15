@@ -1,0 +1,104 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "hidden": true,
+      "name": "Qt",
+      "cacheVariables": {
+        "CMAKE_PREFIX_PATH": "$env{QTDIR}"
+      },
+      "vendor": {
+        "qt-project.org/Qt": {
+          "checksum": "wVa86FgEkvdCTVp1/nxvrkaemJc="
+        }
+      }
+    },
+    {
+      "hidden": true,
+      "name": "Windows-MSVC-vcpkg",
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": {
+          "type": "FILEPATH",
+          "value": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+        },
+        "VCPKG_TARGET_TRIPLET": "x64-windows",
+        "BUILD_TESTING": "ON"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "hidden": true,
+      "name": "Linux-ARM64-Base",
+      "generator": "Ninja",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/aarch64-linux.cmake",
+      "cacheVariables": {
+        "ARM64_SYSROOT": "/opt/rtmp-monitor/sysroots/jammy-arm64",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BUILD_TESTING": "ON",
+        "RTMP_MONITOR_BUILD_OPENGL_PROTOTYPE": "ON",
+        "Qt6_DIR": "/opt/rtmp-monitor/sysroots/jammy-arm64/usr/lib/aarch64-linux-gnu/cmake/Qt6",
+        "QT_HOST_PATH": "/usr",
+        "QT_HOST_PATH_CMAKE_DIR": "/usr/lib/x86_64-linux-gnu/cmake"
+      },
+      "environment": {
+        "PKG_CONFIG_SYSROOT_DIR": "/opt/rtmp-monitor/sysroots/jammy-arm64",
+        "PKG_CONFIG_LIBDIR": "/opt/rtmp-monitor/sysroots/jammy-arm64/usr/local/lib/aarch64-linux-gnu/pkgconfig:/opt/rtmp-monitor/sysroots/jammy-arm64/usr/local/share/pkgconfig"
+      }
+    },
+    {
+      "name": "Linux-ARM64-Debug",
+      "displayName": "Linux ARM64 AUTO Debug (WSL2 cross compile)",
+      "description": "Compatibility preset using the Ubuntu 22.04 ARM64 sysroot installed by scripts/setup_arm64_build_env.sh.",
+      "inherits": "Linux-ARM64-Base",
+      "binaryDir": "${sourceDir}/out/build-linux-arm64/debug",
+      "cacheVariables": {
+        "RTMP_MONITOR_LINUX_RENDER_MODE": "AUTO"
+      }
+    },
+    {
+      "name": "Linux-ARM64-RASTER-Debug",
+      "displayName": "Linux ARM64 RASTER Debug",
+      "inherits": "Linux-ARM64-Base",
+      "binaryDir": "${sourceDir}/out/build-linux-arm64/raster-debug",
+      "cacheVariables": {
+        "RTMP_MONITOR_LINUX_RENDER_MODE": "RASTER"
+      }
+    },
+    {
+      "name": "Linux-ARM64-GLES3-Debug",
+      "displayName": "Linux ARM64 GLES3 Debug",
+      "inherits": "Linux-ARM64-Base",
+      "binaryDir": "${sourceDir}/out/build-linux-arm64/gles3-debug",
+      "cacheVariables": {
+        "RTMP_MONITOR_LINUX_RENDER_MODE": "GLES3"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "Linux-ARM64-Debug",
+      "displayName": "Build Linux ARM64 Debug",
+      "configurePreset": "Linux-ARM64-Debug"
+    },
+    {
+      "name": "Linux-ARM64-RASTER-Debug",
+      "displayName": "Build Linux ARM64 RASTER Debug",
+      "configurePreset": "Linux-ARM64-RASTER-Debug"
+    },
+    {
+      "name": "Linux-ARM64-GLES3-Debug",
+      "displayName": "Build Linux ARM64 GLES3 Debug",
+      "configurePreset": "Linux-ARM64-GLES3-Debug"
+    }
+  ],
+  "vendor": {
+    "qt-project.org/Presets": {
+      "checksum": "ztFj7/fovSlDkIkgZS9pL2nbHQQ="
+    }
+  }
+}

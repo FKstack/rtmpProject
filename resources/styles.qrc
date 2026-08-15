@@ -1,0 +1,10 @@
+<!DOCTYPE RCC><RCC version="1.0">
+    <qresource prefix="/styles">
+        <file alias="app.qss">styles/app.qss</file>
+    </qresource>
+    <qresource prefix="/icons">
+        <file alias="rtmp-monitor-64.png">icons/rtmp-monitor-64.png</file>
+        <file alias="rtmp-monitor-128.png">icons/rtmp-monitor-128.png</file>
+        <file alias="rtmp-monitor-256.png">icons/rtmp-monitor-256.png</file>
+    </qresource>
+</RCC>

@@ -1,0 +1,174 @@
+# =========================
+# Visual Studio
+# =========================
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Local AI/agent workspace metadata
+.agents/
+.codex/
+.codex-home/
+CodexHome/
+plugin-cache/
+install-temp/
+
+# =========================
+# CMake build directories
+# =========================
+out/
+build/
+cmake-build-*/
+
+# CMake generated files
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+install_manifest.txt
+CTestTestfile.cmake
+Makefile
+compile_commands.json
+
+# Local CMake user configuration
+CMakeUserPresets.json
+
+# Ninja generated files
+.ninja_deps
+.ninja_log
+build.ninja
+rules.ninja
+/Testing/
+
+# =========================
+# MSVC generated files
+# =========================
+*.obj
+*.pch
+*.pdb
+*.ilk
+*.idb
+*.tlog
+*.lastbuildstate
+*.exp
+
+# =========================
+# Qt Creator local files
+# =========================
+*.pro.user
+*.pro.user.*
+.qtc_clangd/
+.qtc_*/
+.idea/
+.vscode/
+*.code-workspace
+
+# =========================
+# Operating system files
+# =========================
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# =========================
+# Secrets and local configuration
+# =========================
+# API keys and credentials must only exist in local environment variables or
+# ignored local files. Commit .env.example only with placeholder values.
+.env
+.env.*
+!.env.example
+*.local.env
+config.local.*
+*.user.config.*
+secrets/
+.secrets/
+credentials/
+credentials*.json
+service-account*.json
+*.secret
+*.secrets
+*.pem
+*.key
+*.p12
+*.pfx
+
+# OpenViking real configuration and persistent state
+# Commit documentation and placeholder examples only; never commit live
+# credentials, databases, logs, plugin state, or machine-local paths.
+ov.conf
+ovcli.conf
+.openviking/
+.openviking-local/
+openviking-data/
+openviking-db/
+openviking-logs/
+codex-plugin-state/
+!*.example.conf
+!AGENTS.md
+!docs/memory/
+!docs/memory/*.md
+!docs/roadmap/
+!docs/roadmap/*.md
+
+# =========================
+# Runtime diagnostics
+# =========================
+logs/
+*.log
+*.pid
+*.dmp
+*.tmp
+*.bak
+*.pcap
+*.pcapng
+*.etl
+*.trace
+*.profraw
+*.profdata
+*.gcda
+*.gcno
+coverage/
+.cache/
+__pycache__/
+.pytest_cache/
+
+# Local test media
+# RTMP 验证脚本默认从 testdata/test.mp4 读取测试视频。
+testdata/
+test_data/
+*.mp4
+*.flv
+*.mkv
+*.mov
+*.ts
+*.m3u8
+*.h264
+*.h265
+*.hevc
+*.yuv
+*.rgb
+*.rgba
+*.raw
+*.avi
+*.webm
+
+# Local debugging and recording analysis output
+recording_analysis/
+captures/
+latency_samples/
+desktop_latency/
+
+# =========================
+# Local-only documentation
+# =========================
+# Project plans, build guides, coding standards, and feature documentation in
+# docs/ are version-controlled. Conversation handoffs and machine-specific
+# working notes stay local and must not be uploaded.
+docs/project_handoff.md
+docs/local/
+
+# Local-only client config: project-scoped Kimi Code MCP entry (OpenViking).
+# The file itself must never be committed; it references the API key via env var.
+/.kimi-code/mcp.json

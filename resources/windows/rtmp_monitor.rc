@@ -1,0 +1,2 @@
+#define IDI_RTMP_MONITOR 101
+IDI_RTMP_MONITOR ICON "../icons/rtmp-monitor.ico"

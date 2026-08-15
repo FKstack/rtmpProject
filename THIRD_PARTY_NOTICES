@@ -1,0 +1,64 @@
+RtmpMonitor Third-Party Notices
+================================
+
+This file identifies the principal third-party components used by or referenced
+by RtmpMonitor v0.1.0-alpha.1. It is a factual engineering inventory, not legal
+advice. The exact license texts shipped in the Windows test package are copied
+from the installed Qt and vcpkg packages used to build that package.
+
+Qt 6.6.1
+--------
+
+Project: https://www.qt.io/
+Source: https://download.qt.io/archive/qt/6.6/6.6.1/submodules/
+License used for this package: GNU Lesser General Public License version 3
+(LGPL-3.0), including the applicable licenses of third-party code documented by
+Qt.
+Distribution boundary: Qt libraries and plugins are unmodified, dynamically
+linked MSVC x64 binaries deployed by Qt's windeployqt tool. They remain separate
+DLLs/plugins in the package and can be replaced for debugging or relinking.
+
+FFmpeg 8.1.2 (vcpkg x64-windows)
+--------------------------------
+
+Project: https://ffmpeg.org/
+Source: https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.xz
+License: GNU Lesser General Public License version 2.1 or later
+(LGPL-2.1-or-later) for the actual vcpkg build used here.
+Distribution boundary: avcodec, avformat, avutil, and swscale are unmodified,
+dynamically linked Release DLLs copied from vcpkg's x64-windows installation.
+The package script reads avutil_configuration() from the exact linked DLL and
+blocks packaging if --enable-gpl or --enable-nonfree is present.
+
+Eclipse Paho MQTT C 1.3.16
+--------------------------
+
+Project: https://github.com/eclipse-paho/paho.mqtt.c
+Source: https://github.com/eclipse-paho/paho.mqtt.c/archive/v1.3.16.tar.gz
+License: Eclipse Public License 2.0 (EPL-2.0) and Eclipse Distribution License
+1.0 for the applicable source files.
+Distribution boundary: RtmpMonitor dynamically links the unmodified
+non-TLS asynchronous paho-mqtt3a library. The Windows package copies the
+runtime and license from the locked vcpkg x64-windows installation.
+
+SRS 6.0.184 (tag v6.0-r0, commit 9f8670b2a832aea04abe644af47261838838c49a)
+--------------------------------------------------------------------------------
+
+Project and source: https://github.com/ossrs/srs/tree/v6.0-r0
+License: MIT License.
+Distribution boundary: the Windows RtmpMonitor test package does not contain an
+SRS executable or SRS source. SRS remains a separately installed and separately
+executed media server; this package contains only a loopback-only example client
+configuration compatible with it.
+
+Microsoft Visual C++ Runtime
+----------------------------
+
+Project information:
+https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist
+License: Microsoft Visual Studio license terms and the applicable REDIST list.
+Distribution boundary: the package includes an unmodified, Microsoft-signed x64
+Redistributable prerequisite obtained from Microsoft's official Visual Studio
+2022 release endpoint. The package script requires its version to be at least as
+new as the MSVC toolset used for the application. Debug runtime DLLs are not
+permitted in this package.
