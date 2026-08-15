@@ -399,6 +399,16 @@ target_include_directories(rtmp_monitor_profiles PUBLIC
 target_link_libraries(rtmp_monitor_profiles PUBLIC Qt6::Core)
 rtmp_monitor_apply_project_options(rtmp_monitor_profiles)
 
+qt_add_library(rtmp_monitor_control_policy STATIC
+    include/common/control_policy/ControlSessionGuard.h
+    src/common/control_policy/ControlSessionGuard.cpp
+)
+target_include_directories(rtmp_monitor_control_policy PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/common
+)
+target_link_libraries(rtmp_monitor_control_policy PUBLIC Qt6::Core)
+rtmp_monitor_apply_project_options(rtmp_monitor_control_policy)
+
 qt_add_library(rtmp_monitor_device_control STATIC
     include/common/device_control/DeviceControlTypes.h
     include/common/device_control/DeviceCommandCodec.h
@@ -669,6 +679,7 @@ qt_add_executable(rtmp_monitor
     src/common/app/ApplicationOptions.cpp
     include/common/app/ConnectionBindingRegistry.h
     src/common/app/ConnectionBindingRegistry.cpp
+    include/common/app/ControlMediaObservation.h
     include/common/app/ConnectionEventReporter.h
     src/common/app/ConnectionEventReporter.cpp
     include/common/app/StreamConnectionController.h
@@ -677,6 +688,8 @@ qt_add_executable(rtmp_monitor
     src/common/app/SavedStreamController.cpp
     include/common/app/DeviceControlController.h
     src/common/app/DeviceControlController.cpp
+    include/common/app/DeviceControlTransport.h
+    src/common/app/DeviceControlTransport.cpp
     ${RTMP_MONITOR_STYLE_RESOURCE}
 )
 
@@ -694,6 +707,7 @@ target_link_libraries(rtmp_monitor
         rtmp_monitor_ui
         rtmp_monitor_profiles
         rtmp_monitor_device_control
+        rtmp_monitor_control_policy
 )
 
 target_include_directories(rtmp_monitor
@@ -824,6 +838,16 @@ if(BUILD_TESTING)
     add_test(NAME rtmp_monitor_device_control_contract_test
         COMMAND rtmp_monitor_device_control_contract_test)
 
+    qt_add_executable(rtmp_monitor_control_session_guard_test
+        tests/ControlSessionGuardTest.cpp
+    )
+    target_link_libraries(rtmp_monitor_control_session_guard_test PRIVATE
+        Qt6::Test rtmp_monitor_control_policy
+    )
+    rtmp_monitor_apply_project_options(rtmp_monitor_control_session_guard_test)
+    add_test(NAME rtmp_monitor_control_session_guard_test
+        COMMAND rtmp_monitor_control_session_guard_test)
+
     qt_add_executable(rtmp_monitor_mqtt_device_client_test
         tests/MqttDeviceClientTest.cpp
     )
@@ -863,6 +887,25 @@ if(BUILD_TESTING)
     rtmp_monitor_apply_project_options(rtmp_monitor_device_control_input_test)
     add_test(NAME rtmp_monitor_device_control_input_test
         COMMAND rtmp_monitor_device_control_input_test)
+
+    qt_add_executable(rtmp_monitor_device_control_controller_test
+        tests/DeviceControlControllerTest.cpp
+        include/common/app/DeviceControlController.h
+        src/common/app/DeviceControlController.cpp
+        include/common/app/DeviceControlTransport.h
+        src/common/app/DeviceControlTransport.cpp
+    )
+    target_link_libraries(rtmp_monitor_device_control_controller_test PRIVATE
+        Qt6::Test
+        rtmp_monitor_ui
+        rtmp_monitor_device_control
+        rtmp_monitor_control_policy
+    )
+    rtmp_monitor_apply_project_options(
+        rtmp_monitor_device_control_controller_test)
+    add_test(NAME rtmp_monitor_device_control_controller_test
+        COMMAND rtmp_monitor_device_control_controller_test)
+
     find_package(Qt6 REQUIRED COMPONENTS Test)
     find_package(Python3 QUIET COMPONENTS Interpreter)
     if(Python3_Interpreter_FOUND)

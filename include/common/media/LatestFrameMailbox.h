@@ -65,6 +65,8 @@ public:
     );
     [[nodiscard]] LatestFrameMailboxStats stats() const;
     [[nodiscard]] std::uint64_t latestSequence() const;
+    /** Returns -1 until a frame has actually been presented or after clear(). */
+    [[nodiscard]] qint64 lastPresentedFrameAgeMs() const;
     [[nodiscard]] qint64 lastRenderedMediaTimestampMs(
         std::uint64_t sessionGeneration
     ) const;

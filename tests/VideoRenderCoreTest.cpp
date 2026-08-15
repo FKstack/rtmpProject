@@ -154,12 +154,15 @@ void VideoRenderCoreTest::mailboxRecordsFinalRenderLatency()
     )));
     mailbox.recordRendered();
     mailbox.recordRendered();
+    QVERIFY(mailbox.lastPresentedFrameAgeMs() >= 0);
     const auto stats = mailbox.stats();
     QCOMPARE(stats.rendered, std::uint64_t(2));
     QVERIFY(stats.internalLatencyP95Ms >= 0);
     QCOMPARE(stats.sourceLatencySamples, std::uint64_t(1));
     QVERIFY(stats.sourceLatencyP50Ms >= 0);
     QVERIFY(stats.sourceLatencyMaxMs <= 10'000);
+    mailbox.clear();
+    QCOMPARE(mailbox.lastPresentedFrameAgeMs(), qint64 {-1});
 }
 
 void VideoRenderCoreTest::audioSyncClockFallsBackWhenPresentationIsStale()

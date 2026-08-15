@@ -6,6 +6,7 @@
 #include <memory>
 
 #include "app/ConnectionBindingRegistry.h"
+#include "app/ControlMediaObservation.h"
 #include "media/PlaybackTypes.h"
 #include "server/MediaServerTypes.h"
 #include "device_control/DeviceControlTypes.h"
@@ -69,6 +70,9 @@ public:
         const VideoWidget *videoWidget
     ) const noexcept;
     [[nodiscard]] StreamId selectedControlStreamId() const noexcept;
+    [[nodiscard]] ControlMediaObservation controlMediaObservation(
+        StreamId streamId
+    ) const;
     [[nodiscard]] static QString deviceIdFromRtmpUrl(const QString &streamUrl);
 
 public slots:
@@ -79,6 +83,7 @@ signals:
     void deviceUnbound(const QString &deviceId);
     void controlTargetChanged(StreamId streamId, const QString &deviceId,
                               const QString &streamUrl);
+    void controlTargetMediaChanged(StreamId streamId);
 
 private:
     void showConnectionDialog();

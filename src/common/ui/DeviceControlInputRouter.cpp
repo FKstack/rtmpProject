@@ -51,14 +51,12 @@ void DeviceControlInputRouter::setKeyboardModeSelected(bool selected)
 {
     if (keyboardModeSelected_ == selected) return;
     keyboardModeSelected_ = selected;
-    if (!selected) cancelAndDisarm();
+    if (!selected) clearHeldKeys(true);
 }
 
 void DeviceControlInputRouter::setKeyboardArmed(bool armed)
 {
-    const bool accepted = armed && connected_ && keyboardModeSelected_ &&
-        scopeWindow_ != nullptr;
-    if (!accepted) {
+    if (!armed || !connected_ || scopeWindow_ == nullptr) {
         cancelAndDisarm();
         return;
     }
@@ -188,11 +186,13 @@ bool DeviceControlInputRouter::eventFilter(QObject *watched, QEvent *event)
          (watched == scopeWindow_ &&
           (event->type() == QEvent::WindowDeactivate ||
            event->type() == QEvent::Hide)))) {
+        emit controlContextLost();
         cancelAndDisarm();
     }
 
     if (keyboardArmed_ && event->type() == QEvent::FocusIn) {
         if (QApplication::activeModalWidget() != nullptr) {
+            emit controlContextLost();
             cancelAndDisarm();
         } else if (isTextEntryWidget(qobject_cast<QWidget *>(watched))) {
             clearHeldKeys(true);
@@ -200,6 +200,7 @@ bool DeviceControlInputRouter::eventFilter(QObject *watched, QEvent *event)
     }
 
     if (!keyboardArmed_ ||
+        !keyboardModeSelected_ ||
         (event->type() != QEvent::KeyPress && event->type() != QEvent::KeyRelease)) {
         return QObject::eventFilter(watched, event);
     }
@@ -211,6 +212,7 @@ bool DeviceControlInputRouter::eventFilter(QObject *watched, QEvent *event)
 
     const auto *targetWidget = qobject_cast<QWidget *>(watched);
     if (targetWidget != nullptr && targetWidget->window() != scopeWindow_) {
+        emit controlContextLost();
         cancelAndDisarm();
         return QObject::eventFilter(watched, event);
     }
@@ -225,7 +227,10 @@ bool DeviceControlInputRouter::eventFilter(QObject *watched, QEvent *event)
     if (textEntry || modal) return QObject::eventFilter(watched, event);
 
     if (key == Qt::Key_Escape) {
-        if (pressed && !keyEvent->isAutoRepeat()) cancelAndDisarm();
+        if (pressed && !keyEvent->isAutoRepeat()) {
+            emit explicitLockRequested();
+            cancelAndDisarm();
+        }
         return true;
     }
     if (key == Qt::Key_Space) {

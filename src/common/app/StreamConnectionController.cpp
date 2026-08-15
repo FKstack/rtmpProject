@@ -61,6 +61,7 @@ StreamConnectionController::StreamConnectionController(
         [this](StreamId streamId, DeviceStatus state) {
             ConnectionBinding *binding = bindings_.find(streamId);
             if (binding != nullptr) {
+                binding->playbackStatus = state;
                 mainWindow_->updateDeviceStatus(
                     binding->videoWidget,
                     state,
@@ -84,6 +85,9 @@ StreamConnectionController::StreamConnectionController(
                         UserFailureReason::None,
                         binding
                     );
+                }
+                if (selectedControlStreamId_ == streamId) {
+                    emit controlTargetMediaChanged(streamId);
                 }
             }
         }
@@ -480,6 +484,21 @@ StreamId StreamConnectionController::selectedControlStreamId() const noexcept
     return selectedControlStreamId_;
 }
 
+ControlMediaObservation StreamConnectionController::controlMediaObservation(
+    StreamId streamId
+) const
+{
+    const ConnectionBinding *binding = bindings_.find(streamId);
+    if (binding == nullptr) {
+        return {};
+    }
+    const auto mailbox = playbackManager_->frameMailbox(streamId);
+    return {
+        binding->playbackStatus == DeviceStatus::Playing,
+        mailbox != nullptr ? mailbox->lastPresentedFrameAgeMs() : -1,
+    };
+}
+
 QString StreamConnectionController::deviceIdFromRtmpUrl(
     const QString &streamUrl)
 {
@@ -639,6 +658,7 @@ void StreamConnectionController::selectControlTarget(StreamId streamId)
     selectedControlStreamId_ = streamId;
     next->videoWidget->setControlTargetSelected(true);
     emit controlTargetChanged(streamId, next->deviceId, next->url);
+    emit controlTargetMediaChanged(streamId);
 }
 
 void StreamConnectionController::toggleAudio(VideoWidget *videoWidget)

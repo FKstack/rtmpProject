@@ -55,6 +55,9 @@ void DeviceControlPanelTest::disablesCommandsUntilConnected()
     QVERIFY(start->isEnabled());
     QVERIFY(stop->isEnabled());
     QVERIFY(stopCar->isEnabled());
+    QVERIFY(!joystick->isEnabled());
+    panel.setMovementArmAvailable(true);
+    panel.setControlSessionState(true, false);
     QVERIFY(joystick->isEnabled());
 }
 
@@ -65,16 +68,18 @@ void DeviceControlPanelTest::switchesModesWithoutArmingKeyboard()
     panel.setControlTarget(QStringLiteral("040001"),
                            DevicePresenceState::Online);
     QSignalSpy modeSpy(&panel, &DeviceControlPanel::keyboardModeSelected);
-    QSignalSpy armSpy(&panel, &DeviceControlPanel::keyboardArmRequested);
+    QSignalSpy armSpy(&panel, &DeviceControlPanel::controlArmRequested);
     auto *keyboardMode = panel.findChild<QPushButton *>(
         QStringLiteral("keyboardControlModeButton"));
     auto *arm = panel.findChild<QPushButton *>(
-        QStringLiteral("keyboardArmButton"));
+        QStringLiteral("controlSessionArmButton"));
     auto *stack = panel.findChild<QStackedWidget *>(
         QStringLiteral("deviceControlInputStack"));
     QVERIFY(keyboardMode != nullptr);
     QVERIFY(arm != nullptr);
     QVERIFY(stack != nullptr);
+
+    panel.setMovementArmAvailable(true);
 
     keyboardMode->click();
     QCOMPARE(modeSpy.count(), 1);
@@ -92,11 +97,11 @@ void DeviceControlPanelTest::keyboardVisualStateIsExplicit()
 {
     DeviceControlPanel panel;
     auto *arm = panel.findChild<QPushButton *>(
-        QStringLiteral("keyboardArmButton"));
+        QStringLiteral("controlSessionArmButton"));
     QVERIFY(arm != nullptr);
-    panel.setKeyboardArmedState(true);
+    panel.setControlSessionState(true, false);
     QVERIFY(arm->isChecked());
-    QCOMPARE(arm->text(), QStringLiteral("解除键盘控制"));
+    QCOMPARE(arm->text(), QStringLiteral("撤销车辆移动控制"));
 
     panel.setKeyboardDirectionState(DeviceCommand::MoveForward, true);
     bool foundPressedKey = false;

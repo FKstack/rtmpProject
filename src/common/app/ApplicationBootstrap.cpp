@@ -13,6 +13,7 @@
 #include "app/StreamConnectionController.h"
 #include "app/SavedStreamController.h"
 #include "app/DeviceControlController.h"
+#include "app/DeviceControlTransport.h"
 #include "app/StyleLoader.h"
 #include "diagnostics/RuntimeMetricsReporter.h"
 #include "device_control/MqttDeviceClient.h"
@@ -321,15 +322,12 @@ int ApplicationBootstrap::run(int argc, char *argv[])
     mainWindow.installDeviceControlPanel(deviceControlPanel);
     DeviceControlInputRouter deviceControlInput(&mainWindow);
     MqttDeviceClient mqttClient;
+    MqttDeviceControlTransportAdapter deviceControlTransport(&mqttClient);
     DevicePresenceTracker devicePresenceTracker;
     QObject::connect(deviceControlPanel,
                      &DeviceControlPanel::keyboardModeSelected,
                      &deviceControlInput,
                      &DeviceControlInputRouter::setKeyboardModeSelected);
-    QObject::connect(deviceControlPanel,
-                     &DeviceControlPanel::keyboardArmRequested,
-                     &deviceControlInput,
-                     &DeviceControlInputRouter::setKeyboardArmed);
     QObject::connect(deviceControlPanel,
                      &DeviceControlPanel::inputResetRequested,
                      &deviceControlInput,
@@ -339,16 +337,48 @@ int ApplicationBootstrap::run(int argc, char *argv[])
                      &deviceControlInput,
                      &DeviceControlInputRouter::cancelAndDisarm);
     QObject::connect(&deviceControlInput,
-                     &DeviceControlInputRouter::keyboardArmedChanged,
-                     deviceControlPanel,
-                     &DeviceControlPanel::setKeyboardArmedState);
-    QObject::connect(&deviceControlInput,
                      &DeviceControlInputRouter::directionKeyStateChanged,
                      deviceControlPanel,
                      &DeviceControlPanel::setKeyboardDirectionState);
     DeviceControlController deviceControlController(
-        &mainWindow, deviceControlPanel, &mqttClient,
-        &devicePresenceTracker, &logManager);
+        &mainWindow, deviceControlPanel, &deviceControlTransport,
+        &devicePresenceTracker, &logManager,
+        [&connectionController](StreamId streamId) {
+            return connectionController.controlMediaObservation(streamId);
+        });
+    QObject::connect(deviceControlPanel,
+                     &DeviceControlPanel::joystickCommandPressed,
+                     &deviceControlController,
+                     [&deviceControlController](DeviceCommand command) {
+                         deviceControlController.submitCommand(
+                             command, ControlAttemptSource::Joystick);
+                     });
+    QObject::connect(deviceControlPanel,
+                     &DeviceControlPanel::joystickMovementReleased,
+                     &deviceControlController,
+                     [&deviceControlController] {
+                         deviceControlController.releaseMovement(
+                             ControlAttemptSource::Joystick);
+                     });
+    QObject::connect(deviceControlPanel,
+                     &DeviceControlPanel::buttonCommandPressed,
+                     &deviceControlController,
+                     [&deviceControlController](DeviceCommand command) {
+                         deviceControlController.submitCommand(
+                             command, ControlAttemptSource::Button);
+                     });
+    QObject::connect(deviceControlPanel,
+                     &DeviceControlPanel::controlArmRequested,
+                     &deviceControlController,
+                     &DeviceControlController::setControlArmed);
+    QObject::connect(deviceControlPanel,
+                     &DeviceControlPanel::controlContextLost,
+                     &deviceControlController,
+                     [&deviceControlController] {
+                         deviceControlController.invalidateControl(
+                             ControlInvalidationCause::FocusLost,
+                             ControlAttemptSource::FocusLost);
+                     });
     QObject::connect(&connectionController,
                      &StreamConnectionController::deviceBound,
                      &devicePresenceTracker,
@@ -361,6 +391,12 @@ int ApplicationBootstrap::run(int argc, char *argv[])
                      &StreamConnectionController::controlTargetChanged,
                      &deviceControlController,
                      &DeviceControlController::setControlTarget);
+    QObject::connect(&connectionController,
+                     &StreamConnectionController::controlTargetMediaChanged,
+                     &deviceControlController,
+                     [&deviceControlController](StreamId) {
+                         deviceControlController.refreshControlAvailability();
+                     });
     QObject::connect(&devicePresenceTracker,
                      &DevicePresenceTracker::presenceChanged,
                      &connectionController,
@@ -371,26 +407,61 @@ int ApplicationBootstrap::run(int argc, char *argv[])
                      &DeviceControlController::setDevicePresence);
     QObject::connect(&deviceControlInput,
                      &DeviceControlInputRouter::commandPressed,
-                     deviceControlPanel,
-                     &DeviceControlPanel::commandPressed);
+                     &deviceControlController,
+                     [&deviceControlController](DeviceCommand command) {
+                         deviceControlController.submitCommand(
+                             command, ControlAttemptSource::Keyboard);
+                     });
     QObject::connect(&deviceControlInput,
                      &DeviceControlInputRouter::movementReleased,
-                     deviceControlPanel,
-                     &DeviceControlPanel::movementReleased);
-    QObject::connect(&mqttClient, &MqttDeviceClient::stateChanged,
+                     &deviceControlController,
+                     [&deviceControlController] {
+                         deviceControlController.releaseMovement(
+                             ControlAttemptSource::Keyboard);
+                     });
+    QObject::connect(&deviceControlTransport,
+                     &DeviceControlTransport::stateChanged,
                      &deviceControlInput,
                      [&deviceControlInput](MqttConnectionState state,
                                            const QString &) {
                          deviceControlInput.setConnected(
                              state == MqttConnectionState::Connected);
                      });
-    QObject::connect(deviceControlPanel,
-                     &DeviceControlPanel::controlContextLost,
+    QObject::connect(&deviceControlController,
+                     &DeviceControlController::controlSessionChanged,
+                     &deviceControlInput,
+                     [&deviceControlInput](bool armed, bool, const QString &) {
+                         deviceControlInput.setKeyboardArmed(armed);
+                     });
+    QObject::connect(&deviceControlController,
+                     &DeviceControlController::interactiveControlRevoked,
+                     deviceControlPanel,
+                     &DeviceControlPanel::cancelInteractiveControl);
+    QObject::connect(&deviceControlController,
+                     &DeviceControlController::interactiveControlRevoked,
+                     &deviceControlInput,
+                     &DeviceControlInputRouter::cancelAndDisarm);
+    QObject::connect(&deviceControlInput,
+                     &DeviceControlInputRouter::explicitLockRequested,
                      &deviceControlController,
-                     &DeviceControlController::requestSafetyStop);
+                     [&deviceControlController] {
+                         deviceControlController.setControlArmed(false);
+                     });
+    QObject::connect(&deviceControlInput,
+                     &DeviceControlInputRouter::controlContextLost,
+                     &deviceControlController,
+                     [&deviceControlController] {
+                         deviceControlController.invalidateControl(
+                             ControlInvalidationCause::FocusLost,
+                             ControlAttemptSource::FocusLost);
+                     });
     QObject::connect(&mainWindow, &MainWindow::fullscreenTransitionStarted,
                      &deviceControlController,
-                     &DeviceControlController::requestSafetyStop);
+                     [&deviceControlController] {
+                         deviceControlController.invalidateControl(
+                             ControlInvalidationCause::FullscreenTransition,
+                             ControlAttemptSource::FullscreenTransition);
+                     });
     QObject::connect(&mainWindow, &MainWindow::fullscreenTransitionStarted,
                      deviceControlPanel,
                      &DeviceControlPanel::cancelInteractiveControl);

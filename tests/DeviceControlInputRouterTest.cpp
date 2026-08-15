@@ -162,11 +162,10 @@ void DeviceControlInputRouterTest::escapeModeChangeAndDisconnectDisarm()
     QVERIFY(router.keyboardArmed());
     QTest::keyPress(&window, Qt::Key_D);
     router.setKeyboardModeSelected(false);
-    QVERIFY(!router.keyboardArmed());
+    QVERIFY(router.keyboardArmed());
     QCOMPARE(stopSpy.count(), 2);
 
     router.setKeyboardModeSelected(true);
-    router.setKeyboardArmed(true);
     QVERIFY(router.keyboardArmed());
     router.setConnected(false);
     QVERIFY(!router.keyboardArmed());

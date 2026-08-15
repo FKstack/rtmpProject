@@ -120,9 +120,9 @@ DeviceControlPanel::DeviceControlPanel(QWidget *parent) : QWidget(parent)
     stopStreamButton_->setObjectName(QStringLiteral("stopDeviceStreamButton"));
     stopStreamButton_->setToolTip(tr("向 Broker 提交 stopStream；不代表设备已执行"));
     connect(startStreamButton_, &QPushButton::clicked, this,
-            [this] { emit commandPressed(DeviceCommand::StartStream); });
+            [this] { emit buttonCommandPressed(DeviceCommand::StartStream); });
     connect(stopStreamButton_, &QPushButton::clicked, this,
-            [this] { emit commandPressed(DeviceCommand::StopStream); });
+            [this] { emit buttonCommandPressed(DeviceCommand::StopStream); });
     streamRow->addWidget(startStreamButton_);
     streamRow->addWidget(stopStreamButton_);
     connectionLayout->addLayout(streamRow);
@@ -154,6 +154,13 @@ DeviceControlPanel::DeviceControlPanel(QWidget *parent) : QWidget(parent)
     modeRow->addWidget(mouseModeButton_);
     modeRow->addWidget(keyboardModeButton_);
     movementLayout->addLayout(modeRow);
+
+    controlArmButton_ = new QPushButton(tr("解锁车辆移动"), movementCard);
+    controlArmButton_->setObjectName(QStringLiteral("controlSessionArmButton"));
+    controlArmButton_->setCheckable(true);
+    controlArmButton_->setToolTip(
+        tr("需要心跳在线、RTMP 正在播放且最近画面不超过 1 秒"));
+    movementLayout->addWidget(controlArmButton_);
 
     inputStack_ = new QStackedWidget(movementCard);
     inputStack_->setObjectName(QStringLiteral("deviceControlInputStack"));
@@ -197,12 +204,6 @@ DeviceControlPanel::DeviceControlPanel(QWidget *parent) : QWidget(parent)
     keyboardStatusLabel_->setObjectName(QStringLiteral("keyboardControlStatus"));
     keyboardStatusLabel_->setAlignment(Qt::AlignCenter);
     keyboardLayout->addWidget(keyboardStatusLabel_);
-    keyboardArmButton_ = new QPushButton(tr("启用键盘控制"), keyboardPage);
-    keyboardArmButton_->setObjectName(QStringLiteral("keyboardArmButton"));
-    keyboardArmButton_->setCheckable(true);
-    keyboardArmButton_->setToolTip(
-        tr("启用后 WASD 和方向键在主窗口内控制车辆；Esc 解除"));
-    keyboardLayout->addWidget(keyboardArmButton_);
     auto *keyboardHint = new QLabel(
         tr("最后按下的方向优先 · Space 立即停车 · Esc 解除控制"), keyboardPage);
     keyboardHint->setObjectName(QStringLiteral("keyboardControlHint"));
@@ -255,20 +256,20 @@ DeviceControlPanel::DeviceControlPanel(QWidget *parent) : QWidget(parent)
     root->addStretch();
 
     connect(joystick_, &VirtualJoystickWidget::commandPressed,
-            this, &DeviceControlPanel::commandPressed);
+            this, &DeviceControlPanel::joystickCommandPressed);
     connect(joystick_, &VirtualJoystickWidget::movementReleased,
-            this, &DeviceControlPanel::movementReleased);
+            this, &DeviceControlPanel::joystickMovementReleased);
     connect(mouseModeButton_, &QPushButton::clicked, this,
             [this] { selectKeyboardMode(false); });
     connect(keyboardModeButton_, &QPushButton::clicked, this,
             [this] { selectKeyboardMode(true); });
-    connect(keyboardArmButton_, &QPushButton::clicked, this,
-            [this](bool checked) { emit keyboardArmRequested(checked); });
+    connect(controlArmButton_, &QPushButton::clicked, this,
+            [this](bool checked) { emit controlArmRequested(checked); });
     connect(stopCarButton_, &QPushButton::clicked, this, [this] {
-        const bool joystickWasDriving = joystick_->isDriving();
+        const QSignalBlocker blocker(joystick_);
         joystick_->cancelMovement();
         emit inputResetRequested();
-        if (!joystickWasDriving) emit commandPressed(DeviceCommand::StopCar);
+        emit buttonCommandPressed(DeviceCommand::StopCar);
     });
     connect(settings, &QToolButton::clicked, this, [this] {
         cancelInteractiveControl();
@@ -287,8 +288,8 @@ DeviceControlPanel::DeviceControlPanel(QWidget *parent) : QWidget(parent)
     setTabOrder(stopStreamButton_, mouseModeButton_);
     setTabOrder(mouseModeButton_, keyboardModeButton_);
     setTabOrder(keyboardModeButton_, joystick_);
-    setTabOrder(joystick_, keyboardArmButton_);
-    setTabOrder(keyboardArmButton_, stopCarButton_);
+    setTabOrder(joystick_, controlArmButton_);
+    setTabOrder(controlArmButton_, stopCarButton_);
     setTabOrder(stopCarButton_, observedToggle_);
     updateCommandEnabled();
 }
@@ -325,7 +326,6 @@ void DeviceControlPanel::setConnectionState(MqttConnectionState state,
     statusDot_->setProperty("connectionState", visualState);
     statusDot_->style()->unpolish(statusDot_);
     statusDot_->style()->polish(statusDot_);
-    if (!connected_) setKeyboardArmedState(false);
     updateCommandEnabled();
 }
 
@@ -364,7 +364,7 @@ void DeviceControlPanel::setDevicePresenceState(DevicePresenceState state)
     case DevicePresenceState::Waiting:
         text = tr("等待心跳"); name = QStringLiteral("waiting"); break;
     case DevicePresenceState::Online:
-        text = tr("在线"); name = QStringLiteral("online"); break;
+        text = tr("心跳在线"); name = QStringLiteral("online"); break;
     case DevicePresenceState::Offline:
         text = tr("离线"); name = QStringLiteral("offline"); break;
     }
@@ -410,19 +410,36 @@ void DeviceControlPanel::setLastResult(const QString &text, bool error)
     resultLabel_->style()->polish(resultLabel_);
 }
 
-void DeviceControlPanel::setKeyboardArmedState(bool armed)
+void DeviceControlPanel::setControlSessionState(
+    bool armed,
+    bool suspended,
+    const QString &detail
+)
 {
-    const QSignalBlocker blocker(keyboardArmButton_);
-    keyboardArmButton_->setChecked(armed);
-    keyboardArmButton_->setText(armed ? tr("解除键盘控制") : tr("启用键盘控制"));
-    keyboardArmButton_->setProperty("armed", armed);
+    sessionArmed_ = armed;
+    sessionSuspended_ = suspended;
+    const QSignalBlocker blocker(controlArmButton_);
+    controlArmButton_->setChecked(armed);
+    controlArmButton_->setText(armed ? tr("撤销车辆移动控制")
+                                     : tr("解锁车辆移动"));
+    controlArmButton_->setProperty("armed", armed);
     keyboardStatusLabel_->setText(
-        armed ? tr("键盘控制：已启用") : tr("键盘控制：未启用"));
+        suspended ? tr("车辆移动：已挂起，需重新解锁")
+                  : armed ? tr("车辆移动：已解锁")
+                          : tr("车辆移动：已锁定"));
     keyboardStatusLabel_->setProperty("armed", armed);
-    keyboardArmButton_->style()->unpolish(keyboardArmButton_);
-    keyboardArmButton_->style()->polish(keyboardArmButton_);
+    if (!detail.isEmpty()) keyboardStatusLabel_->setToolTip(detail);
+    controlArmButton_->style()->unpolish(controlArmButton_);
+    controlArmButton_->style()->polish(controlArmButton_);
     keyboardStatusLabel_->style()->unpolish(keyboardStatusLabel_);
     keyboardStatusLabel_->style()->polish(keyboardStatusLabel_);
+    updateCommandEnabled();
+}
+
+void DeviceControlPanel::setMovementArmAvailable(bool available)
+{
+    movementArmAvailable_ = available;
+    updateCommandEnabled();
 }
 
 QPushButton *DeviceControlPanel::keyButton(DeviceCommand command) const
@@ -449,7 +466,6 @@ void DeviceControlPanel::setKeyboardDirectionState(DeviceCommand command,
 void DeviceControlPanel::cancelInteractiveControl()
 {
     joystick_->cancelMovement();
-    emit keyboardArmRequested(false);
 }
 
 bool DeviceControlPanel::event(QEvent *event)
@@ -466,7 +482,6 @@ void DeviceControlPanel::selectKeyboardMode(bool keyboard)
 {
     if (keyboardMode_ == keyboard) return;
     if (keyboard) joystick_->cancelMovement();
-    else emit keyboardArmRequested(false);
     keyboardMode_ = keyboard;
     inputStack_->setCurrentIndex(keyboard ? 1 : 0);
     mouseModeButton_->setChecked(!keyboard);
@@ -480,7 +495,7 @@ void DeviceControlPanel::updateCommandEnabled()
     const bool targetReady = connected_ && hasTarget_;
     startStreamButton_->setEnabled(targetReady && targetOnline_);
     stopStreamButton_->setEnabled(targetReady);
-    stopCarButton_->setEnabled(targetReady);
-    keyboardArmButton_->setEnabled(targetReady && targetOnline_ && keyboardMode_);
-    joystick_->setControlEnabled(targetReady && targetOnline_ && !keyboardMode_);
+    stopCarButton_->setEnabled(hasTarget_);
+    controlArmButton_->setEnabled(sessionArmed_ || movementArmAvailable_);
+    joystick_->setControlEnabled(sessionArmed_ && !keyboardMode_);
 }

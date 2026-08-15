@@ -816,6 +816,10 @@ QString LogManager::auditActionName(AuditAction action)
         return QStringLiteral("DEVICE_UPGRADE");
     case AuditAction::ManualReconnect:
         return QStringLiteral("MANUAL_RECONNECT");
+    case AuditAction::ControlCommandAttempt:
+        return QStringLiteral("CONTROL_COMMAND_ATTEMPT");
+    case AuditAction::ControlSessionTransition:
+        return QStringLiteral("CONTROL_SESSION_TRANSITION");
     }
     return QStringLiteral("UNKNOWN");
 }
@@ -829,6 +833,12 @@ QString LogManager::auditResultName(AuditResult result)
         return QStringLiteral("FAILURE");
     case AuditResult::Cancelled:
         return QStringLiteral("CANCELLED");
+    case AuditResult::Submitted:
+        return QStringLiteral("SUBMITTED");
+    case AuditResult::Rejected:
+        return QStringLiteral("REJECTED");
+    case AuditResult::PublishFailed:
+        return QStringLiteral("PUBLISH_FAILED");
     }
     return QStringLiteral("UNKNOWN");
 }

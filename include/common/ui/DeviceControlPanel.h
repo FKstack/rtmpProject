@@ -28,18 +28,21 @@ public:
     void setLastResult(const QString &text, bool error = false);
     void appendObservedMessage(const MqttObservedMessage &message);
     void showObservedMessagesDropped(quint64 count);
-    void setKeyboardArmedState(bool armed);
+    void setControlSessionState(bool armed, bool suspended,
+                                const QString &detail = {});
+    void setMovementArmAvailable(bool available);
     void setKeyboardDirectionState(DeviceCommand command, bool pressed);
 
 public slots:
     void cancelInteractiveControl();
 
 signals:
-    void commandPressed(DeviceCommand command);
-    void movementReleased();
+    void joystickCommandPressed(DeviceCommand command);
+    void joystickMovementReleased();
+    void buttonCommandPressed(DeviceCommand command);
     void settingsRequested();
     void keyboardModeSelected(bool selected);
-    void keyboardArmRequested(bool armed);
+    void controlArmRequested(bool armed);
     void inputResetRequested();
     void controlContextLost();
 
@@ -64,7 +67,7 @@ private:
     QStackedWidget *inputStack_ = nullptr;
     QPushButton *mouseModeButton_ = nullptr;
     QPushButton *keyboardModeButton_ = nullptr;
-    QPushButton *keyboardArmButton_ = nullptr;
+    QPushButton *controlArmButton_ = nullptr;
     QPushButton *forwardKey_ = nullptr;
     QPushButton *backwardKey_ = nullptr;
     QPushButton *leftKey_ = nullptr;
@@ -77,4 +80,7 @@ private:
     bool hasTarget_ = false;
     bool targetOnline_ = false;
     bool keyboardMode_ = false;
+    bool sessionArmed_ = false;
+    bool sessionSuspended_ = false;
+    bool movementArmAvailable_ = false;
 };

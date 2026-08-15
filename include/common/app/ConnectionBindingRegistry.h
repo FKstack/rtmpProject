@@ -21,6 +21,7 @@ struct ConnectionBinding
     bool removing = false;
     QString deviceId;
     QString cameraId;
+    DeviceStatus playbackStatus = DeviceStatus::Disconnected;
 };
 
 /** @brief Session-local registry for stable StreamId/UI/profile bindings. */

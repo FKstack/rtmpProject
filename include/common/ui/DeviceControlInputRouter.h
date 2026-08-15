@@ -41,6 +41,8 @@ signals:
     void movementReleased();
     void keyboardArmedChanged(bool armed);
     void directionKeyStateChanged(DeviceCommand command, bool pressed);
+    void explicitLockRequested();
+    void controlContextLost();
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;

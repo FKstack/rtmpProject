@@ -106,6 +106,7 @@ void LatestFrameMailbox::clear()
     {
         const std::lock_guard<std::mutex> lock(mutex_);
         latest_ = {};
+        lastPresentationMonotonicMs_ = -1;
         lastRenderedMediaTimestampMs_ = -1;
         lastRenderedSessionGeneration_ = 0;
         ++stats_.cleared;
@@ -249,6 +250,18 @@ std::uint64_t LatestFrameMailbox::latestSequence() const
 {
     const std::lock_guard<std::mutex> lock(mutex_);
     return latest_.isValid() ? latest_.sequence() : 0;
+}
+
+qint64 LatestFrameMailbox::lastPresentedFrameAgeMs() const
+{
+    const std::lock_guard<std::mutex> lock(mutex_);
+    if (lastPresentationMonotonicMs_ < 0) {
+        return -1;
+    }
+    return std::max<qint64>(
+        0,
+        monotonicMilliseconds() - lastPresentationMonotonicMs_
+    );
 }
 
 LatestFrameMailbox::SubscriberId LatestFrameMailbox::subscribe(

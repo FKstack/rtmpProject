@@ -54,12 +54,17 @@ enum class AuditAction {
     SoftwareUpgrade,
     DeviceUpgrade,
     ManualReconnect,
+    ControlCommandAttempt,
+    ControlSessionTransition,
 };
 
 enum class AuditResult {
     Success,
     Failure,
     Cancelled,
+    Submitted,
+    Rejected,
+    PublishFailed,
 };
 
 struct AuditRecord

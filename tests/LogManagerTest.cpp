@@ -158,6 +158,18 @@ void LogManagerTest::separatesSystemAndAuditAndKeepsAuditUnfiltered()
     QVERIFY(auditPayload.contains("\"result\":\"FAILURE\""));
     QVERIFY(!auditPayload.contains("raw-token"));
     QVERIFY(!auditPayload.contains("password=secret"));
+    QCOMPARE(
+        LogManager::auditResultName(AuditResult::Submitted),
+        QStringLiteral("SUBMITTED")
+    );
+    QCOMPARE(
+        LogManager::auditResultName(AuditResult::Rejected),
+        QStringLiteral("REJECTED")
+    );
+    QCOMPARE(
+        LogManager::auditResultName(AuditResult::PublishFailed),
+        QStringLiteral("PUBLISH_FAILED")
+    );
 }
 
 void LogManagerTest::rotatesAndBoundsFiles()

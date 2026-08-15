@@ -10,11 +10,29 @@ file(GLOB_RECURSE device_control_files
     "${PROJECT_SOURCE_DIR}/include/common/device_control/*.h"
     "${PROJECT_SOURCE_DIR}/src/common/device_control/*.h"
     "${PROJECT_SOURCE_DIR}/src/common/device_control/*.cpp")
+file(GLOB_RECURSE control_policy_files
+    "${PROJECT_SOURCE_DIR}/include/common/control_policy/*.h"
+    "${PROJECT_SOURCE_DIR}/src/common/control_policy/*.h"
+    "${PROJECT_SOURCE_DIR}/src/common/control_policy/*.cpp")
 
 foreach(source_file IN LISTS media_files)
     file(READ "${source_file}" source_text)
     if(source_text MATCHES "#[ \t]*include[ \t]*[<\"](render|ui)/")
         message(FATAL_ERROR "media layer depends on render/ui: ${source_file}")
+    endif()
+endforeach()
+
+foreach(source_file IN LISTS control_policy_files)
+    file(READ "${source_file}" source_text)
+    if(source_text MATCHES "#[ \t]*include[ \t]*[<\"](app|device_control|logging|media|render|server|ui)/")
+        message(FATAL_ERROR "control_policy depends on an outer layer: ${source_file}")
+    endif()
+endforeach()
+
+foreach(source_file IN LISTS media_files render_files device_control_files)
+    file(READ "${source_file}" source_text)
+    if(source_text MATCHES "#[ \t]*include[ \t]*[<\"]control_policy/")
+        message(FATAL_ERROR "existing lower layer depends on control_policy: ${source_file}")
     endif()
 endforeach()
 
