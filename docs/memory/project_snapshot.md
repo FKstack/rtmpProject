@@ -1,5 +1,15 @@
 # RtmpMonitor 当前项目快照
 
+> 模块二 Phase 2A 实施状态（2026-08-16）：已从最新 `v0.1.0-alpha.1` 基线创建
+> `codex/module2-event-center`，新增 Qt Core-only `rtmp_monitor_event_center`、schema v1 `QSaveFile`
+> 原子 JSON、八类 MQTT/心跳/RTMP/SRS/本地控制/人工事实事件、应用层只读 `PlatformEventBridge`，
+> 以及默认隐藏的底部“平台事件中心”和状态栏活动事件徽标。系统事件只能由匹配观察恢复；未观察到
+> 恢复时必须二次确认并填写原因才能关闭。损坏、高版本或写失败会保留原文件并只禁用事件写入，
+> 不影响播放和安全停车。稳定资源只保存 camera/device ID 或脱敏 SHA-256；不保存完整 URL、Broker、
+> payload 或凭据。Windows Debug 全目标与 CTest 34/34（131.13 秒）、Windows Release 全目标、ARM64
+> RASTER/GLES3 全目标、AArch64 ELF/动态依赖审计和 QEMU 逻辑测试通过；RASTER 未引入 GL/EGL/GLES。
+> Phase 2B 事件详情/截图、证据、导出和 SRS DVR 未实施；自动化仍不证明 Broker/设备接收或车辆执行。
+
 > 模块一实施状态（2026-08-15）：已从固化并推送的 `v0.1.0-alpha.1` 基线创建
 > `codex/module1-control-safety`，落地 Qt Core-only `rtmp_monitor_control_policy`、应用层
 > `DeviceControlTransport`/MQTT 适配器、统一车辆移动解锁、100 ms RTMP/真实呈现帧新鲜度检查、

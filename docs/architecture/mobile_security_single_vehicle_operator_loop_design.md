@@ -1,7 +1,8 @@
 # RtmpMonitor 单车值守闭环架构设计
 
 > 日期：2026-08-15
-> 状态：产品与架构联合接受；Phase 1 已实现并通过自动化门禁，受控车辆台架验收待执行
+> 最后更新：2026-08-16
+> 状态：产品与架构联合接受；Phase 1 与 Phase 2A 已实现并通过自动化门禁，现场验收待执行
 > 风险：本文档变更为 R0；后续控制策略、事件、证据和 SRS DVR 实现分别按 R2 评审
 > 试点：单车、单桌面操作者、本地离线优先
 > 上位产品规划：[移动安防产品模块竞品调研与演进建议](../roadmap/mobile_security_product_module_recommendations.md)
@@ -249,13 +250,18 @@ enum class ControlAttemptOutcome {
   和退出只在首次失效时尝试一次停车；断线停车保留原目标快照，连接恢复后补发且不会自动重新解锁。
 - 控制尝试审计已增加稳定 UUID、目标/在线/MQTT/播放/帧龄快照、来源、稳定原因和三种本地结果，
   固定写入 `executionConfirmation=unavailable` 与 `actorAssurance=unverified-local`，不写完整 URL、
-  Broker 或原始 payload。事件中心尚未实施，因此停车不可提交只写结构化审计和 Critical 系统日志。
+  Broker 或原始 payload。Phase 1 交付时事件中心尚未实施，停车不可提交只写结构化审计和 Critical
+  系统日志；Phase 2A 现已在不改变该控制记录的前提下消费其只读快照并形成平台事件。
 - 自动化验证包括 Guard 表驱动边界、Controller/Fake Transport、UI/输入隔离、呈现帧龄、审计脱敏和
   原 MQTT 特征测试。Windows Debug 全量 CTest 31/31、Windows Release 全构建、ARM64 RASTER/GLES3
   全目标构建、AArch64 ELF/依赖审计和 QEMU 逻辑测试通过。真实 QPA/GPU/视频/车辆动作仍须人工验收，
   自动化结果不表示设备已经执行命令。
 
 ## 6. 模块二：平台事件中心
+
+> 实施状态（2026-08-16）：Phase 2A 已落地 Qt Core-only `rtmp_monitor_event_center`、schema v1
+> `QSaveFile` 原子存储、应用层 `PlatformEventBridge`、八类自动/人工事件，以及默认隐藏的底部事件
+> Dock 和常驻状态徽标。Phase 2B 的事件详情、最小截图与通用处置备注仍未实施。
 
 ### 6.1 事件来源与语义
 
@@ -265,7 +271,7 @@ enum class ControlAttemptOutcome {
 | --- | --- | --- | --- |
 | `MqttConnectionLost` | 已启用 MQTT 离开 Connected | 重新 Connected | Medium；运动中为 High |
 | `DevicePresenceLost` | 已见过心跳的目标进入 Offline | 同一 ID 回到 Online | Medium |
-| `VideoStreamLost` | 已 Playing 的流进入 Error/Reconnecting/Disconnected | 同一 StreamId 回到 Playing | Medium |
+| `VideoStreamLost` | 已 Playing 的流进入 Error/Reconnecting/Disconnected | 同一稳定本地资源回到 Playing | Medium |
 | `MediaServerUnhealthy` | SRS 健康观察从 Healthy 变为失败 | 同一 endpoint 恢复 Healthy | High |
 | `LocalControlPublishFailed` | 普通命令本地 publish 返回失败 | 同一目标后续普通命令本地提交成功 | Medium |
 | `LocalSafetyStopPublishFailed` | 自动或人工停车的本地 publish 返回失败 | 同一目标后续 StopCar 本地提交成功 | Critical |
@@ -311,7 +317,7 @@ Waiting、Unavailable、应用首次启动时的 Disabled 不自动制造告警�
   "eventType": "VideoStreamLost",
   "severity": "Medium",
   "state": "Open",
-  "localResourceId": "stream:<id>",
+  "localResourceId": "camera:<id>",
   "deviceId": "<optional-url-derived-id>",
   "displayNameSnapshot": "<sanitized-name>",
   "openedAtUtc": "<utc-time>",
@@ -344,9 +350,12 @@ Waiting、Unavailable、应用首次启动时的 Disabled 不自动制造告警�
   从而保证每份证据始终有可解释的事件来源。
 - 所有创建、确认、复发、恢复、解决、强制关闭和关闭转换均保留历史，不设置会截断关键生命周期的
   固定 32 条上限；重复观察只更新计数、时间和 revision，不追加历史。
-- 普通控制尝试继续进入现有轮转审计日志。操作者把某个 `attemptId` 关联到事件时，事件存储立即复制
+- 普通控制尝试继续进入现有轮转审计日志。Phase 2A 对自动触发控制失败/恢复事件的 attempt 自动复制
   一份脱敏、不可变的 `ControlAttemptSnapshot`（attemptId、时间、action、localOutcome、source、
-  executionConfirmation、targetDeviceId/identitySource）；后续导出不依赖可能已轮转的审计文件。
+  executionConfirmation、targetDeviceId/identitySource）；人工关联任意历史 attempt 延期到事件详情阶段。
+- 视频资源 ID 优先使用 `camera:<cameraId>`，其次使用 `device-stream:<deviceId>`；仅在两者都不存在时，
+  对移除凭据、query 和 fragment 后的规范 URL 计算 SHA-256。SRS endpoint 同样只保存脱敏哈希；事件
+  文件不保存完整 URL、Broker、payload 或凭据。
 - 事件频率低，普通活动/Closed 工作集有界；与长期证据关联的 tombstone 随证据生命周期保留。
   v1 在 Qt 所有者线程同步原子写入，没有实际规模证据前不引入数据库或后台写线程。
 
@@ -488,6 +497,9 @@ SRS 重启、适配器重启、应用未运行和 DVR 关闭。PoC 完成前，�
 
 ### Phase 2A：事件领域与自动/人工事件
 
+> 状态：已于 2026-08-16 按 R2 实现。Windows Debug 全量 CTest 34/34（131.13 秒）、Windows
+> Release 全目标、ARM64 RASTER/GLES3 全目标构建、AArch64 ELF/动态依赖审计及 QEMU 逻辑测试通过。
+
 - 接入 MQTT、心跳、RTMP、SRS、本地发布失败和人工事件；提供列表、确认、复发、恢复和关闭。
 - 验收活动事件去重、Resolved 后复发、系统/人工解决权限、关闭后再发、损坏/高版本文件保护和
   普通 Closed 事件容量/保留策略。
@@ -548,8 +560,9 @@ SRS 重启、适配器重启、应用未运行和 DVR 关闭。PoC 完成前，�
   反向依赖；v1 不引入 Qt SQL/SQLite、ZIP 或新云服务。
 - **契约与生命周期**：MQTT、心跳、RTMP、CLI 和现有持久化 schema 不变；新状态在 Qt owner 线程，
   证据 I/O 有界且可停止，SRS callback 为独立进程。
-- **当前验证**：Phase 1 已按 R2 实现并通过 31 项 Windows Debug CTest、Windows Release、ARM64
-  RASTER/GLES3 构建与交叉依赖门禁；真实车辆动作和 ARM 真机显示仍待人工验收。Phase 2～4 尚未实施。
+- **当前验证**：Phase 1 与 Phase 2A 已按 R2 实现；当前 Windows Debug CTest 为 34/34，Windows
+  Release、ARM64 RASTER/GLES3 构建及交叉依赖门禁通过。真实车辆动作和 ARM 真机显示仍待人工
+  验收；Phase 2B、Phase 3 和 Phase 4 尚未实施。
 
 ## 13. 联合评审结论
 
@@ -558,5 +571,5 @@ SRS 重启、适配器重启、应用未运行和 DVR 关闭。PoC 完成前，�
 画面新鲜度、诚实文案、事件复发、控制快照、event/evidence/tombstone 留存一致性、EvidenceCatalog
 唯一事实源、逐提交点崩溃恢复和量化验收指标。
 
-联合接受后 Phase 1 已按 R2 实现并通过上述自动化门禁；这仍不表示车辆已执行命令，也不表示
-Phase 2～4 或任何现场验收已经完成。
+联合接受后 Phase 1 与 Phase 2A 已按 R2 实现并通过上述自动化门禁；这仍不表示车辆已执行命令，
+也不表示 Phase 2B～4 或任何现场验收已经完成。
