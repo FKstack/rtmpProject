@@ -1,5 +1,14 @@
 # RtmpMonitor 当前项目快照
 
+> 模块三 Windows 便携包状态（2026-08-16）：基于 `v0.1.0-alpha.1` 提交 `1155aa7` 使用独立干净
+> Release 目录完成全量构建，并在同时清空宿主 `PATH`/`Path` 后以 Release、Qt 6.6.1、vcpkg Release
+> 与 Windows System32 的收敛路径通过 CTest 36/36（95.39 秒）。新包位于
+> `out/packages/module3-1155aa7/RtmpMonitor-0.1.0-alpha.1-windows-x64.zip`，包含 38 个条目、
+> 23,189,479 字节；不计算或生成 SHA-256，不调用微软签名。全新目录解压后 38 个文件、版本 CLI、
+> 禁止 Debug/开发/用户配置文件、Qt OpenSSL/FFmpeg 媒体插件与内容端点扫描通过；唯一运行端点是
+> 示例配置中的回环 `127.0.0.1`，其余 URL 来自许可证/来源声明或符号占位符。Codex Windows 宿主
+> 拒绝创建隔离 GUI 进程，因此本次 GUI 双击启动仍待人工验证，不冒充通过。
+
 > 模块三实施状态（2026-08-16）：已从最新 `v0.1.0-alpha.1` 基线创建
 > `codex/module3-evidence-export`，新增 Qt Core + Qt Gui 的 `rtmp_monitor_evidence`、schema v1
 > `QSaveFile` 原子证据目录、有界单线程截图写入、事件详情、无有效画面失败登记、事件目录导出、
