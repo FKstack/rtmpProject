@@ -473,7 +473,7 @@
 ## ADR-031 不改设备契约时先建设单车本地控制、事件与证据闭环
 
 - 日期：2026-08-15
-- 状态：已接受；Phase 1、Phase 2A 与模块三已实施
+- 状态：已接受；Phase 1、Phase 2A、模块三与 Phase 4 PoC 已实施
 - 背景：长期移动安防路线优先需要命令 ACK、鉴权、多车、事件和证据，但当前约束明确禁止修改 MQTT
   控制/心跳返回、设备固件和硬件。现有客户端只能观察本地 publish、MQTT 会话、心跳、RTMP 和 SRS
   状态，不能证明设备执行结果，也不能可靠提供多车、遥测、地图或巡逻输入。
@@ -505,7 +505,12 @@
   event schema v1 到 v2 的兼容迁移和证据投影。按产品决定不计算或比对 SHA-256 等内容哈希；仅验证
   原子提交顺序、规范路径和文件存在性，并在 UI/manifest 明确不提供防篡改保证。Windows Debug
   CTest 36/36、Windows Release、ARM64 RASTER/GLES3 全目标、AArch64 依赖审计和 QEMU 逻辑测试
-  通过。SRS DVR 仍未实施。
+  通过。Phase 4 于 2026-08-16 按 R2 落地为默认关闭的独立 PoC：新增未被正常配置加载的 SRS DVR
+  模板、仅回环 HTTP 适配器、schema v1 原子收据和故障矩阵验证器；SRS 拥有录像，适配器拥有 spool，
+  Qt/EvidenceService 均不接入。收据只以相对路径、大小和 mtime 纳秒去重，不读取内容、不执行内容
+  哈希并明确不提供防篡改保证。Python 单元测试 14/14 与固定 SRS 6.0.184 端到端矩阵通过，包含分段、
+  关键帧、尾段、重复/乱序回调、分别重启、低磁盘、适配器离线推拉流继续及默认配置零副作用；
+  Windows Debug CTest 36/36、Release 全目标和 ARM64 RASTER/GLES3 构建/依赖门禁保持通过。
 - 相关文件：`docs/architecture/mobile_security_single_vehicle_operator_loop_design.md`、
   `docs/roadmap/mobile_security_product_module_recommendations.md`
 

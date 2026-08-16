@@ -896,6 +896,34 @@ rtmp://<运行SRS的主机的LAN-IP>:1935/live/<streamKey>
   音频可先关闭（`-an` 等价设置）排除变量；
 - streamKey 与 media-server.ini 里某 camera 段的 `streamKey` 一致。
 
+### 4.5 可选：运行默认关闭的 DVR PoC
+
+模块四是独立的 Linux/WSL 验证链路，不是客户端开关。正常启动脚本仍只加载
+`deploy/srs/conf/srs-minimal.conf`，不会录像。PoC 模板
+`deploy/srs/conf/srs-dvr-poc.conf.in` 不会自动安装或进入 Windows 发布包；DVR 根目录必须由验证器
+渲染为仓库外的临时绝对路径。
+
+在 WSL/Linux 的仓库根目录运行：
+
+```bash
+bash scripts/srs/verify_dvr_poc.sh \
+  --srs-home "$HOME/opt/srs-6.0.184" \
+  --srs-source "$HOME/src/srs-6.0.184"
+```
+
+验证器只使用自己创建的 `/tmp/rtmp-monitor-dvr-poc.*`，默认占用独立端口 1936、1986、18085；若
+这些端口或原始配置所需的 1935/1985 已被占用，它会退出，不停止未知进程。退出时只对身份匹配的
+子进程发送 SRS `SIGQUIT`、适配器 `SIGTERM` 和 FFmpeg `SIGTERM`。
+
+通过结果必须同时包含：至少两个分段及收据、分段可读且从关键帧开始、断流尾段、重复/乱序回调
+去重、适配器和 SRS 分别重启、低磁盘拒绝、适配器离线时推拉流继续，以及原始
+`srs-minimal.conf` 零 DVR/spool 副作用。适配器仅监听回环，只保存 DVR 根内相对路径、大小和
+mtime；不保存完整 RTMP URL、回调中的鉴权参数、客户端 IP、cwd 或绝对 DVR 路径。
+
+本 PoC 不读取分段内容，也不计算或比较 SHA-256 或其他内容哈希。收据中的
+`contentHashVerification=not_performed` 是限制声明，不是完整性校验结果。因此 PoC 不能证明文件
+未被修改，也不代表事件录像关联、回放、导出、保留锁定、服务化安装或 ARM 现场部署已经完成。
+
 ---
 
 ## 5. 常见问题 FAQ

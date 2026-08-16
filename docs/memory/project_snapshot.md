@@ -1,5 +1,15 @@
 # RtmpMonitor 当前项目快照
 
+> 模块四 PoC 状态（2026-08-16）：已从最新 Alpha `db84951` 创建 `codex/module4-srs-dvr-poc`，新增
+> 默认不被加载的 SRS DVR 配置模板、Python 标准库回环回调适配器、schema v1 原子分段收据、14 项
+> 单元测试和独立 WSL/Linux 故障矩阵。固定 SRS 6.0.184 实测连续分段、关键帧起始、断流尾段、重复/
+> 乱序 callback、适配器和 SRS 分别重启、低磁盘拒绝、适配器离线时推拉流继续及原始
+> `srs-minimal.conf` 零 DVR/spool 副作用全部通过。PoC 不读取文件内容、不执行内容哈希、不进入
+> Windows 发布包，也不接入 Qt、事件或 EvidenceService。Windows Debug 全目标与 CTest 36/36
+> （129.49 秒）、Windows Release、ARM64 RASTER/GLES3 全目标、AArch64 ELF/动态依赖审计及 QEMU
+> 逻辑门禁通过；RASTER 仍无 OpenGL 依赖。事件录像关联、回放、导出、保留策略、服务化安装和 ARM
+> 现场磁盘资格仍延期。
+
 > 模块三 Windows 便携包状态（2026-08-16）：基于 `v0.1.0-alpha.1` 提交 `1155aa7` 使用独立干净
 > Release 目录完成全量构建，并在同时清空宿主 `PATH`/`Path` 后以 Release、Qt 6.6.1、vcpkg Release
 > 与 Windows System32 的收敛路径通过 CTest 36/36（95.39 秒）。新包位于
