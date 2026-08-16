@@ -1,0 +1,53 @@
+# RtmpMonitor opt-in SRS DVR proof of concept.
+# Render every __PLACEHOLDER__ into a temporary, local-only configuration.
+# __DVR_ROOT__ must be an explicit absolute path outside the repository and
+# outside every product package. The normal srs-minimal.conf stays unchanged.
+listen                  __RTMP_PORT__;
+max_connections         100;
+
+daemon                  off;
+srs_log_tank            console;
+srs_log_level_v2        info;
+
+http_api {
+    enabled             on;
+    listen              127.0.0.1:__API_PORT__;
+    crossdomain         off;
+    raw_api {
+        enabled         off;
+        allow_reload    off;
+    }
+}
+
+vhost __defaultVhost__ {
+    enabled             on;
+    chunk_size          4096;
+    tcp_nodelay         on;
+    min_latency         on;
+
+    play {
+        gop_cache       off;
+        queue_length    10;
+        atc             on;
+        mw_latency      0;
+    }
+
+    publish {
+        mr              off;
+    }
+
+    dvr {
+        enabled         on;
+        dvr_apply       __DVR_APPLY__;
+        dvr_path        __DVR_ROOT__/[app]/[stream]/[timestamp].flv;
+        dvr_plan        segment;
+        dvr_duration    10;
+        dvr_wait_keyframe on;
+        time_jitter     full;
+    }
+
+    http_hooks {
+        enabled         on;
+        on_dvr          http://127.0.0.1:__CALLBACK_PORT__/api/v1/dvrs;
+    }
+}
