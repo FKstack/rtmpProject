@@ -1,0 +1,54 @@
+RtmpMonitor Linux ARM64 Third-Party Notices
+============================================
+
+This notice describes the libraries copied into the Linux ARM64 RASTER
+Engineering Preview archive. It is an engineering inventory, not legal advice.
+System libraries listed in SYSTEM_RUNTIME_DEPENDENCIES.txt are requirements of
+the target operating-system image and are not copied into this archive.
+
+Qt 6.2.4
+--------
+
+Project: https://www.qt.io/
+Distribution source: Ubuntu 22.04 Jammy ARM64 packages
+License used for the bundled shared libraries and plugins: GNU Lesser General
+Public License version 3 and the applicable third-party licenses recorded by
+Ubuntu/Qt.
+Distribution boundary: unmodified, dynamically linked ARM64 shared libraries
+and plugins. They remain separate and replaceable in lib/ and plugins/.
+License material: licenses/qt/.
+
+FFmpeg 8.1.2
+------------
+
+Project: https://ffmpeg.org/
+Source: https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.xz
+License: GNU Lesser General Public License version 2.1 or later for the actual
+ARM64 build. The build configuration excludes GPL and nonfree components.
+Distribution boundary: unmodified dynamically linked ARM64 avformat, avcodec,
+avutil, swscale, and swresample libraries.
+License material: licenses/ffmpeg/.
+
+Eclipse Paho MQTT C 1.3.16
+--------------------------
+
+Project: https://github.com/eclipse-paho/paho.mqtt.c
+Source: https://github.com/eclipse-paho/paho.mqtt.c/archive/v1.3.16.tar.gz
+License: Eclipse Public License 2.0 and Eclipse Distribution License 1.0.
+Distribution boundary: the unmodified, dynamically linked non-TLS asynchronous
+ARM64 paho-mqtt3a library.
+License material: licenses/paho/.
+
+SRS
+---
+
+SRS is not included in this package. RtmpMonitor treats it as separately
+installed infrastructure. The packaged media-server example is an offline,
+loopback-only configuration example and does not start or install SRS.
+
+RtmpMonitor application
+-----------------------
+
+See LICENSE. This Engineering Preview is for individually authorized
+evaluation and testing only unless the project owner provides a separate
+written agreement.
