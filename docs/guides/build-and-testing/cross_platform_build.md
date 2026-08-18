@@ -255,6 +255,54 @@ Qt 6.2 在部分类型化 `connect()` 场景中要求指针目标是完整类型
 构建脚本要求 `CONFIG_GPL=0` 和 `CONFIG_NONFREE=0`。不得通过删除检查或增加
 `--enable-gpl` 绕过；确需 GPL 编码器时必须先重新评估程序分发许可证。
 
+## 7.1 Linux ARM64 RASTER 工程预览包
+
+仓库提供 `scripts/package_linux_arm64.sh`，只接受已经完成交叉编译的
+Release、Linux/AArch64、RASTER、`BUILD_TESTING=OFF` 构建。脚本拒绝覆盖已有阶段目录、归档或
+审计目录，不修改 sysroot，也不把 SRS、DVR、用户 MQTT/保存推流配置、测试媒体、源码或调试文件
+放入客户端包。
+
+推荐使用独立构建目录：
+
+```bash
+export PKG_CONFIG_SYSROOT_DIR=/opt/rtmp-monitor/sysroots/jammy-arm64
+export PKG_CONFIG_LIBDIR=/opt/rtmp-monitor/sysroots/jammy-arm64/usr/local/lib/aarch64-linux-gnu/pkgconfig:/opt/rtmp-monitor/sysroots/jammy-arm64/usr/local/share/pkgconfig
+
+cmake -S . -B out/build-linux-arm64/package-raster-release -G Ninja \
+  -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/aarch64-linux.cmake \
+  -DARM64_SYSROOT=/opt/rtmp-monitor/sysroots/jammy-arm64 \
+  -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF \
+  -DRTMP_MONITOR_LINUX_RENDER_MODE=RASTER \
+  -DRTMP_MONITOR_BUILD_OPENGL_PROTOTYPE=OFF \
+  -DQt6_DIR=/opt/rtmp-monitor/sysroots/jammy-arm64/usr/lib/aarch64-linux-gnu/cmake/Qt6 \
+  -DQT_HOST_PATH=/usr \
+  -DQT_HOST_PATH_CMAKE_DIR=/usr/lib/x86_64-linux-gnu/cmake
+cmake --build out/build-linux-arm64/package-raster-release --parallel
+
+bash scripts/package_linux_arm64.sh \
+  --build-dir out/build-linux-arm64/package-raster-release \
+  --output-dir out/packages/RtmpMonitor-0.1.0-alpha.1-linux-arm64-raster \
+  --sysroot /opt/rtmp-monitor/sysroots/jammy-arm64 \
+  --version 0.1.0-alpha.1
+```
+
+输出包括阶段目录、同名 `.tar.gz` 和独立 `audit-*` 目录。包内带可替换的 Qt 6.2.4、FFmpeg 8.1.2、
+Paho MQTT C 1.3.16 动态库，以及 linuxfb/minimal/offscreen、evdev 输入和基础图片插件；glibc、图形、
+输入、字体、GStreamer/音频等操作系统组件不捆绑，准确 SONAME 清单见包内
+`SYSTEM_RUNTIME_DEPENDENCIES.txt`。因此该包只面向与 Ubuntu 22.04 Jammy AArch64 ABI 兼容的工程
+验证设备，不是适用于所有 ARM64 板卡的通用发行包。
+
+目标板解压后运行：
+
+```bash
+chmod +x run-rtmp-monitor.sh
+QT_QPA_PLATFORM=offscreen ./run-rtmp-monitor.sh --version
+QT_QPA_PLATFORM=linuxfb ./run-rtmp-monitor.sh
+```
+
+打包流程不计算、不比对也不生成 SHA-256，不提供内容防篡改、数字签名或可信时间戳保证。仍必须在
+真实设备验证 glibc、QPA、framebuffer、输入、字体、音频、实际 RTMP 播放和长期资源占用。
+
 ## 8. 真实设备验收
 
 确定硬件盒子后，需要用厂商 SDK/sysroot 复验 ABI，并至少完成：

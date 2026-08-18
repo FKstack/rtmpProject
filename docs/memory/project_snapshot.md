@@ -1,5 +1,15 @@
 # RtmpMonitor 当前项目快照
 
+> Linux ARM64 RASTER 打包状态（2026-08-18）：从干净 Alpha `89483c0` 创建
+> `codex/linux-arm64-package`，新增严格的 `scripts/package_linux_arm64.sh`、linuxfb 启动器、`qt.conf`、
+> ARM64 专用说明和第三方通知。在独立目录使用 Jammy ARM64 sysroot、AArch64 GCC 11、Qt 6.2.4、
+> FFmpeg 8.1.2、Paho MQTT C 1.3.16 完成 Release/RASTER 交叉构建；生产 OpenGL 后端和测试目标关闭。
+> 产物 `out/packages/RtmpMonitor-0.1.0-alpha.1-linux-arm64-raster.tar.gz` 为 12,509,074 字节，阶段目录
+> 41 个文件、归档 56 个条目，随包 12 个 Qt/FFmpeg/Paho 动态库并列出 87 个 Jammy 系统 SONAME
+> 依赖。全新解压与阶段目录逐文件一致，AArch64 ELF、FFmpeg LGPL 8.1.2、QEMU `--version`、禁止
+> 源码/调试/用户状态/SRS/DVR 内容及回环端点门禁通过；不计算、不比对也不生成 SHA-256。该包仍为
+> Engineering Preview，真实 ARM 板的 glibc/QPA/framebuffer/输入/字体/音频/视频与性能待实机验收。
+
 > 模块四 PoC 状态（2026-08-16）：已从最新 Alpha `db84951` 创建 `codex/module4-srs-dvr-poc`，新增
 > 默认不被加载的 SRS DVR 配置模板、Python 标准库回环回调适配器、schema v1 原子分段收据、14 项
 > 单元测试和独立 WSL/Linux 故障矩阵。固定 SRS 6.0.184 实测连续分段、关键帧起始、断流尾段、重复/
