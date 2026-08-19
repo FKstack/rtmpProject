@@ -75,7 +75,7 @@
 - 替代方案：每次手工启动 WSL；把 Server 作为 Windows 进程运行；修改全局 WSL idle 行为；将服务绑定到局域网并使用端口代理。
 - 影响：用户登录后 WSL 会常驻并占用对应内存；任务等待本机 7890 后仍会启动 WSL，但不负责修改或修复代理应用。
 - 验证证据：任务已注册为登录后延迟 30 秒、禁止重复实例、无执行时限和失败重启。在没有交互式 WSL 终端的条件下空闲超过 5 分钟后，任务仍为 Running，Windows `/health`、`/ready`、`/studio` 持续为 200，`/docs` 最终为 200；停止并重新启动任务后保活链和 health 恢复。
-- 相关文件：`docs/guides/development/openviking_usage_and_testing.md`、`docs/memory/known_issues.md`
+- 相关文件：`docs/versions/rtmp-v1/guides/development/openviking_usage_and_testing.md`、`docs/memory/known_issues.md`
 
 ## ADR-007 OpenViking MCP 子进程显式继承客户端配置
 
@@ -87,7 +87,7 @@
 - 替代方案：把 API Key 写入 `config.toml` 或用户环境；手工注册第二个 MCP；复制客户端配置到 Codex Home。
 - 影响：Desktop 自然重启后应能从同一配置完成 MCP 鉴权并暴露 18 个工具，包括精确 `search_experience` 和 `read_experience`。插件升级可能覆盖缓存内 `.mcp.json`，升级后必须复查。
 - 验证证据：CLI `codex mcp get openviking-memory --json` 已显示新增环境且仍只有一个 MCP；CLI 已发现并发起 `search_experience`。当前 Desktop app-server 仍缓存旧配置，精确工具尚未出现，不能提前标记为已确认。
-- 相关文件：`docs/memory/known_issues.md`、`docs/guides/development/openviking_usage_and_testing.md`
+- 相关文件：`docs/memory/known_issues.md`、`docs/versions/rtmp-v1/guides/development/openviking_usage_and_testing.md`
 
 ## ADR-008 OpenViking Server 使用独立的本机代理环境
 
@@ -99,7 +99,7 @@
 - 替代方案：修改全局 WSL 代理；修改 Clash 规则；继续直连；把代理写入仓库或 `ov.conf`。
 - 影响：Clash for Windows 的 7890 必须先可用；代理停止时 OpenViking 基础 health 仍可能正常，但 VLM 摘要和记忆抽取会失败。回滚时删除该 drop-in、执行 daemon-reload 并重启服务。
 - 验证证据：systemd 新 PID 的 Environment 已包含六个代理变量；精确 Codex endpoint 20/20 得到预期 405，最大 0.83 秒；真实 9,373 字节 Resource 在 46 秒内完成摘要、overview、向量与关联 Session，journal 无新增 timeout。
-- 相关文件：`docs/memory/known_issues.md`、`docs/project_handoff.md`、`docs/guides/development/openviking_usage_and_testing.md`
+- 相关文件：`docs/memory/known_issues.md`、`docs/project_handoff.md`、`docs/versions/rtmp-v1/guides/development/openviking_usage_and_testing.md`
 
 ## ADR-009 OpenViking 后台 VLM 使用 GPT-5.6 Luna 并固定无推理模式
 
@@ -111,7 +111,7 @@
 - 替代方案：继续使用 GPT-5.4；切换标准 OpenAI API Key；使用 GPT-5.6 Terra；接受 GPT-5.6 默认推理级别。
 - 影响：本机 venv 内存在一处可被 OpenViking 重装或升级覆盖的兼容补丁；升级后必须复查适配器并重新运行 doctor、最小模型请求和可清理 Session commit。回滚备份位于 WSL 原配置/适配器旁，恢复后仍必须保留已经轮换的新 root key。
 - 验证证据：doctor VLM PASS；真实 Luna `store=false` 请求成功；专用 Session commit `completed`，reasoning Token 为 0；测试 Session 与唯一标记已清理。
-- 相关文件：`docs/memory/project_snapshot.md`、`docs/memory/known_issues.md`、`docs/guides/development/openviking_usage_and_testing.md`
+- 相关文件：`docs/memory/project_snapshot.md`、`docs/memory/known_issues.md`、`docs/versions/rtmp-v1/guides/development/openviking_usage_and_testing.md`
 
 ## ADR-010 用脱敏 peer-only Session 回填历史任务
 
@@ -123,7 +123,7 @@
 - 替代方案：OpenViking 原生全量 Codex backfill；直接把 rollout JSONL 当作 Resource；只维护仓库文档、不生成语义记忆。
 - 影响：历史摘要是召回索引而非权威事实；仓库文档仍按 ADR-001 优先。任一 commit 失败必须依据该 Session 的 `memory_diff.json` 回滚，不能保留半完成批次。
 - 验证证据：六个历史 Session 的任务均为 `completed`，均存在 `archive_001/messages.jsonl`、`memory_diff.json` 和 `.done`；召回已命中 Week 1～6、平台、模块、未完成验收和 RTMP Server 路线。27 个子代理会话未导入。
-- 相关文件：`docs/memory/project_snapshot.md`、`docs/project_handoff.md`、`docs/guides/development/openviking_usage_and_testing.md`
+- 相关文件：`docs/memory/project_snapshot.md`、`docs/project_handoff.md`、`docs/versions/rtmp-v1/guides/development/openviking_usage_and_testing.md`
 
 ## ADR 模板
 
@@ -137,7 +137,7 @@
 - 替代方案：每路一个 QOpenGLWidget；解码到 RGB QImage；共享 Context 上传线程。
 - 影响：Windows 请求 GL 3.3 Core，嵌入式请求 ES 3.0；第一版不承诺 PBO、硬件帧、HDR 或 ES 2.0。
 - 验证证据：Windows 四组 600 秒 CPU/OpenGL 正式门禁全部通过；16 路 OpenGL 平均 CPU 相对降低 69.08%、显示 14.91 FPS，双屏最差流 P95 196 ms/最大 317 ms，framebuffer 8 例质量通过。默认切换后完整 CTest 12/12 通过。ARM64 实机仍未完成。
-- 相关文件：`docs/architecture/adr/001-video-rendering-architecture.md`、`docs/architecture/video_rendering_framework.md`
+- 相关文件：`docs/versions/rtmp-v1/architecture/adr/001-video-rendering-architecture.md`、`docs/versions/rtmp-v1/architecture/video_rendering_framework.md`
 
 ## ADR-012 主网格采用居中的标准 16:9 监控几何
 
@@ -174,7 +174,7 @@
 - 替代方案：所有平台默认 GL；删除 GL 退回逐路 QImage；把 Linux 6.1 视为统一图形平台；立即实现 GLES2、硬件解码或零拷贝。
 - 影响：嵌入式 EGLFS 全屏应复用同一画布切换 Snapshot，不创建 Windows 式第二个 GL 顶层窗口。UI 技术上限仍为 16，但不再把 16 路作为任意 ARM 板的承诺或硬门槛；用户在目标板按自定义路数阶梯测试，结果写入 `recommendedMaxStreams`，超出时提示而不是静默硬拦截。当前“断开并移除”主链已存在，只补 Linux 两后端生命周期回归。硬件解码只在目标 SoC 冻结且实测证明必要后进入实施。
 - 验证要求：Kimi K3 先完成 ARM64 RASTER 与 GLES3 两套交叉构建、AArch64 ELF 和依赖检查；RASTER 产物不得依赖 Qt OpenGL/OpenGLWidgets、EGL、GLES。WSL2 只证明构建和可运行的纯逻辑测试，不证明 linuxfb、EGLFS、GPU、VPU、温度或多路性能。真实板由用户选择路数、码流和门槛运行资格测试；GL 只有在该板的质量、延迟、温度和长稳门禁通过后才写入资格档案。
-- 相关文件：`docs/architecture/embedded_device_rendering_strategy.md`、`docs/architecture/video_rendering_framework.md`、`src/common/ui/VideoCanvasHost.cpp`、`src/platform/linux/`、`CMakeLists.txt`
+- 相关文件：`docs/versions/rtmp-v1/architecture/embedded_device_rendering_strategy.md`、`docs/versions/rtmp-v1/architecture/video_rendering_framework.md`、`src/common/ui/VideoCanvasHost.cpp`、`src/platform/linux/`、`CMakeLists.txt`
 
 ## ADR-015 SRS 采用外部服务、稳定版本固定和只读客户端监控
 
@@ -186,7 +186,7 @@
 - 替代方案：Cygwin `srs.exe` 正式部署；Qt 直接启动/停止 WSL、Docker 或 systemd；新增统一管理摄像头/SRS/播放器的 `SrsManager`；第一版启用 `on_publish/on_unpublish` 自动建流。
 - 影响：平台差异放在 WSL/Docker 脚本和 systemd unit；公共 C++ 只需 Qt Network 健康观察和 URL/config 纯逻辑。1935 冲突时只能识别复用或失败，不得杀未知 listener。动态发现或鉴权以后由常驻 control service 承接 Callback，不直接指向 GUI。
 - 验证要求：独立验收必须使用全新/清空的 CMake 缓存和直接黑盒命令，不以实现者历史报告替代。2026-08-09 已重跑 Windows Debug CTest 17/17、单路真实 SRS 双侧推拉流、同 URL 恢复、SIGQUIT 和冲突拒绝；Kimi 的 4/16 路与 600 秒报告只作为历史证据。WSL LAN 入站、ARM 目标 ABI、官方镜像 arm64 manifest、真实摄像头编码仍 `[需要验证]`，见 ISSUE-008。
-- 相关文件：`docs/architecture/srs_server_integration_plan.md`、`docs/weeks/week7/week7_srs_server_integration.md`、`deploy/srs/`、`scripts/srs/`、`include/common/server/`
+- 相关文件：`docs/versions/rtmp-v1/architecture/srs_server_integration_plan.md`、`docs/versions/rtmp-v1/weeks/week7/week7_srs_server_integration.md`、`deploy/srs/`、`scripts/srs/`、`include/common/server/`
 
 ## ADR-016 Windows 开发以 Visual Studio CMake Preset 和 F5 为标准入口
 
@@ -197,7 +197,7 @@
 - 原因：Visual Studio、MSVC、Qt Kit、vcpkg 和调试环境保持一致，且公共仓库不保存个人路径；CMake 缺少 toolchain 时在依赖探测前给出明确错误。
 - 影响：命令行只作为 Developer PowerShell 构建/CTest 后备；GUI 与中文显示的最终视觉结论由用户的 Visual Studio 会话确认。
 - 验证证据：`Qt-Debug --fresh` 指向正确 vcpkg，生成 `build.ninja`，136/136 构建和 CTest 17/17（85.29 秒）通过；无 toolchain 负向配置命中项目自定义诊断。
-- 相关文件：`CMakePresets.json`、`CMakeLists.txt`、`README.md`、`docs/guides/build-and-testing/cross_platform_build.md`
+- 相关文件：`CMakePresets.json`、`CMakeLists.txt`、`README.md`、`docs/versions/rtmp-v1/guides/build-and-testing/cross_platform_build.md`
 
 ## ADR-017 Windows OpenGL 全屏保留 DWM 合成边界并串行切换顶层窗口
 
@@ -302,7 +302,7 @@
 - 原因：序号可以识别重复、丢失和左右同源帧，机器时间可以测量端到端延迟；两条链职责分离后，录屏负载不会污染正式性能门禁，视觉证据也不能覆盖程序指标。
 - 影响：新增不安装的 `rtmp_monitor_camera_source`、`rtmp_monitor_video_analyzer` 和 `scripts/camera_validation.ps1`；1/4/8 路 720p30 成为 Windows 最低资格线，16 路和 60 FPS 单列为能力项。
 - 实测修订：`--validation-layout` 只隐藏 chrome、保持可移动窗口；控制器固定左侧拉流和右侧同帧参考。SRS 资格配置开启 `tcp_nodelay/min_latency` 并将 `mw_latency` 设为 0，防止服务端批量发送把 30 FPS 变成突发到达。
-- 相关文件：`include/common/media/LatencyMarkerCodec.h`、`include/common/render/DisplayFrameRatePolicy.h`、`scripts/camera_validation.ps1`、`docs/guides/testing/windows_camera_validation.md`
+- 相关文件：`include/common/media/LatencyMarkerCodec.h`、`include/common/render/DisplayFrameRatePolicy.h`、`scripts/camera_validation.ps1`、`docs/versions/rtmp-v1/guides/testing/windows_camera_validation.md`
 
 ## ADR-023 诊断层单向组合媒体与渲染，业务 façade 保持兼容
 
@@ -321,7 +321,7 @@
   但 `main.cpp` 不再承载配置和事件桥接。新增边界必须遵守依赖门禁。
 - 验证证据：Windows Debug CTest 21/21、Windows Release 全构建、ARM64 RASTER/GLES3
   交叉构建通过；RASTER ELF 无 Qt OpenGL/EGL/GLES 依赖。未执行正式性能或 ARM 真机资格。
-- 相关文件：`docs/architecture/progressive_decoupling_architecture.md`、
+- 相关文件：`docs/versions/rtmp-v1/architecture/progressive_decoupling_architecture.md`、
   `cmake/CheckLayerDependencies.cmake`、`include/common/diagnostics/RuntimeMetricsReporter.h`
 
 ## ADR-024 使用全局架构 Skill 和项目级风险门禁约束代码变更
@@ -334,7 +334,7 @@
 - 替代方案：把完整 Skill 复制进仓库；所有代码任务一律阻断确认；仅依靠类行数或静态扫描；只在重构专项中考虑架构。
 - 影响：后续代码任务必须在编辑前给出对应级别的架构检查，并在交付中报告架构影响。此决定只改变 AI 开发流程，不改变产品代码、运行时依赖、CLI、schema 或 UI 行为。
 - 验证证据：Skill 官方结构校验通过；安装文件与已校验暂存文件 SHA-256 一致；`AGENTS.md` 规则包含 R1/R2/R3、项目依赖方向、拆分要求和最终报告要求。
-- 相关文件：`AGENTS.md`、`docs/architecture/progressive_decoupling_architecture.md`、`cmake/CheckLayerDependencies.cmake`
+- 相关文件：`AGENTS.md`、`docs/versions/rtmp-v1/architecture/progressive_decoupling_architecture.md`、`cmake/CheckLayerDependencies.cmake`
 
 ## ADR-025 保存推流与单目标 MQTT 控制采用独立边界
 
@@ -356,7 +356,7 @@
   ELF 依赖检查通过；Fake Broker 已验证实际 CONNECT/CONNACK、`device/control` 发布、断开与
   重连。用户自行配置的现场 Broker 只验证过 CONNACK 0，未执行远端命令或实车动作；现场端点不得写入仓库。
   Windows 测试包按交付要求不计算/比对哈希、不生成 SHA-256 文件，仍保留依赖与签名审计。
-- 相关文件：`docs/architecture/progressive_decoupling_architecture.md`、`CMakeLists.txt`、
+- 相关文件：`docs/versions/rtmp-v1/architecture/progressive_decoupling_architecture.md`、`CMakeLists.txt`、
   `cmake/CheckLayerDependencies.cmake`
 
 ## ADR-026 设备控制输入采用桌面双模式并隔离输入状态
@@ -381,7 +381,7 @@
   Windows Release 全目标构建、ARM64 RASTER/GLES3 全目标交叉构建、AArch64 ELF/动态依赖门禁和
   QEMU 纯逻辑测试通过。实车手感和 Windows 多缩放人工视觉仍待现场验证。
 - 相关文件：`include/common/ui/VirtualJoystickWidget.h`、
-  `include/common/ui/DeviceControlInputRouter.h`、`docs/architecture/saved_stream_and_mqtt_device_control.md`
+  `include/common/ui/DeviceControlInputRouter.h`、`docs/versions/rtmp-v1/architecture/saved_stream_and_mqtt_device_control.md`
 
 ## ADR-027 应用 UI 采用深石墨 Qt Widgets 主题与原生平台外观
 
@@ -406,7 +406,7 @@
   实际截图通过。多系统 DPI 人工矩阵仍保留为现场复验项。
 - 相关文件：`resources/styles/app.qss`、`src/common/app/StyleLoader.cpp`、
   `src/common/ui/MainWindow.cpp`、`src/platform/windows/WindowsWindowAppearance.cpp`、
-  `docs/guides/development/style_loading.md`
+  `docs/versions/rtmp-v1/guides/development/style_loading.md`
 
 ## ADR-028 RTMP 视频保留并以单例音频引擎提供 AAC 单向下行
 
@@ -418,7 +418,7 @@
 - 替代方案：每路独立 `QAudioSink`；默认播放第一路；在视频解码 worker 中同步解码音频；以 RTMP/AAC 实现返向对讲；本阶段直接切换全部媒体到 WebRTC。
 - 影响：media 新增 Qt Multimedia 和 `swresample` 私有依赖，Windows 包增加 Qt Multimedia 运行库/插件和 `swresample` DLL，ARM sysroot 增加 Qt Multimedia、ALSA 和 AAC/swresample 能力。现有 RTMP URL、保存推流 schema、metrics schema v4、CLI、视频接口和 MQTT 协议不变。
 - 验证证据：2026-08-15 使用阿里云境内正常 MP4、FFmpeg、WSL2 SRS 6.0.184 和正式音频引擎连续通过三轮 320 秒及一轮 600 秒；600 秒为 647 样本、P50 89.561 ms、P95 111.632 ms、最大 125.396 ms、Sink 欠载 0 次。真实 GUI 全屏切换修复后欠载为 0，最终 ZIP 解压后也通过播放/静音/退出冒烟。Windows Debug/Release 29/29、ARM64 RASTER/GLES3 构建和门禁通过。该软件口径止于 QAudioSink 写入；声卡回环和 ARM V4L2/ALSA 真机未执行前不得宣称声学端到端或 ARM 资格通过。
-- 相关文件：`docs/architecture/low_latency_audio_stream.md`、`include/common/media/AudioPlaybackEngine.h`、`scripts/audio/`
+- 相关文件：`docs/versions/rtmp-v1/architecture/low_latency_audio_stream.md`、`include/common/media/AudioPlaybackEngine.h`、`scripts/audio/`
 
 ## ADR-029 默认网络功能离线并以单根提交重建泄露端点的发布历史
 
@@ -444,7 +444,7 @@
   扫描按本次历史重建流程继续执行。
 - 相关文件：`AGENTS.md`、`include/common/device_control/DeviceControlTypes.h`、
   `src/common/device_control/MqttSettingsRepository.cpp`、
-  `docs/architecture/saved_stream_and_mqtt_device_control.md`
+  `docs/versions/rtmp-v1/architecture/saved_stream_and_mqtt_device_control.md`
 
 ## ADR-030 设备状态使用独立 Topic 与本地单调时钟，控制目标绑定稳定 StreamId
 
@@ -468,7 +468,7 @@
   Fake Broker 覆盖双订阅、拒绝、重连和状态 Topic，纯逻辑测试覆盖解析、30 秒边界、恢复和缓存上限。
 - 相关文件：`include/common/device_control/`、`src/common/device_control/`、
   `src/common/app/DeviceControlController.cpp`、`src/common/app/StreamConnectionController.cpp`、
-  `docs/architecture/saved_stream_and_mqtt_device_control.md`
+  `docs/versions/rtmp-v1/architecture/saved_stream_and_mqtt_device_control.md`
 
 ## ADR-031 不改设备契约时先建设单车本地控制、事件与证据闭环
 
@@ -511,7 +511,7 @@
   哈希并明确不提供防篡改保证。Python 单元测试 14/14 与固定 SRS 6.0.184 端到端矩阵通过，包含分段、
   关键帧、尾段、重复/乱序回调、分别重启、低磁盘、适配器离线推拉流继续及默认配置零副作用；
   Windows Debug CTest 36/36、Release 全目标和 ARM64 RASTER/GLES3 构建/依赖门禁保持通过。
-- 相关文件：`docs/architecture/mobile_security_single_vehicle_operator_loop_design.md`、
+- 相关文件：`docs/versions/rtmp-v1/architecture/mobile_security_single_vehicle_operator_loop_design.md`、
   `docs/roadmap/mobile_security_product_module_recommendations.md`
 
 ## ADR-XXX 标题

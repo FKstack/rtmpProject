@@ -22,8 +22,8 @@ Python 单元测试及固定 SRS 6.0.184 故障矩阵。上述自动化结果不
 
 V2 当前是研发计划，不是 Alpha 已交付能力；`Beta` 分支目前也只包含规划文档，尚未开始
 WebRTC 生产代码实现。请从 [V2 总计划](docs/roadmap/webrtc_v2_project_plan.md)、
-[WebRTC 新手指南](docs/guides/build-and-testing/webrtc_beginner_guide.md)和
-[V2 Week 1～12 周计划](docs/weeks/webrtc-v2/)进入。完整设计、模块门禁和后续实施进度只在
+[WebRTC 新手指南](docs/versions/webrtc-v2/guides/webrtc_beginner_guide.md)和
+[V2 Week 1～12 周计划](docs/versions/webrtc-v2/weeks/)进入。完整设计、模块门禁和后续实施进度只在
 [`Beta` 分支](https://github.com/FKstack/rtmpProject/tree/Beta)维护；`master` 与
 `v0.1.0-alpha.1` 继续代表已验证的 RTMP 稳定基线。
 
@@ -34,7 +34,7 @@ WebRTC 生产代码实现。请从 [V2 总计划](docs/roadmap/webrtc_v2_project
 - 设备控制是高优先级侧边操作区，停靠在左侧或右侧时始终保持全高；事件消息只占中央视频列的上方或下方，不会截断摇杆和停车按钮。
 - 设备控制使用可滚动容器和约 40 px 的主要触控目标，1280×720 下内容保持可达；Android 当前仅作为触控和图标安全区设计约束，尚未提供 Android 工程。
 
-主题选择器、外部 QSS 优先级、图标和 Windows 外观实现见[样式加载与主题扩展指南](docs/guides/development/style_loading.md)。
+主题选择器、外部 QSS 优先级、图标和 Windows 外观实现见[样式加载与主题扩展指南](docs/versions/rtmp-v1/guides/development/style_loading.md)。
 
 ## MQTT 联调状态
 
@@ -115,7 +115,7 @@ ctest --test-dir out\build-windows-x64\debug --output-on-failure
 .\out\build-windows-x64\debug\rtmp_monitor.exe
 ```
 
-也可以在 Visual Studio 中打开仓库，选择 `Qt-Debug` 或 `Qt-Release`，将 `rtmp_monitor.exe` 设为启动项后按 F5。详细参数和故障处理见[跨平台构建指南](docs/guides/build-and-testing/cross_platform_build.md)。
+也可以在 Visual Studio 中打开仓库，选择 `Qt-Debug` 或 `Qt-Release`，将 `rtmp_monitor.exe` 设为启动项后按 F5。详细参数和故障处理见[跨平台构建指南](docs/versions/rtmp-v1/guides/build-and-testing/cross_platform_build.md)。
 
 ## Linux ARM64 交叉开发
 
@@ -137,7 +137,7 @@ sudo bash scripts/setup_linux_arm64_dev.sh --action install
 bash scripts/setup_linux_arm64_dev.sh --action all --render-mode both
 ```
 
-脚本会检查 AArch64 ELF 和动态依赖，并通过 QEMU 运行可靠的纯逻辑测试。可以用 `--work-root`、`--sysroot`、`--build-root` 和 `--proxy-url` 覆盖默认位置；代理没有本机默认值。真实设备部署和资格测试见[嵌入式开发交接](docs/guides/build-and-testing/embedded_developer_handoff.md)。
+脚本会检查 AArch64 ELF 和动态依赖，并通过 QEMU 运行可靠的纯逻辑测试。可以用 `--work-root`、`--sysroot`、`--build-root` 和 `--proxy-url` 覆盖默认位置；代理没有本机默认值。真实设备部署和资格测试见[嵌入式开发交接](docs/versions/rtmp-v1/guides/build-and-testing/embedded_developer_handoff.md)。
 
 ## SRS 测试服务
 
@@ -151,7 +151,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
   -Action Check -Distro "<WSL-distro>"
 ```
 
-也可以先设置 `RTMP_MONITOR_WSL_DISTRO`，随后省略 `-Distro`。SRS 的首次安装、启停、推拉流和排障步骤见[SRS 新手指南](docs/guides/build-and-testing/srs_beginner_guide.md)。
+也可以先设置 `RTMP_MONITOR_WSL_DISTRO`，随后省略 `-Distro`。SRS 的首次安装、启停、推拉流和排障步骤见[SRS 新手指南](docs/versions/rtmp-v1/guides/build-and-testing/srs_beginner_guide.md)。
 
 受控音频资格测试使用中国境内阿里云官方播放器样例。素材只下载到被忽略的 `out/qualification/`，不会提交仓库；脚本按 `MP4 → FFmpeg H.264/AAC → WSL2 SRS → 正式 AudioPlaybackEngine → QAudioSink` 运行，并生成脱敏 JSON：
 
@@ -196,7 +196,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
 | `scripts/verify_ffmpeg_arm64_env.sh` | 内部辅助 | 验证 ARM64 FFmpeg ABI 和 smoke target |
 | `scripts/ffmpeg_smoke/` | 内部辅助 | FFmpeg 环境的最小 C/CMake 验证工程 |
 
-历史上只适配维护者电脑的性能和测试编排脚本已经退役，原因和 Git 查看方式见[遗留脚本索引](docs/archive/legacy_test_scripts.md)。
+历史上只适配维护者电脑的性能和测试编排脚本已经退役，原因和 Git 查看方式见[遗留脚本索引](docs/versions/rtmp-v1/archive/legacy_test_scripts.md)。
 
 ## 目录结构
 
@@ -222,11 +222,11 @@ ctest --test-dir out\build-windows-x64\debug --output-on-failure
 更多资料：
 
 - [文档索引](docs/README.md)
-- [保存推流与单车 MQTT 控制指南](docs/architecture/saved_stream_and_mqtt_device_control.md)
-- [跨平台构建指南](docs/guides/build-and-testing/cross_platform_build.md)
-- [SRS 新手指南](docs/guides/build-and-testing/srs_beginner_guide.md)
-- [视频渲染架构](docs/architecture/video_rendering_framework.md)
-- [低延迟单向音频框架与 MP4 手工测试指南](docs/architecture/low_latency_audio_stream.md)
+- [保存推流与单车 MQTT 控制指南](docs/versions/rtmp-v1/architecture/saved_stream_and_mqtt_device_control.md)
+- [跨平台构建指南](docs/versions/rtmp-v1/guides/build-and-testing/cross_platform_build.md)
+- [SRS 新手指南](docs/versions/rtmp-v1/guides/build-and-testing/srs_beginner_guide.md)
+- [视频渲染架构](docs/versions/rtmp-v1/architecture/video_rendering_framework.md)
+- [低延迟单向音频框架与 MP4 手工测试指南](docs/versions/rtmp-v1/architecture/low_latency_audio_stream.md)
 - [项目路线图](docs/roadmap/project_plan.md)
 - [已知问题](docs/memory/known_issues.md)
 

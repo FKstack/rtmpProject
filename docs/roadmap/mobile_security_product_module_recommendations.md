@@ -8,7 +8,7 @@
 > 当前架构裁剪（产品与架构已联合接受）：在暂不改变 MQTT 返回值和设备硬件的约束下，当前可实施范围已收敛为单车本地
 > 控制安全、诚实审计、平台事件、截图证据和默认关闭的 SRS DVR PoC；命令 ACK、多车、真实 RBAC、
 > 遥测、地图与巡逻继续保留在长期路线。实施边界见
-> [单车值守闭环架构设计](../architecture/mobile_security_single_vehicle_operator_loop_design.md)。
+> [单车值守闭环架构设计](../versions/rtmp-v1/architecture/mobile_security_single_vehicle_operator_loop_design.md)。
 
 ## 1. 结论先行
 

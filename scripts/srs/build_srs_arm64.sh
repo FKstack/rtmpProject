@@ -5,7 +5,7 @@
 #   native : run ON the target ARM device (preferred, official recommendation)
 #   cross  : run on an x86_64 host with an aarch64 cross toolchain. The result
 #            only proves an AArch64 ELF was produced; it MUST be re-verified on
-#            the real device (see docs/architecture/srs_server_integration_plan.md 8.3).
+#            the real device (see docs/versions/rtmp-v1/architecture/srs_server_integration_plan.md 8.3).
 #
 # Usage:
 #   build_srs_arm64.sh --source-dir <srs-repo> [--prefix /opt/rtmp-monitor/srs-6.0.184]
@@ -54,7 +54,7 @@ if [ -n "$missing" ]; then
     echo "ERROR: missing build dependencies:$missing" >&2
     echo "Install on the device: sudo apt-get install -y gcc g++ make patch unzip perl git tclsh" >&2
     echo "No-sudo hosts may unpack debs user-side and fix the vendored tclsh" >&2
-    echo "shebang; see docs/weeks/week7 Phase 1 notes." >&2
+    echo "shebang; see docs/versions/rtmp-v1/weeks/week7 Phase 1 notes." >&2
     exit 1
 fi
 

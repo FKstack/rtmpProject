@@ -68,7 +68,7 @@
 > QPA/GPU/视频仍待人工验证；自动化结果只证明本地门禁与提交语义，不证明 Broker 或设备接收/执行。
 
 > 单车值守闭环设计状态（2026-08-15）：在不改变 MQTT 控制/心跳返回、Topic、QoS、设备固件和硬件
-> 的前提下，已形成 `docs/architecture/mobile_security_single_vehicle_operator_loop_design.md` 架构
+> 的前提下，已形成 `docs/versions/rtmp-v1/architecture/mobile_security_single_vehicle_operator_loop_design.md` 架构
 > 基线，并经产品经理会话两轮只读评审最终接受，记录为 ADR-031。当前可实施顺序收敛为本地控制安全
 > 与诚实审计、基于现有 MQTT/心跳/RTMP/SRS 信号的平台
 > 事件、截图证据与目录导出，以及默认关闭的 SRS DVR PoC。命令 ACK、多车、TLS/RBAC、遥测、地图、
@@ -142,16 +142,16 @@
 > 音频插件和 swresample，不含测试素材、Qt FFmpeg 媒体插件或 VC 安装器。软件延迟口径止于
 > QAudioSink 写入；声学硬件与 ARM 真机 ALSA 仍待验证，见 ISSUE-014。
 >
-> 音频文档状态（2026-08-15）：`docs/architecture/low_latency_audio_stream.md` 已按当前源码扩展为完整
+> 音频文档状态（2026-08-15）：`docs/versions/rtmp-v1/architecture/low_latency_audio_stream.md` 已按当前源码扩展为完整
 > 框架与手工测试指南，逐类记录组合根、RTMP 分轨、包所有权、单例音频引擎、线程/停止顺序、
 > A/V 时钟、UI 转发、指标和资格观察接缝；同时提供 Windows 三终端 MP4 → FFmpeg → WSL2 SRS →
 > RtmpMonitor 的可执行推拉流步骤、GUI/全屏静音检查、指标判断、自动资格入口和常见故障排查。
 >
 > 公开文档整理状态（2026-08-14）：根 README 已同步深石墨 UI、Dock 优先级、桌面双模式控制和
 > Windows Debug 27/27 最新验证；`docs/README.md` 重新按记忆、路线、架构、指南、分周和归档建立
-> 单一索引。SRS 实施基线已移入 `docs/architecture/`，完成的 Week 6 暂停/恢复过程已移入
-> `docs/archive/`，全部仓库引用同步更新；根级 `/Testing/` 忽略规则不再误伤
-> `docs/guides/testing/`。本机交接、构建产物、测试媒体和凭据配置继续排除在公开仓库之外。
+> 单一索引。SRS 实施基线已移入 `docs/versions/rtmp-v1/architecture/`，完成的 Week 6 暂停/恢复过程已移入
+> `docs/versions/rtmp-v1/archive/`，全部仓库引用同步更新；根级 `/Testing/` 忽略规则不再误伤
+> `docs/versions/rtmp-v1/guides/testing/`。本机交接、构建产物、测试媒体和凭据配置继续排除在公开仓库之外。
 
 > Dock 优先级状态（2026-08-14）：`MainWindow` 已将四个角落归属左右操作 Dock，设备控制无论停靠
 > 左侧还是右侧都保持全高；事件消息只占中央视频列的上方或下方，不再截断摇杆、停车按钮或安全
@@ -191,13 +191,13 @@
 > 确认时发布远端命令或执行实车动作。本次无 PUBLISH 的远端 SUBACK 探测在执行前被平台审批
 > 服务以 403 拒绝，未产生新的网络结果，已按约束暂停公网测试。Windows 无哈希测试包审计通过。
 > 对应的实施级设计、界面操作、本地自动/手工测试、公网分级验证和排障入口为
-> `docs/architecture/saved_stream_and_mqtt_device_control.md`；本次同 Topic 订阅/观察改动后新增模块
+> `docs/versions/rtmp-v1/architecture/saved_stream_and_mqtt_device_control.md`；本次同 Topic 订阅/观察改动后新增模块
 > 定向 CTest 5/5、Windows Debug 全量 CTest 25/25（最终 122.60 秒）复核通过。
 
 > 架构开发门禁（2026-08-13）：已在当前 `CODEX_HOME` 安装并校验全局 `$architect-code-changes` Skill，仓库根 `AGENTS.md` 对代码、CMake、线程、持久化、schema、CLI 和测试架构变更强制使用 R0～R3 风险分级。项目专属边界仍由架构文档、实际 CMake target 和依赖检查脚本定义；本次只改变 AI 开发流程，未修改产品运行时行为。
 
 > 架构解耦状态（2026-08-13）：按 media/render/ui/diagnostics/app 边界完成渐进拆分，新增依赖方向 CTest 门禁；Windows Debug 全目标构建及 CTest 21/21、Windows Release、ARM64 RASTER/GLES3 交叉构建和 ELF 依赖检查通过。CLI、schema v4、稳定 StreamId、容量 1 邮箱、重连和 CPU/OpenGL fallback 保持兼容。ARM 真机和 Windows 1/4/8 路 600 秒资格仍不在本次结论内。
-> 解耦文档状态（2026-08-13）：`docs/architecture/progressive_decoupling_architecture.md` 已补齐解耦前耦合、优先级依据、P0～P3 迁移过程、设计原因、收益、兼容边界、CMake/组件/线程架构图、遗留耦合和评审清单；文档明确区分运行时数据流、编译依赖与目录职责。
+> 解耦文档状态（2026-08-13）：`docs/versions/rtmp-v1/architecture/progressive_decoupling_architecture.md` 已补齐解耦前耦合、优先级依据、P0～P3 迁移过程、设计原因、收益、兼容边界、CMake/组件/线程架构图、遗留耦合和评审清单；文档明确区分运行时数据流、编译依赖与目录职责。
 
 > Windows 摄像头资格状态（2026-08-12）：schema v4、双行机器标记、统一显示帧率策略、摄像头源、视频分析器和总控脚本已实现；解耦后的 Windows Debug 基线为 CTest 21/21。第二轮单路 120 秒快速运行通过：采集/发布/解码/显示 30.000/29.967/30.038/29.963 FPS，零序号缺口，源延迟 P95 104 ms。Windows `auto` 产品目标现为 30 FPS；真实 1/4/8 路 720p30 的 600 秒矩阵尚未执行，见 ISSUE-012。
 
@@ -406,7 +406,7 @@ Windows+WSL2 侧的最小配置、生命周期脚本、URL/配置生成和只读
 
 ## 关键文档
 
-- `docs/guides/build-and-testing/embedded_developer_handoff.md`：嵌入式接收方环境、
+- `docs/versions/rtmp-v1/guides/build-and-testing/embedded_developer_handoff.md`：嵌入式接收方环境、
   ABI、显示与摄像头参数填写模板和真机资格边界。
 
 - [跨会话记忆说明](README.md)
@@ -414,8 +414,8 @@ Windows+WSL2 侧的最小配置、生命周期脚本、URL/配置生成和只读
 - [已知问题](known_issues.md)
 - [项目路线](../roadmap/project_plan.md)
 - 维护者本地会话交接（`docs/project_handoff.md`，不进入源码交接包）
-- [跨平台构建](../guides/build-and-testing/cross_platform_build.md)
-- [RTMP 链路验证](../guides/build-and-testing/rtmp_chain_verification.md)
-- [SRS Server 接入实施方案](../architecture/srs_server_integration_plan.md)
-- [OpenViking 使用与测试](../guides/development/openviking_usage_and_testing.md)
-- [Week 6 OpenGL 验证](../weeks/week6/week6_opengl_environment_and_validation.md)
+- [跨平台构建](../versions/rtmp-v1/guides/build-and-testing/cross_platform_build.md)
+- [RTMP 链路验证](../versions/rtmp-v1/guides/build-and-testing/rtmp_chain_verification.md)
+- [SRS Server 接入实施方案](../versions/rtmp-v1/architecture/srs_server_integration_plan.md)
+- [OpenViking 使用与测试](../versions/rtmp-v1/guides/development/openviking_usage_and_testing.md)
+- [Week 6 OpenGL 验证](../versions/rtmp-v1/weeks/week6/week6_opengl_environment_and_validation.md)

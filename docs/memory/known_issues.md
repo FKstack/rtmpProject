@@ -12,19 +12,19 @@
 - 可能原因：待确认；厂商镜像、QPA 插件、GPU/VPU 驱动和 ABI 均可能形成设备侧差异。
 - 下一步验证：确定硬件型号和系统镜像，按跨平台构建指南执行部署、QPA、一路/多路播放、重连和长稳测试。
 - 临时规避：只声明“ARM64 交叉构建通过”，不声明“ARM64 实机支持已完成”。
-- 相关文档和代码：`docs/guides/build-and-testing/cross_platform_build.md`、`docs/weeks/week6/week6_opengl_environment_and_validation.md`
+- 相关文档和代码：`docs/versions/rtmp-v1/guides/build-and-testing/cross_platform_build.md`、`docs/versions/rtmp-v1/weeks/week6/week6_opengl_environment_and_validation.md`
 
 ## ISSUE-002 Windows 16 路长时性能资格测试
 
 - 状态：已解决（2026-08-05）
 - 影响范围：`--renderer=auto` 是否可成为发布默认值、性能发布结论。
 - 已验证现象：16 路预录和双屏延迟 CPU/OpenGL 四组各 600 秒、20 秒预热与 Quality 门禁全部完成。OpenGL 16 路平均 CPU 1.50%（CPU 4.85%，降低 69.08%）、显示 14.91 FPS；双屏最差流 P95 196 ms、最大 317 ms；frame age/内部延迟、UI、队列、工作集、纹理和 8 例画质门槛全部通过。
-- 历史复现方法：`docs/weeks/week6/week6_renderer_performance_test_guide.md` 记录了当时的 A/B 流程；对应本机脚本已退役，若要在新硬件复测，应基于当前 CTest、指标和目标机器重新建立资格编排。
+- 历史复现方法：`docs/versions/rtmp-v1/weeks/week6/week6_renderer_performance_test_guide.md` 记录了当时的 A/B 流程；对应本机脚本已退役，若要在新硬件复测，应基于当前 CTest、指标和目标机器重新建立资格编排。
 - 已排除内容：OpenGL 实际后端/fallback 误判、短窗口替代长测、纹理持续增长、颜色/stride 可见退化和源延迟缺样本均已排除。
 - 解决方式：修正 15 FPS timer 的双重节流量化；对照流使用独立前缀；状态文件原子替换；纹理门禁允许计划内断流短暂释放，但要求不高于预热基线且末 60 秒完全恢复。CLI 默认切换为 `auto`，保留显式 CPU 回滚。
 - 后续观察：在驱动、硬件、分辨率或部署环境变化后重新执行正式门禁；真实 ARM64 仍由 ISSUE-001 跟踪。2026-08-08 居中 16:9 网格的第一轮 120 秒预录 Video 快速对照通过，但它早于标题覆盖和 F11 监控墙。最终监控墙版本的同口径短测中，CPU、FPS、内部延迟、UI gap、队列、工作集和纹理门禁通过，latest frame age P95 为 CPU 47 ms、OpenGL 52 ms，超过相对限值 51.7 ms 0.3 ms，因此总控判定失败。该毫秒级差异需要正式长测判断，不能事后放宽门槛。2026-08-04 的四组 600 秒正式结果早于当前布局；当前布局需要新的完整发布认证时必须重新运行正式套件，不能用短测或旧数据替代。此前默认 Cover 只是已被替代的中间方案。
 - 2026-08-04 恢复补充：Snapshot 的业务可见性修复已回归；同时根据用户录像定位并修复 `renderStateChanged + lambda + Qt::UniqueConnection` 被 Qt 6 拒绝、首帧不刷新主画布的问题。动态网格测试 29/29、完整 CTest 12/12 和四路无全屏实机验证均通过。
-- 相关文档和代码：`README.md`、`docs/architecture/video_rendering_framework.md`、`docs/weeks/week4/week4_sixteen_stream_validation.md`
+- 相关文档和代码：`README.md`、`docs/versions/rtmp-v1/architecture/video_rendering_framework.md`、`docs/versions/rtmp-v1/weeks/week4/week4_sixteen_stream_validation.md`
 
 ## ISSUE-003 跨会话 OpenViking 召回尚未验收
 
@@ -48,7 +48,7 @@
 - 可能原因：原问题来自 WSL 发行版生命周期不由 systemd 服务单独保活；登录任务通过维持一个受控 WSL 客户端解决该生命周期缺口。
 - 后续监测：电脑登录后检查任务 Running；若用户主动停止任务或脚本路径失效，则重新执行五分钟健康验收。
 - 回滚/规避：删除登录任务并结束其保活进程可回滚；若任务失效可手工启动 `Ubuntu-22.04-New`。始终不把 1933 绑定到局域网地址。
-- 相关文档和代码：`docs/project_handoff.md`、`docs/guides/development/openviking_usage_and_testing.md`、`/etc/systemd/system/openviking.service`
+- 相关文档和代码：`docs/project_handoff.md`、`docs/versions/rtmp-v1/guides/development/openviking_usage_and_testing.md`、`/etc/systemd/system/openviking.service`
 
 ## ISSUE-005 OpenViking MCP 代理在 Windows Node 24 关闭期触发断言
 
@@ -72,7 +72,7 @@
 - 当前缓解：本机适配器只对 `gpt-5.6-*` 发送 `reasoning.effort=none`，不向 `ov.conf` 写入非法字段；原配置和适配器已在各自 WSL 目录旁备份。
 - 下一步验证：每次 OpenViking wheel 重装或升级后检查补丁是否仍存在，重新运行 `py_compile`、doctor、最小 `store=false` 请求与可清理 Session commit；若上游正式支持该字段，删除本机补丁并改用官方配置。
 - 回滚/规避：恢复备份的适配器与配置并重启服务；不得恢复已经泄露的旧 root key。
-- 相关文档和代码：`docs/memory/decisions.md`、`docs/guides/development/openviking_usage_and_testing.md`、WSL 安装内 `codex_responses_adapter.py`
+- 相关文档和代码：`docs/memory/decisions.md`、`docs/versions/rtmp-v1/guides/development/openviking_usage_and_testing.md`、WSL 安装内 `codex_responses_adapter.py`
 
 ## ISSUE-007 WSL 到 Codex backend 的代理 TLS 仍有间歇性 EOF
 
@@ -82,14 +82,14 @@
 - 已排除内容：不是摘要脱敏规则、OpenViking Server 基础健康、embedding 或本地数据目录故障。按用户约束，本轮没有修改 Clash、代理规则、节点、订阅、端口、systemd 代理 drop-in 或防火墙。
 - 下一步验证：由用户先确保当前代理核心稳定，再做连续 20～30 次只读 endpoint 探测；只有零 TLS 错误后，才将大批量 Resource/Session 任务视为稳定。OpenViking 侧继续要求任务终态和失败回滚。
 - 临时规避：把批量写入拆成可审计的独立 Session，每份轮询到 `completed`；失败时根据对应 `memory_diff.json` 精确回滚后重试，不重复上传 Resource。
-- 相关文档和代码：`docs/project_handoff.md`、`docs/guides/development/openviking_usage_and_testing.md`、`/etc/systemd/system/openviking.service.d/proxy.conf`
+- 相关文档和代码：`docs/project_handoff.md`、`docs/versions/rtmp-v1/guides/development/openviking_usage_and_testing.md`、`/etc/systemd/system/openviking.service.d/proxy.conf`
 
 ## ISSUE-008 SRS ARM 实机、真实摄像头与部分恢复场景尚未验收
 
 - 状态：未解决
 - 影响范围：SRS Server 接入的最终验收（方案文档第 16 节）；不得据此宣称"Server 产品化完成"。
 - 已验证现象：2026-08-09 独立复验重新通过 Windows Preset 全新配置、136/136 构建、CTest 17/17（85.29 秒），以及 SRS 6.0.184 的 1935/回环 1985、Windows/WSL 双侧推拉流、停推恢复、SIGQUIT 停止和未知 1935 占用拒绝。Kimi 的 FFmpeg 10 分钟、4/16 路 profile、SRS 崩溃恢复和 API Degraded 结果属于历史证据，本次没有重复执行，不扩大为新的独立门禁结论。SRS `/api/v1/streams/` 默认分页 count=10 已确认，多流查询必须显式 `?start=0&count=N`。
-- 复现步骤：见 `docs/guides/build-and-testing/srs_failure_recovery.md` §5 与 `docs/weeks/week7/`。
+- 复现步骤：见 `docs/versions/rtmp-v1/guides/build-and-testing/srs_failure_recovery.md` §5 与 `docs/versions/rtmp-v1/weeks/week7/`。
 - 已排除内容：当前 Visual Studio 配置失败、WSL2 SRS 基础端口/API、单路推拉流、配置解析和监控防抖已有本轮命令终态证据；ARM、真实摄像头与未重跑的长测仍不在排除范围。
 - 剩余缺口（保持方案第 15 节 `[需要验证]`）：
   1. WSL2 mirrored networking 下真实摄像头从 LAN 访问 Windows 主机 1935 的入站路径，必须由外部设备验证。
@@ -99,7 +99,7 @@
   5. `ossrs/srs:6.0.184` 镜像 arm64 manifest 与 Docker Desktop bind mount 转义（Docker 备选路径未在本轮启用）。
 - 下一步验证：确定 ARM 目标板后按 `cross_platform_build.md` §9 执行实机验收；摄像头到货后按方案 Phase 3 复测。
 - 临时规避：项目状态区分“本轮独立复验”“Kimi 历史证据”和“ARM/摄像头待验证”，不得合并表述为全面产品化通过。
-- 相关文档和代码：`docs/architecture/srs_server_integration_plan.md`、`docs/guides/build-and-testing/srs_failure_recovery.md`、`deploy/srs/`、`scripts/srs/`、`docs/weeks/week7/`
+- 相关文档和代码：`docs/versions/rtmp-v1/architecture/srs_server_integration_plan.md`、`docs/versions/rtmp-v1/guides/build-and-testing/srs_failure_recovery.md`、`deploy/srs/`、`scripts/srs/`、`docs/versions/rtmp-v1/weeks/week7/`
 
 ## ISSUE-009 Windows 单路全屏历史表面、控制栏与退出闪屏
 
@@ -157,7 +157,7 @@
 - 首次记录：2026-08-12
 - 现象：自动化源、schema v4、控制脚本和离线分析器已经实现；当前会话已实际访问 WSL2 SRS，并完成单路真实摄像头并排短测。短测达到采集/发布/解码/显示约 30 FPS、标记识别 100%、源延迟 P95 102 ms，但尚未执行 1/4/8 路各 600 秒正式矩阵，也未执行 16 路和合成 60 FPS 能力项。
 - 风险：不能把工具构建成功、单元测试或历史 15 FPS/手机拍屏结果表述为 Windows 720p30 产品资格通过；当前性能优化方向仍须由新报告确定。
-- 复现/验证：先按 `docs/guides/testing/windows_camera_validation.md` 执行 `Check` 和 120 秒快速运行，再执行 `RunMatrix`。只有 1/4/8 三组正式报告全部满足门禁才能关闭本问题。
+- 复现/验证：先按 `docs/versions/rtmp-v1/guides/testing/windows_camera_validation.md` 执行 `Check` 和 120 秒快速运行，再执行 `RunMatrix`。只有 1/4/8 三组正式报告全部满足门禁才能关闭本问题。
 - 临时措施：Windows 产品目标已经改为 30 FPS，但发布说明继续明确“资格待验证”；ARM64 仍保持独立的真实板卡门禁。
 - 2026-08-12 证据：首轮单路 120 秒运行因一次发布背压出现 2 个序号缺口并正确判失败；改用仍然有界的 8 帧节拍队列后，第二轮 120 秒通过，平均采集/发布/解码/显示为 30.000/29.967/30.038/29.963 FPS，零序号缺口、零源端丢帧，源延迟 P95 104 ms。该结果仍不是 600 秒正式资格。
 
@@ -169,7 +169,7 @@
 - 未完成条件：当前无声卡回环线或已校准声学回环，不能测量 QAudioSink 之后的硬件实际出声；ARM V4L2/ALSA 真机和未知输出设备热插拔未提供。
 - 复现/验证：具备回环条件后，在当前软件报告旁新增声学采集报告并连续执行三轮，每轮至少五分钟；ARM 必须在真实 V4L2/ALSA 设备上运行发布、播放和长期稳定性矩阵。
 - 临时措施：可以声明“发布端到 QAudioSink 写入 P95 ≤150 ms 已通过”，不得简称为“声学端到端延迟已认证”或“ARM 真机已认证”。
-- 相关文档和代码：`docs/architecture/low_latency_audio_stream.md`、`scripts/audio/`、`scripts/package_windows.ps1`、`include/common/media/AudioPlaybackEngine.h`
+- 相关文档和代码：`docs/versions/rtmp-v1/architecture/low_latency_audio_stream.md`、`scripts/audio/`、`scripts/package_windows.ps1`、`include/common/media/AudioPlaybackEngine.h`
 
 ## Issue 模板
 

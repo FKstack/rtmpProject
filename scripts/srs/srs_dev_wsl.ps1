@@ -271,7 +271,7 @@ function Invoke-Check {
     $r = Invoke-Wsl "test -x $SrsHome/objs/srs && $SrsHome/objs/srs -v 2>&1 | head -2 || echo SRS_BINARY_MISSING"
     $version = ($r.StdOut -replace "`r", '').Trim()
     if ($version -match 'SRS_BINARY_MISSING') {
-        Write-Step "SRS binary: MISSING at $SrsHome/objs/srs (build it first, see docs/architecture/srs_server_integration_plan.md section 6)"
+        Write-Step "SRS binary: MISSING at $SrsHome/objs/srs (build it first, see docs/versions/rtmp-v1/architecture/srs_server_integration_plan.md section 6)"
     } else {
         Write-Step "SRS binary: $version"
     }

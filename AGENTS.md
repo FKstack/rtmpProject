@@ -7,8 +7,8 @@
 1. `docs/memory/project_snapshot.md`
 2. `docs/project_handoff.md`
 3. `docs/roadmap/project_plan.md` 中与当前任务相关的部分
-4. 当前任务涉及的 `docs/guides/` 文档
-5. 当前任务涉及的最近 `docs/weeks/` 文档
+4. 当前任务版本对应的 `docs/versions/<version>/guides/` 文档
+5. 当前任务版本对应的最近 `docs/versions/<version>/weeks/` 文档
 6. 实际源代码、CMake 配置、Git 状态，以及必要的运行或测试结果
 
 不要只根据摘要或历史记录推断当前实现。开始修改前先检查工作区是否存在用户未提交改动。
@@ -22,8 +22,8 @@
 > CMake 及真实配置
 > docs/memory 中的已验证事实
 > docs/project_handoff.md
-> docs/roadmap 和 docs/guides
-> docs/weeks 中的历史记录
+> docs/roadmap 和 docs/versions/<version>/guides
+> docs/versions/<version>/weeks 中的历史记录
 > OpenViking 召回记忆
 > 当前对话中的未经验证描述
 ```
@@ -37,7 +37,7 @@
 - 保持项目编译依赖方向：`media` 不得依赖 `render` 或 `ui`，`render` 不得依赖 `ui`；`diagnostics` 可以只读组合 `media` 与 `render`，但不得被二者反向依赖；具体对象组装和跨层连接只能位于应用组合根。
 - 新增依赖方向、改变公共契约或无法在原任务范围内保持既有边界时，按 R3 处理。未改变外部行为、公共契约或用户授权范围时，可自动采用更内聚的边界内实现。
 - 拆分类时必须说明原类的独立变化原因、迁出的状态和生命周期、留下的职责以及调用迁移方式；不得按行数机械拆分类，也不得只移动函数而保留交叉所有权。
-- 项目架构事实以 `docs/architecture/progressive_decoupling_architecture.md`、实际 CMake target 和 `cmake/CheckLayerDependencies.cmake` 为准。文档与实现冲突时采用实际代码、构建和测试证据并修正文档。
+- 当前 RTMP 架构事实以 `docs/versions/rtmp-v1/architecture/progressive_decoupling_architecture.md`、实际 CMake target 和 `cmake/CheckLayerDependencies.cmake` 为准。文档与实现冲突时采用实际代码、构建和测试证据并修正文档。
 - 最终交付必须包含简短的“架构影响”：风险等级、职责变化、依赖变化、契约/生命周期以及实际验证；普通 R1 修复无需单独创建 ADR。
 
 ## 会话结束规则

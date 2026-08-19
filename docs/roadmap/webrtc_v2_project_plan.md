@@ -124,7 +124,7 @@ struct EncodedVideoAccessUnit {
 | M6 性能发布 | 多路、恢复、Windows/ARM64、打包 | Week 11～12 | 30 分钟 smoke 与 600 秒门禁 |
 | M7 后续 | Opus、设备 SDK、对讲、多观看者 | 后续 | 另立计划，不建空接口 |
 
-详细周任务见 `docs/weeks/webrtc-v2/`。
+详细周任务见 `docs/versions/webrtc-v2/weeks/`。
 
 ## 6. 信令和安全默认值
 

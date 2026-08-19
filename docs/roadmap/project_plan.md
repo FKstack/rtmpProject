@@ -498,7 +498,7 @@ Windows 11 主机
 - 未验证范围：真实盒子上的 QPA、窗口、全屏、OpenGL、输入交互、四路实况播放和性能。
 
 环境配置命令及存储约束见 `scripts/setup_arm64_build_env.sh` 和
-[跨平台构建说明](../guides/build-and-testing/cross_platform_build.md)。
+[跨平台构建说明](../versions/rtmp-v1/guides/build-and-testing/cross_platform_build.md)。
 
 Windows 侧只安装一个通用 G++ 不够，原因是完整 Qt 程序的交叉链接至少依赖以下四项：
 
@@ -796,7 +796,7 @@ rtmp://127.0.0.1/live/camera016
 - 连接只在当前会话有效，不持久化设备配置。
 - Windows 做真实 16 路和双屏延迟；ARM64 本轮只做交叉构建门禁。
 - 详细手工操作、报告字段和性能门槛见
-  [16 路动态连接、解码架构与性能验收](../weeks/week4/week4_sixteen_stream_validation.md)。
+  [16 路动态连接、解码架构与性能验收](../versions/rtmp-v1/weeks/week4/week4_sixteen_stream_validation.md)。
 
 ### 8.6 第 5 周：设备状态、日志、断线重连
 
@@ -806,7 +806,7 @@ rtmp://127.0.0.1/live/camera016
 脱敏的系统与审计 JSONL 轮转日志，并将底部区域改为只显示大众语言的用户事件
 消息；面板支持暂停滚动和清空显示。
 详细设计与验收见
-[Week 5 设备状态、日志与重连](../weeks/week5/week5_device_status_and_logging.md)。
+[Week 5 设备状态、日志与重连](../versions/rtmp-v1/weeks/week5/week5_device_status_and_logging.md)。
 
 | 项目 | 内容 |
 | --- | --- |
@@ -841,7 +841,7 @@ Disconnected
 CPU/QPainter 回退。Windows 已实际运行 WGL、生产 framebuffer 和四路 RTMP，完整 CTest
 12/12 通过；WSL2 已生成通过 ELF 与动态依赖门禁的 AArch64 EGL/ES3、主程序和生产
 Qt OpenGL 渲染。真实 ARM64 QPA、EGLFS/Wayland/X11 和 GPU 运行仍待目标盒子验收。
-详细记录见 [Week 6 产品级 OpenGL 验证总览](../weeks/week6/week6_opengl_environment_and_validation.md)。
+详细记录见 [Week 6 产品级 OpenGL 验证总览](../versions/rtmp-v1/weeks/week6/week6_opengl_environment_and_validation.md)。
 
 | 项目 | 内容 |
 | --- | --- |
@@ -1297,10 +1297,10 @@ Linux ARM64 当前只承诺交叉构建和 AArch64 ELF，真实 QPA/GPU/播放�
 
 架构依据和边界见：
 
-- `docs/architecture/current_rendering_architecture_review.md`
-- `docs/architecture/pdf_rendering_framework_mapping.md`
-- `docs/architecture/adr/001-video-rendering-architecture.md`
-- `docs/architecture/video_rendering_framework.md`
+- `docs/versions/rtmp-v1/architecture/current_rendering_architecture_review.md`
+- `docs/versions/rtmp-v1/architecture/pdf_rendering_framework_mapping.md`
+- `docs/versions/rtmp-v1/architecture/adr/001-video-rendering-architecture.md`
+- `docs/versions/rtmp-v1/architecture/video_rendering_framework.md`
 
 ## 16. 监控级完整显示与沉浸式监控墙（2026-08-08）
 
@@ -1338,7 +1338,7 @@ Linux ARM64 当前只承诺交叉构建和 AArch64 ELF，真实 QPA/GPU/播放�
 8. 真机数据明确后再实施 Display QoS、主/子码流和必要的硬件解码；零拷贝、PBO、共享
    Context 和复杂 Shader 继续后置。
 
-完整产品判断、设备分级、架构图、实施阶段和门禁见 `docs/architecture/embedded_device_rendering_strategy.md`。
+完整产品判断、设备分级、架构图、实施阶段和门禁见 `docs/versions/rtmp-v1/architecture/embedded_device_rendering_strategy.md`。
 
 **实施状态（2026-08-08，Kimi）**：上述 1～7 项已落地。`CpuVideoCanvas`/`VideoOpenGLCanvas`
 已拆为独立编译单元，`RtmpMonitorBuildConfig.h` 统一暴露 `RTMP_MONITOR_HAS_OPENGL`；
@@ -1346,7 +1346,7 @@ Linux ARM64 当前只承诺交叉构建和 AArch64 ELF，真实 QPA/GPU/播放�
 `LinuxRendererFactory`；`EmbeddedGlCapabilities` 纯判定接入 `VideoOpenGLCanvas` 初始化；
 EGLFS 自动切换为画布内全屏（`VideoGridWidget::enterInCanvasFullscreen`）；
 `scripts/qualify_embedded_device.sh` 与构建/资格指南
-（`docs/guides/build-and-testing/linux_dual_render_build.md`）已交付。Windows Debug
+（`docs/versions/rtmp-v1/guides/build-and-testing/linux_dual_render_build.md`）已交付。Windows Debug
 CTest 14/14 通过；ARM64 RASTER 构建 NEEDED 无 Qt6OpenGL*/EGL/GLES，GLES3 构建依赖全部
 来自 sysroot。Display QoS、主/子码流与硬件解码仍按第 8 项等待真机数据。
 
@@ -1357,7 +1357,7 @@ CTest 14/14 通过；ARM64 RASTER 构建 NEEDED 无 Qt6OpenGL*/EGL/GLES，GLES3 
 - 单路真实摄像头并排链路已贯通；第二轮 120 秒快速运行达到采集/发布/解码/显示约 30 FPS、源延迟 P95 104 ms且零序号缺口。该诊断结果不替代正式 600 秒门禁。
 - 下一里程碑是先跑 120 秒快速矩阵，再跑 1/4/8 路各 20 秒预热加 600 秒采样。三组正式报告全部通过后，才能把 ISSUE-012 和 Windows 30 FPS 资格状态改为已验证。
 - 失败时按源端 FPS、解码队列、邮箱覆盖、呈现间隔和 renderer P95 的自动归因逐层优化，不再依据手机拍屏主观判断。
-- 运行指南：`docs/guides/testing/windows_camera_validation.md`。
+- 运行指南：`docs/versions/rtmp-v1/guides/testing/windows_camera_validation.md`。
 
 ## 19. 渐进式架构解耦（2026-08-13）
 
