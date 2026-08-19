@@ -13,6 +13,7 @@
 ## 1. 路线规划
 
 - [项目计划](roadmap/project_plan.md)：项目目标、阶段安排、验收标准和当前进度。
+- [WebRTC V2 十二周研发总计划](roadmap/webrtc_v2_project_plan.md)：双模式目标架构、模块边界、Week 1～12 路线、验收门禁和风险；当前仅为 Beta 规划，不代表功能已经实现。
 - [移动安防产品模块竞品调研与演进建议](roadmap/mobile_security_product_module_recommendations.md)：基于当前 RTMP/MQTT 实现与海康、大华、Axis、Milestone、移动巡逻机器人公开能力，给出不改 RTMP 底座的模块优先级、目标架构和分期门禁。
 - [v0.1.0-alpha.1 版本冻结与交付任务清单](roadmap/v0.1.0_alpha1_release_handoff_checklist.md)：源码交接、Windows 测试包、ARM 真机和最终发布门禁。
 
@@ -47,11 +48,29 @@
 - [嵌入式二次开发交接与环境填写模板](guides/build-and-testing/embedded_developer_handoff.md)
 - [Linux 双路径渲染构建（RASTER/GLES3/AUTO）与板级资格脚本](guides/build-and-testing/linux_dual_render_build.md)
 - [SRS 新手完全指南：概念、使用、配置与项目联动](guides/build-and-testing/srs_beginner_guide.md)
+- [WebRTC 新手指南](guides/build-and-testing/webrtc_beginner_guide.md)：按信令、SDP、ICE、STUN/TURN、加密、RTP/H.264、WHIP/WHEP 和生命周期顺序建立基础知识。
 - [历史 nginx-rtmp 链路说明](guides/build-and-testing/rtmp_chain_verification.md)：其维护者本机脚本已退役；当前链路使用 SRS 指南。
 - [SRS 异常恢复与发布门禁验证指南](guides/build-and-testing/srs_failure_recovery.md)
 - [Windows 真实摄像头帧率与延迟资格测试](guides/testing/windows_camera_validation.md)：720p30 的 1/4/8 路机器指标门禁、60 FPS 视觉复核和离线分析。
 
 ## 3. 分周实现
+
+### V2 Week 1～12：WebRTC 双模式研发计划
+
+- [Week 1：WebRTC 基础认知](weeks/webrtc-v2/week01_webrtc_fundamentals.md)
+- [Week 2：双模式架构与 SRS 回环实验](weeks/webrtc-v2/week02_dual_mode_architecture.md)
+- [Week 3：协议无关 Transport 边界](weeks/webrtc-v2/week03_transport_boundary.md)
+- [Week 4：H.264 RTP 重组](weeks/webrtc-v2/week04_h264_rtp.md)
+- [Week 5：公网服务器单路 PoC](weeks/webrtc-v2/week05_whep_server_poc.md)
+- [Week 6：Go WSS 信令服务](weeks/webrtc-v2/week06_signaling_service.md)
+- [Week 7：P2P、STUN 与 TURN](weeks/webrtc-v2/week07_p2p_stun_turn.md)
+- [Week 8：公网安全部署](weeks/webrtc-v2/week08_secure_deployment.md)
+- [Week 9：保存配置与三模式 UI](weeks/webrtc-v2/week09_profiles_and_ui.md)
+- [Week 10：产品状态、事件与安全语义](weeks/webrtc-v2/week10_product_states_and_safety.md)
+- [Week 11：多路与故障矩阵](weeks/webrtc-v2/week11_multistream_failure_matrix.md)
+- [Week 12：性能、跨平台与 Beta 发布门禁](weeks/webrtc-v2/week12_release_qualification.md)
+
+以上文件是未来研发任务书，不是完成记录。每周必须在门禁通过后，才可把对应条目标记为已实现。
 
 ### Week 2：动态界面
 

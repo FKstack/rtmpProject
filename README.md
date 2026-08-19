@@ -20,7 +20,10 @@ Python 单元测试及固定 SRS 6.0.184 故障矩阵。上述自动化结果不
 - 公网服务器模式：设备或参考发布器通过 WHIP 发布到 SRS，客户端通过 WHEP 接收。
 - P2P 模式：设备与 Qt 客户端优先直连，由独立 WSS 服务交换信令，复杂 NAT 下允许 TURN 中继。
 
-V2 当前是研发计划，不是 Alpha 已交付能力。完整设计、模块门禁和实施进度将在
+V2 当前是研发计划，不是 Alpha 已交付能力；`Beta` 分支目前也只包含规划文档，尚未开始
+WebRTC 生产代码实现。请从 [V2 总计划](docs/roadmap/webrtc_v2_project_plan.md)、
+[WebRTC 新手指南](docs/guides/build-and-testing/webrtc_beginner_guide.md)和
+[V2 Week 1～12 周计划](docs/weeks/webrtc-v2/)进入。完整设计、模块门禁和后续实施进度只在
 [`Beta` 分支](https://github.com/FKstack/rtmpProject/tree/Beta)维护；`master` 与
 `v0.1.0-alpha.1` 继续代表已验证的 RTMP 稳定基线。
 

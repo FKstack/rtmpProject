@@ -1,5 +1,13 @@
 # RtmpMonitor 当前项目快照
 
+> WebRTC V2 规划状态（2026-08-19）：本地 `Beta` 已先精确恢复到远端稳定基线
+> `116e33b`，提前产生的 WebRTC 提交、未提交 RTP 重组源码、Go 信令服务及其测试均已撤销；
+> `out/build-windows-x64/beta-vs`、`out/build-windows-x64/debug` 和 `out/go-cache` 已删除。
+> Windows ZIP 保持 23,189,479 字节，Linux ARM64 tar.gz 保持 12,509,074 字节，本机 vcpkg 的
+> libdatachannel 0.24.5 及依赖保留。`Beta` 当前只新增 WebRTC 总计划、新手指南、Week 1～12
+> 任务书和文档入口，没有修改 CMake、生产源码、schema 或测试代码；WebRTC 实现、构建和运行
+> 证据均为“尚未开始”，不得把计划目标表述为已交付能力。
+
 > Linux ARM64 RASTER 打包状态（2026-08-18）：从干净 Alpha `89483c0` 创建
 > `codex/linux-arm64-package`，新增严格的 `scripts/package_linux_arm64.sh`、linuxfb 启动器、`qt.conf`、
 > ARM64 专用说明和第三方通知。在独立目录使用 Jammy ARM64 sysroot、AArch64 GCC 11、Qt 6.2.4、
