@@ -8,6 +8,22 @@ RtmpMonitor 是一个使用 C++17、Qt 6 Widgets、FFmpeg 和 Eclipse Paho MQTT 
 
 当前版本为 `0.1.0-alpha.1`：Windows 是 **Development Preview**，Linux ARM64 是 **Engineering Preview**。Windows 构建与自动测试、Ubuntu 22.04 到 ARM64 的交叉构建已经验证；ARM 真机的 QPA、GPU、视频和长期稳定性仍需在目标设备验收。
 
+当前 Alpha 基线已经包含单车控制安全、平台事件中心、截图证据与目录导出，以及默认关闭的
+SRS DVR 分段收据 PoC。最近一次 Windows Debug 全目标回归为 36/36；DVR PoC 另有 14 项
+Python 单元测试及固定 SRS 6.0.184 故障矩阵。上述自动化结果不替代真实车辆、ARM 目标板或
+现场证据流程验收。
+
+## V2 WebRTC Beta
+
+下一研发版本为 `0.2.0-beta.1`，在保留 RTMP 手动回滚路径的前提下，规划两种 WebRTC 模式：
+
+- 公网服务器模式：设备或参考发布器通过 WHIP 发布到 SRS，客户端通过 WHEP 接收。
+- P2P 模式：设备与 Qt 客户端优先直连，由独立 WSS 服务交换信令，复杂 NAT 下允许 TURN 中继。
+
+V2 当前是研发计划，不是 Alpha 已交付能力。完整设计、模块门禁和实施进度将在
+[`Beta` 分支](https://github.com/FKstack/rtmpProject/tree/Beta)维护；`master` 与
+`v0.1.0-alpha.1` 继续代表已验证的 RTMP 稳定基线。
+
 ## 当前界面
 
 - 全局采用“深石墨监控舱”主题，Fusion 基础样式、深色 Palette 与限定作用域 QSS 保持统一；Windows 使用原生 DWM 深色标题栏。
@@ -44,6 +60,8 @@ StopCar 在心跳过期后仍可发送。当前控制 payload 没有 `client_id`
   带 `data.url` 的启动推流、固定中心鼠标摇杆和显式解锁的 WASD/方向键控制；松开、失焦、隐藏或
   全屏切换时停车，并可折叠观察最近 20 条脱敏消息。
 - 结构化系统日志、审计日志、敏感字段脱敏和运行指标。
+- 单车控制安全门禁、平台事件中心、截图证据与事件目录导出。
+- 默认关闭且不接入正常播放链路的 SRS DVR 分段收据 PoC。
 - Windows x64 原生开发与 Ubuntu 22.04 → Linux ARM64 交叉开发入口。
 
 ## 支持范围
@@ -192,7 +210,7 @@ tests/      CTest 使用的 C++ 自动测试
 
 ## 测试与文档
 
-`BUILD_TESTING=ON` 时当前 Windows Debug 配置会注册 29 个 CTest 目标，覆盖保存推流、MQTT 协议与 Fake Broker、桌面摇杆与键盘输入、Dock 布局优先级、依赖方向、播放器生命周期、AAC 解码/默认音频输出、音频延迟报告门禁、动态网格、多路管理、日志、OpenGL framebuffer、渲染核心和应用命令行。2026-08-15 最近一次完整 Windows Debug 为 29/29 通过，最终 Windows Release 为 29/29 通过（98.14 秒）；ARM64 RASTER/GLES3 全目标交叉构建及依赖门禁也已通过，RASTER 未引入 OpenGL/EGL/GLES。真实 SRS 软件链路的发布端到 Sink 写入延迟门禁已通过，声学硬件部分仍需回环条件，不能把软件测量表述为扬声器实际出声延迟。不同平台和构建选项注册数量可能不同；环境脚本的 `All` 会自动运行对应平台门禁，单独重跑可使用：
+`BUILD_TESTING=ON` 时当前 Windows Debug 配置会注册 36 个 CTest 目标，覆盖保存推流、MQTT 协议与 Fake Broker、控制安全、平台事件、证据存储与导出、桌面摇杆与键盘输入、Dock 布局优先级、依赖方向、播放器生命周期、AAC 解码/默认音频输出、音频延迟报告门禁、动态网格、多路管理、日志、OpenGL framebuffer、渲染核心和应用命令行。2026-08-16 最近一次完整 Windows Debug 为 36/36 通过；Windows Release、ARM64 RASTER/GLES3 全目标交叉构建及依赖门禁也已通过，RASTER 未引入 OpenGL/EGL/GLES。SRS DVR PoC 的 14 项 Python 单元测试和独立故障矩阵也已通过，但真实 ARM 板、车辆动作和现场证据流程仍需独立验收。真实 SRS 软件链路的发布端到 Sink 写入延迟门禁已通过，声学硬件部分仍需回环条件，不能把软件测量表述为扬声器实际出声延迟。不同平台和构建选项注册数量可能不同；环境脚本的 `All` 会自动运行对应平台门禁，单独重跑可使用：
 
 ```powershell
 ctest --test-dir out\build-windows-x64\debug --output-on-failure
