@@ -1,10 +1,12 @@
 # RtmpMonitor 0.2.0-beta.1 WebRTC 双客户端优先研发总计划
 
-> 文档状态：经确认的 R3 总路线；Week 2 开发者基础、Week 3 H.264/解码边界和 Week 4
-> MP4 publisher/对称 endpoint 已实施。`W2-GATE` 人工复核仍待执行。
+> 文档状态：经确认的 R3 总路线；Week 2 开发者基础、Week 3 H.264/解码边界、Week 4
+> MP4 publisher/对称 endpoint 和 Week 5 测试客户端接收播放闭环已实施。`W2-GATE` 人工复核与
+> Week 5 桌面人工观感仍待执行。
 >
-> 当前稳定能力仍是 `0.1.0-alpha.1` RTMP 路径。本文中的 Week 5～10 类型、模块、CLI、
-> 性能指标和交付物均为待实现目标，不能作为 WebRTC 已交付、已部署或已通过 ARM 真机验证的证据。
+> 当前稳定产品能力仍是 `0.1.0-alpha.1` RTMP 路径。Week 5 只完成默认关闭的测试客户端；本文中
+> Week 6～10 的网络、正式 UI、性能和交付物仍为待实现目标，不能作为 WebRTC 已部署、可公网使用
+> 或已通过 ARM 真机验证的证据。
 
 ## 1. 决策摘要
 
@@ -315,20 +317,24 @@ Week 3 的先行实施依据上方明确授权单独记录，不反推 W2 人工
 
 ### Week 5：同一客户端 viewer 与双角色媒体回环
 
-| ID | h | 前置 | 单一输出与验收 | 失败/停线 |
-| --- | ---: | --- | --- | --- |
-| W5-RCV-01 | 4 | W4-GATE | ReceiveOnly H.264 Track 和 codec/fmtp 校验 | ICE 成功但无兼容 Track 不得伪装成功 |
-| W5-RCV-02 | 4 | W5-RCV-01 | libdatachannel depacketize 后的 Annex-B AU 边界 | 自行复制 RFC 6184 状态机即停止 |
-| W5-RCV-03 | 3 | W5-RCV-02 | AU 大小、SPS/PPS、IDR 和畸形输入策略 | 无界重组或旧参数集复用即失败 |
-| W5-MED-01 | 4 | W5-RCV-03,W3-MED-03 | 当前 generation AU 接入现有 decoder/mailbox | 创建第二套 decode/render 框架即失败 |
-| W5-CLI-01 | 4 | W5-MED-01 | 同一测试客户端的 viewer 窗口模式 | viewer 使用不同 executable/协议栈即失败 |
-| W5-MAT-01 | 4 | W5-CLI-01 | publisher/Offerer ↔ viewer/Answerer 自动双进程 | 无真实文件交换或无真实帧即失败 |
-| W5-MAT-02 | 3 | W5-CLI-01 | viewer/Offerer ↔ publisher/Answerer 自动双进程 | receiver 不能创建 Offer 即失败 |
-| W5-MED-02 | 3 | W5-MAT-01,W5-MAT-02 | 晚加入等待当前 SPS/PPS+IDR 后起播 | 用旧 generation 或非 IDR 起播即失败 |
-| W5-LIF-01 | 4 | W5-MAT-01,W5-MAT-02 | 两端重复关闭、单端退出和晚回调矩阵 | 退出残留、崩溃或旧帧即失败 |
-| W5-TST-01 | 4 | W5-MED-02,W5-LIF-01 | 同机 E2E、媒体错误、容量和脱敏测试 | 只证明 ICE 不证明出画即失败 |
-| W5-DOC-01 | 2 | W5-TST-01 | 两种角色组合的实际结果 | 混写为 LAN/公网结果即失败 |
-| W5-GATE | 3 | W5-TST-01,W5-DOC-01 | 单机双客户端媒体门禁 | 两种组合任一未过不得进入 LAN 包装 |
+| ID | 状态 | h | 前置 | 单一输出与验收 | 失败/停线 |
+| --- | --- | ---: | --- | --- | --- |
+| W5-RCV-01 | 通过 | 4 | W4-GATE | ReceiveOnly H.264 Track 和 codec/fmtp 校验 | ICE 成功但无兼容 Track 不得伪装成功 |
+| W5-RCV-02 | 通过 | 4 | W5-RCV-01 | libdatachannel depacketize 后的 Annex-B AU 边界 | 自行复制 RFC 6184 状态机即停止 |
+| W5-RCV-03 | 通过 | 3 | W5-RCV-02 | AU 大小、SPS/PPS、IDR 和畸形输入策略 | 无界重组或旧参数集复用即失败 |
+| W5-MED-01 | 通过 | 4 | W5-RCV-03,W3-MED-03 | 当前 generation AU 接入现有 decoder/mailbox | 创建第二套 decode/render 框架即失败 |
+| W5-CLI-01 | 通过 | 4 | W5-MED-01 | 同一测试客户端的 viewer 窗口模式 | viewer 使用不同 executable/协议栈即失败 |
+| W5-MAT-01 | 通过 | 4 | W5-CLI-01 | publisher/Offerer ↔ viewer/Answerer 自动双进程 | 无真实文件交换或无真实帧即失败 |
+| W5-MAT-02 | 通过 | 3 | W5-CLI-01 | viewer/Offerer ↔ publisher/Answerer 自动双进程 | receiver 不能创建 Offer 即失败 |
+| W5-MED-02 | 通过 | 3 | W5-MAT-01,W5-MAT-02 | 容量丢弃后等待当前 SPS/PPS+IDR 恢复 | 用旧 generation 或非 IDR 起播即失败 |
+| W5-LIF-01 | 通过 | 4 | W5-MAT-01,W5-MAT-02 | 两端重复关闭、单端退出和晚回调矩阵 | 退出残留、崩溃或旧帧即失败 |
+| W5-TST-01 | 通过 | 4 | W5-MED-02,W5-LIF-01 | 同机 E2E、媒体错误、容量和脱敏测试 | 只证明 ICE 不证明出画即失败 |
+| W5-DOC-01 | 通过 | 2 | W5-TST-01 | 两种角色组合的实际结果 | 混写为 LAN/公网结果即失败 |
+| W5-GATE | **通过（自动技术门禁）** | 3 | W5-TST-01,W5-DOC-01 | 单机双客户端媒体门禁 | 两种组合任一未过不得进入 LAN 包装 |
+
+实际实现和脱敏证据见 `../versions/webrtc-v2/weeks/week05/`。fresh OFF/ON CTest 分别 39/39、
+44/44，两种同机双客户端角色组合均产生 RTP、AU、decoded、rendered 和 presented 证据。桌面人工
+观感待用户执行；该结论不证明双机 LAN、公网、正式产品 UI、样本分发或 ARM 真机。
 
 ### Week 6：社团双机 LAN 测试包与矩阵
 

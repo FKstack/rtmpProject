@@ -1,5 +1,15 @@
 # RtmpMonitor 当前项目快照
 
+> WebRTC V2 Week 5 技术状态（2026-08-23）：同一 `rtmp_monitor_webrtc_client` 已同时支持
+> publisher/viewer 与 Offerer/Answerer 正交组合。ReceiveOnly Track 使用 libdatachannel 0.24.5
+> 官方 H.264 depacketizer，当前 endpoint generation 内执行 Annex-B、SPS/PPS/IDR、4 MiB 上限和
+> RTP 时间戳恢复；组合根经弱 `EncodedVideoInputHandle` 接入既有 FFmpeg decoder、capacity-1
+> mailbox 和 CPU 画布。画布源码已抽为不依赖完整产品 UI 的窄目标。VS2026 Debug fresh OFF/ON
+> 全构建与 CTest 分别 39/39、44/44；两种双客户端拓扑各 2 轮均收到 RTP/AU 并产生
+> decoded/presented 与非黑 framebuffer 证据，Week 4 最终完整回归也通过。Qt platform plugin
+> 部署、递归重绘、publisher 缺样本前置校验均已修复。`W5-GATE` 为自动技术通过；桌面人工观感、
+> 双机 LAN、公网、正式产品 UI、样本分发和 ARM 真机仍待后续验证。
+
 > OpenViking OAuth 修复（2026-08-23）：近期 Hook 实际已追加消息，但 OpenViking 后台 Phase 2 因
 > 过期且来源路径已失效的 Codex OAuth 持续返回 401，造成 commit 计数增长而 archive overview/
 > 长期记忆为空。现已备份旧 store，通过 systemd drop-in 持久绑定 Windows 当前 `CODEX_HOME`

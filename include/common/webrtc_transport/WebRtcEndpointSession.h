@@ -18,6 +18,8 @@ enum class EndpointError {
     None,
     InvalidState,
     InvalidRole,
+    IncompatibleMedia,
+    MissingReceiveSink,
     LibraryFailure,
     GatheringTimeout,
     ConnectionTimeout,
@@ -66,12 +68,18 @@ struct EndpointSnapshot
     std::uint64_t droppedAccessUnits = 0;
     std::uint64_t sentAccessUnits = 0;
     std::uint64_t receivedRtpPackets = 0;
+    std::uint64_t receivedAccessUnits = 0;
+    std::uint64_t submittedAccessUnits = 0;
+    std::uint64_t receiveDrops = 0;
+    std::uint64_t invalidAccessUnits = 0;
     std::uint64_t sendFailures = 0;
     bool waitingForKeyframe = false;
     bool trackOpen = false;
 };
 
 using H264SubmitPort = std::function<H264SubmitResult(H264AccessUnit)>;
+using H264ReceiveSink =
+    std::function<H264SubmitResult(SessionMediaSample)>;
 
 /**
  * Owns one PeerConnection session, its video Track, generation and bounded
@@ -101,6 +109,7 @@ public:
         std::chrono::milliseconds timeout = std::chrono::seconds(30)
     );
     [[nodiscard]] std::optional<H264SubmitPort> createSendPort();
+    [[nodiscard]] EndpointError setReceiveSink(H264ReceiveSink sink);
     [[nodiscard]] EndpointSnapshot snapshot() const noexcept;
 
     void beginClose() noexcept;

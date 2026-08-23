@@ -447,10 +447,13 @@ target_include_directories(rtmp_monitor_h264_contracts INTERFACE
 if(RTMP_MONITOR_ENABLE_WEBRTC)
     add_library(rtmp_monitor_webrtc_transport STATIC
         include/common/webrtc_transport/WebRtcEndpointSession.h
+        src/common/webrtc_transport/H264ReceivePipeline.h
+        src/common/webrtc_transport/H264ReceivePipeline.cpp
         src/common/webrtc_transport/WebRtcEndpointSession.cpp
     )
     target_include_directories(rtmp_monitor_webrtc_transport
-        PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include/common)
+        PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include/common
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/common)
     target_link_libraries(rtmp_monitor_webrtc_transport
         PUBLIC
             rtmp_monitor_h264_contracts
@@ -718,6 +721,42 @@ target_link_libraries(rtmp_monitor_diagnostics
 )
 rtmp_monitor_apply_project_options(rtmp_monitor_diagnostics)
 
+# Reusable video surface: the WebRTC developer client needs one existing
+# canvas without linking the product UI's profiles/control/event dependencies.
+set(RTMP_MONITOR_VIDEO_CANVAS_SOURCES
+    include/common/ui/CpuVideoCanvas.h
+    src/common/ui/CpuVideoCanvas.cpp
+    include/common/ui/VideoCanvasHost.h
+    src/common/ui/VideoCanvasHost.cpp
+)
+
+if(RTMP_MONITOR_HAS_OPENGL)
+    list(APPEND RTMP_MONITOR_VIDEO_CANVAS_SOURCES
+        include/common/ui/VideoOpenGLCanvas.h
+        src/common/ui/VideoOpenGLCanvas.cpp
+    )
+endif()
+
+qt_add_library(rtmp_monitor_video_canvas STATIC
+    ${RTMP_MONITOR_VIDEO_CANVAS_SOURCES}
+)
+target_include_directories(rtmp_monitor_video_canvas
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/common
+    PRIVATE
+        ${CMAKE_BINARY_DIR}/generated
+)
+target_link_libraries(rtmp_monitor_video_canvas
+    PUBLIC
+        Qt6::Widgets
+        rtmp_monitor_render
+)
+if(RTMP_MONITOR_HAS_OPENGL)
+    target_link_libraries(rtmp_monitor_video_canvas
+        PUBLIC Qt6::OpenGLWidgets)
+endif()
+rtmp_monitor_apply_project_options(rtmp_monitor_video_canvas)
+
 # UI 作为独立静态库供主程序和测试复用，避免重复编译相同实现。
 set(RTMP_MONITOR_UI_SOURCES
     include/common/ui/ConnectionDialog.h
@@ -760,18 +799,7 @@ set(RTMP_MONITOR_UI_SOURCES
     src/common/ui/EventCenterPanel.cpp
     include/common/ui/EventDetailDialog.h
     src/common/ui/EventDetailDialog.cpp
-    include/common/ui/CpuVideoCanvas.h
-    src/common/ui/CpuVideoCanvas.cpp
-    include/common/ui/VideoCanvasHost.h
-    src/common/ui/VideoCanvasHost.cpp
 )
-
-if(RTMP_MONITOR_HAS_OPENGL)
-    list(APPEND RTMP_MONITOR_UI_SOURCES
-        include/common/ui/VideoOpenGLCanvas.h
-        src/common/ui/VideoOpenGLCanvas.cpp
-    )
-endif()
 
 qt_add_library(rtmp_monitor_ui STATIC
     ${RTMP_MONITOR_UI_SOURCES}
@@ -789,18 +817,12 @@ target_link_libraries(rtmp_monitor_ui
         Qt6::Widgets
         rtmp_monitor_logging
         rtmp_monitor_render
+        rtmp_monitor_video_canvas
         rtmp_monitor_profiles
         rtmp_monitor_device_control
         rtmp_monitor_event_center
         rtmp_monitor_evidence
 )
-
-if(RTMP_MONITOR_HAS_OPENGL)
-    target_link_libraries(rtmp_monitor_ui
-        PUBLIC
-            Qt6::OpenGLWidgets
-    )
-endif()
 
 rtmp_monitor_apply_project_options(rtmp_monitor_ui)
 
@@ -960,22 +982,55 @@ endfunction()
 rtmp_monitor_copy_ffmpeg_runtime(rtmp_monitor)
 
 if(RTMP_MONITOR_ENABLE_WEBRTC)
+    if(WIN32)
+        get_filename_component(RTMP_MONITOR_QT_INSTALL_PREFIX
+            "${Qt6_DIR}/../../.." ABSOLUTE)
+        set(rtmp_monitor_qt_platform_dir
+            "${RTMP_MONITOR_QT_INSTALL_PREFIX}/plugins/platforms")
+        function(rtmp_monitor_copy_qt_platform_runtime target_name)
+            add_custom_command(TARGET ${target_name} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E make_directory
+                    "$<TARGET_FILE_DIR:${target_name}>/platforms"
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "$<IF:$<CONFIG:Debug>,${rtmp_monitor_qt_platform_dir}/qwindowsd.dll,${rtmp_monitor_qt_platform_dir}/qwindows.dll>"
+                    "$<TARGET_FILE_DIR:${target_name}>/platforms/$<IF:$<CONFIG:Debug>,qwindowsd.dll,qwindows.dll>"
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "$<IF:$<CONFIG:Debug>,${rtmp_monitor_qt_platform_dir}/qoffscreend.dll,${rtmp_monitor_qt_platform_dir}/qoffscreen.dll>"
+                    "$<TARGET_FILE_DIR:${target_name}>/platforms/$<IF:$<CONFIG:Debug>,qoffscreend.dll,qoffscreen.dll>"
+                VERBATIM)
+        endfunction()
+    endif()
+
     qt_add_executable(rtmp_monitor_webrtc_client
-        src/tools/WebRtcClientMain.cpp)
+        src/tools/WebRtcClientMain.cpp
+        src/tools/webrtc_client/WebRtcClientOptions.h
+        src/tools/webrtc_client/WebRtcClientOptions.cpp
+        src/tools/webrtc_client/WebRtcClientRuntime.h
+        src/tools/webrtc_client/WebRtcClientRuntime.cpp
+        src/tools/webrtc_client/WebRtcViewerController.h
+        src/tools/webrtc_client/WebRtcViewerController.cpp)
     set_target_properties(rtmp_monitor_webrtc_client PROPERTIES
         WIN32_EXECUTABLE FALSE
         RUNTIME_OUTPUT_DIRECTORY
             "${CMAKE_BINARY_DIR}/webrtc/$<CONFIG>")
     target_link_libraries(rtmp_monitor_webrtc_client
         PRIVATE
-            Qt6::Core
+            Qt6::Widgets
             rtmp_monitor_webrtc_signaling
             rtmp_monitor_webrtc_transport
             rtmp_monitor_h264_publisher_source
+            rtmp_monitor_media
+            rtmp_monitor_video_canvas
             LibDataChannel::LibDataChannel)
+    target_include_directories(rtmp_monitor_webrtc_client PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tools)
     rtmp_monitor_apply_project_options(rtmp_monitor_webrtc_client)
     rtmp_monitor_copy_webrtc_runtime(rtmp_monitor_webrtc_client)
     rtmp_monitor_copy_ffmpeg_runtime(rtmp_monitor_webrtc_client)
+    if(WIN32)
+        rtmp_monitor_copy_qt_platform_runtime(
+            rtmp_monitor_webrtc_client)
+    endif()
 endif()
 
 option(RTMP_MONITOR_BUILD_VALIDATION_TOOLS
@@ -1234,12 +1289,37 @@ if(BUILD_TESTING)
             Qt6::Test
             rtmp_monitor_webrtc_transport
             LibDataChannel::LibDataChannel)
+        target_include_directories(rtmp_monitor_webrtc_endpoint_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/common)
         rtmp_monitor_apply_project_options(rtmp_monitor_webrtc_endpoint_test)
         add_test(NAME rtmp_monitor_webrtc_endpoint_test
             COMMAND rtmp_monitor_webrtc_endpoint_test)
         set_tests_properties(rtmp_monitor_webrtc_endpoint_test PROPERTIES
             RUN_SERIAL TRUE
             TIMEOUT 120)
+
+        qt_add_executable(rtmp_monitor_webrtc_viewer_pipeline_test
+            tests/WebRtcViewerPipelineTest.cpp)
+        target_link_libraries(rtmp_monitor_webrtc_viewer_pipeline_test PRIVATE
+            Qt6::Test
+            rtmp_monitor_webrtc_transport
+            rtmp_monitor_media
+            rtmp_monitor_video_canvas
+            LibDataChannel::LibDataChannel)
+        rtmp_monitor_apply_project_options(
+            rtmp_monitor_webrtc_viewer_pipeline_test)
+        add_test(NAME rtmp_monitor_webrtc_viewer_pipeline_test
+            COMMAND rtmp_monitor_webrtc_viewer_pipeline_test)
+        set_tests_properties(rtmp_monitor_webrtc_viewer_pipeline_test PROPERTIES
+            RUN_SERIAL TRUE
+            TIMEOUT 120
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+        rtmp_monitor_copy_ffmpeg_runtime(
+            rtmp_monitor_webrtc_viewer_pipeline_test)
+        if(WIN32)
+            rtmp_monitor_copy_qt_platform_runtime(
+                rtmp_monitor_webrtc_viewer_pipeline_test)
+        endif()
 
         qt_add_executable(rtmp_monitor_h264_publisher_source_test
             tests/Mp4H264PublisherSourceTest.cpp)
@@ -1271,6 +1351,7 @@ if(BUILD_TESTING)
             rtmp_monitor_webrtc_h264_test
             rtmp_monitor_webrtc_loopback_test
             rtmp_monitor_webrtc_endpoint_test
+            rtmp_monitor_webrtc_viewer_pipeline_test
             rtmp_monitor_h264_publisher_source_test
             rtmp_monitor_webrtc_publisher_peer)
             set_target_properties(${webrtc_test_target} PROPERTIES

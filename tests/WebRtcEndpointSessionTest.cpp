@@ -1,16 +1,19 @@
 #include "webrtc_transport/WebRtcEndpointSession.h"
+#include "webrtc_transport/H264ReceivePipeline.h"
 
 #include <QtTest>
 
 #include <rtc/rtc.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <future>
 #include <vector>
 
 using namespace rtmp_monitor::webrtc_transport;
+using namespace rtmp_monitor::webrtc_transport::detail;
 
 namespace {
 
@@ -145,6 +148,158 @@ private slots:
         QCOMPARE(session.snapshot().queueDepth, std::size_t(0));
     }
 
+    void receiveSinkIsRequiredAndBoundBeforeNegotiation()
+    {
+        WebRtcSessionConfig receiveConfig;
+        receiveConfig.signalingRole = SignalingRole::Offerer;
+        receiveConfig.videoDirection = VideoDirection::ReceiveOnly;
+        WebRtcEndpointSession receiver(receiveConfig);
+        QCOMPARE(
+            receiver.createOffer().error,
+            EndpointError::MissingReceiveSink
+        );
+        QCOMPARE(
+            receiver.setReceiveSink({}),
+            EndpointError::MissingReceiveSink
+        );
+        QCOMPARE(
+            receiver.setReceiveSink([](SessionMediaSample) {
+                return H264SubmitResult::Accepted;
+            }),
+            EndpointError::None
+        );
+        QVERIFY(receiver.createOffer().ok());
+        QCOMPARE(
+            receiver.setReceiveSink([](SessionMediaSample) {
+                return H264SubmitResult::Accepted;
+            }),
+            EndpointError::InvalidState
+        );
+        receiver.close();
+
+        WebRtcSessionConfig sendConfig;
+        sendConfig.signalingRole = SignalingRole::Offerer;
+        sendConfig.videoDirection = VideoDirection::SendOnly;
+        WebRtcEndpointSession sender(sendConfig);
+        QCOMPARE(
+            sender.setReceiveSink([](SessionMediaSample) {
+                return H264SubmitResult::Accepted;
+            }),
+            EndpointError::InvalidRole
+        );
+        sender.close();
+    }
+
+    void incompatibleH264DescriptionIsRejected()
+    {
+        WebRtcSessionConfig senderConfig;
+        senderConfig.signalingRole = SignalingRole::Offerer;
+        senderConfig.videoDirection = VideoDirection::SendOnly;
+        WebRtcEndpointSession sender(senderConfig);
+        const EndpointDescriptionResult offer = sender.createOffer();
+        QVERIFY(offer.ok());
+
+        std::string incompatible = offer.sdp;
+        const std::string expected = "profile-level-id=42e01f";
+        const std::size_t profile = incompatible.find(expected);
+        QVERIFY(profile != std::string::npos);
+        incompatible.replace(profile, expected.size(), "profile-level-id=64001f");
+
+        WebRtcSessionConfig receiverConfig;
+        receiverConfig.signalingRole = SignalingRole::Answerer;
+        receiverConfig.videoDirection = VideoDirection::ReceiveOnly;
+        WebRtcEndpointSession receiver(receiverConfig);
+        QCOMPARE(
+            receiver.setReceiveSink([](SessionMediaSample) {
+                return H264SubmitResult::Accepted;
+            }),
+            EndpointError::None
+        );
+        QCOMPARE(
+            receiver.acceptOfferAndCreateAnswer(incompatible).error,
+            EndpointError::IncompatibleMedia
+        );
+        QCOMPARE(receiver.snapshot().state, EndpointState::New);
+        sender.close();
+        receiver.close();
+    }
+
+    void annexBRecoveryPolicyIsGenerationAndWrapAware()
+    {
+        H264ReceivePipeline pipeline;
+        auto waiting = pipeline.process(
+            7,
+            {0x00, 0x00, 0x01, 0x67, 0x42, 0xe0, 0x1f},
+            0xffffff00U
+        );
+        QCOMPARE(
+            waiting.status,
+            H264ReceivePipelineStatus::WaitingForKeyframe
+        );
+        waiting = pipeline.process(
+            7,
+            {0x00, 0x00, 0x00, 0x01, 0x68, 0xce, 0x06, 0xe2},
+            0x00000100U
+        );
+        QCOMPARE(
+            waiting.status,
+            H264ReceivePipelineStatus::WaitingForKeyframe
+        );
+        auto ready = pipeline.process(
+            7,
+            {0x00, 0x00, 0x01, 0x65, 0x88, 0x84},
+            0x00000d00U
+        );
+        QCOMPARE(ready.status, H264ReceivePipelineStatus::Ready);
+        QVERIFY(ready.sample.has_value());
+        QCOMPARE(ready.sample->generation, std::uint64_t(7));
+        QVERIFY(ready.sample->accessUnit.keyFrame);
+        QVERIFY(ready.sample->accessUnit.mediaTimestampUs > 0);
+        QVERIFY(ready.sample->accessUnit.annexB.size() > 20U);
+
+        ready = pipeline.process(
+            7,
+            {0x00, 0x00, 0x00, 0x01, 0x41, 0x9a},
+            0x00001900U
+        );
+        QCOMPARE(ready.status, H264ReceivePipelineStatus::Ready);
+        QVERIFY(!ready.sample->accessUnit.keyFrame);
+
+        pipeline.resetRecovery();
+        waiting = pipeline.process(
+            7,
+            {0x00, 0x00, 0x00, 0x01, 0x41, 0x9a},
+            0x00002500U
+        );
+        QCOMPARE(
+            waiting.status,
+            H264ReceivePipelineStatus::WaitingForKeyframe
+        );
+        waiting = pipeline.process(
+            8,
+            {0x00, 0x00, 0x00, 0x01, 0x65, 0x88},
+            90'000U
+        );
+        QCOMPARE(
+            waiting.status,
+            H264ReceivePipelineStatus::WaitingForKeyframe
+        );
+
+        auto invalid = pipeline.process(8, {}, 90'001U);
+        QCOMPARE(
+            invalid.status,
+            H264ReceivePipelineStatus::InvalidAccessUnit
+        );
+        std::vector<std::uint8_t> oversized(
+            H264ReceivePipeline::kMaximumAccessUnitBytes + 1U, 0
+        );
+        invalid = pipeline.process(8, std::move(oversized), 90'002U);
+        QCOMPARE(
+            invalid.status,
+            H264ReceivePipelineStatus::InvalidAccessUnit
+        );
+    }
+
     void repeatedCloseIsIdempotent()
     {
         for (int iteration = 0; iteration < 10; ++iteration) {
@@ -181,6 +336,21 @@ private:
 
         WebRtcEndpointSession sender(senderConfig);
         WebRtcEndpointSession receiver(receiverConfig);
+        std::atomic_uint64_t received {0};
+        QCOMPARE(
+            receiver.setReceiveSink([&received](SessionMediaSample sample) {
+                if (sample.generation != 0 &&
+                    isValidH264AccessUnit(
+                        sample.accessUnit,
+                        H264ReceivePipeline::kMaximumAccessUnitBytes
+                    )) {
+                    received.fetch_add(1, std::memory_order_relaxed);
+                    return H264SubmitResult::Accepted;
+                }
+                return H264SubmitResult::InvalidAccessUnit;
+            }),
+            EndpointError::None
+        );
         EndpointConnectionResult senderConnected;
         EndpointConnectionResult receiverConnected;
 
@@ -223,6 +393,12 @@ private:
                 submitted == H264SubmitResult::AcceptedAfterDrop);
         QTRY_VERIFY_WITH_TIMEOUT(sender.snapshot().sentAccessUnits >= 1, 5000);
         QTRY_VERIFY_WITH_TIMEOUT(receiver.snapshot().receivedRtpPackets >= 1, 5000);
+        QTRY_VERIFY_WITH_TIMEOUT(
+            receiver.snapshot().submittedAccessUnits >= 1,
+            5000
+        );
+        QCOMPARE(received.load(std::memory_order_relaxed), std::uint64_t(1));
+        QCOMPARE(receiver.snapshot().invalidAccessUnits, std::uint64_t(0));
 
         sender.beginClose();
         QCOMPARE(

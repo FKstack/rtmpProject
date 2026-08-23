@@ -635,6 +635,36 @@
   `src/common/webrtc_transport/`、`src/common/publisher/`、`src/tools/WebRtcClientMain.cpp`、
   `scripts/webrtc/qualify_week4.ps1`、`docs/versions/webrtc-v2/weeks/week04/`
 
+## ADR-036 Week 5 接收链只在组合根接入媒体并复用窄画布目标
+
+- 日期：2026-08-23
+- 状态：已采用；R2 实施完成
+- 背景：Week 5 需要让同一客户端支持 ReceiveOnly 与双信令角色，并把 libdatachannel 重组的
+  H.264 AU 接入既有 FFmpeg/mailbox/CPU 画布。若 transport 直接依赖 media/UI，或客户端链接完整
+  `rtmp_monitor_ui`，会破坏兄弟模块边界并扩大高扇入依赖。
+- 决策：`WebRtcEndpointSession` 只暴露协商前设置的协议无关 H.264 receive sink，并在 transport
+  私有 `H264ReceivePipeline` 中完成当前 generation 的 Annex-B、SPS/PPS/IDR、4 MiB 上限和 RTP
+  时间戳门控。组合根以 `shared_ptr<EncodedVideoInputHandle>` 持有媒体入口，sink 只捕获弱引用；
+  media handle 自己恢复 media generation。将 `VideoCanvasHost`、CPU/OpenGL canvas 抽为
+  `rtmp_monitor_video_canvas`，产品 UI 与测试客户端共同链接该窄目标。
+- 原因：RTP/depacketize 与 decoder/render 有不同变化原因、依赖和线程模型。弱 handle 使 endpoint
+  和 media generation 分别在所属 owner 内失效；窄画布目标复用已有渲染而不把完整产品 UI 带入
+  测试客户端。
+- 替代方案：transport 直接创建 decoder；media 依赖 libdatachannel；客户端链接完整 UI；自行实现
+  RFC 6184；新增第二套 viewer renderer。它们会反转依赖、重复状态机、增加交叉所有权或形成并行
+  渲染框架。
+- 影响：`WebRtcEndpointSession` 增加 `setReceiveSink`、接收错误与计数；media 公共接口、RTMP
+  façade、schema v1 和产品配置不变。关闭顺序为信令取消、endpoint generation/回调失效、worker
+  汇合、Track/PC 关闭、媒体 handle 关闭、画布销毁和一次 Cleanup。WebRTC OFF 产物边界不变。
+- 验证证据：VS2026 Debug fresh OFF/ON 全目标构建与 CTest 39/39、44/44；viewer pipeline 真实
+  解码并取得非黑 framebuffer；两种双客户端信令拓扑各收到 180 AU、5045 RTP packet 并完成
+  decoded/presented；容量恢复、错误 codec/fmtp、generation、晚回调、重复关闭、层依赖、CLI、Qt
+  插件部署、清理和 Week 4 完整回归通过。
+- 相关文件：`CMakeLists.txt`、`cmake/CheckLayerDependencies.cmake`、
+  `include/common/webrtc_transport/`、`src/common/webrtc_transport/`、`src/tools/webrtc_client/`、
+  `tests/WebRtcEndpointSessionTest.cpp`、`tests/WebRtcViewerPipelineTest.cpp`、
+  `scripts/webrtc/QualificationCommon.psm1`、`scripts/webrtc/qualify_week5.ps1`
+
 ## ADR-XXX 标题
 
 - 日期：

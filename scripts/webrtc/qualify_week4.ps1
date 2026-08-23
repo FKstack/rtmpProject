@@ -13,6 +13,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+Import-Module (Join-Path $PSScriptRoot 'QualificationCommon.psm1') -Force
 
 $script:SourceRoot = [System.IO.Path]::GetFullPath(
     (Join-Path $PSScriptRoot '..\..')
@@ -117,10 +118,7 @@ function Invoke-Native {
         [Parameter(Mandatory = $true)][string]$FilePath,
         [Parameter(Mandatory = $true)][string[]]$Arguments
     )
-    & $FilePath @Arguments
-    if ($LASTEXITCODE -ne 0) {
-        throw "Command failed with exit code ${LASTEXITCODE}: $FilePath"
-    }
+    Invoke-QualificationNative -FilePath $FilePath -Arguments $Arguments
 }
 
 function Assert-Prerequisites {
@@ -142,22 +140,12 @@ function Assert-Prerequisites {
 
 function Write-State {
     param([Parameter(Mandatory = $true)]$Processes)
-    New-Item -ItemType Directory -Force -Path $script:RuntimeRoot | Out-Null
-    $temporary = $script:StatePath + '.tmp'
-    Assert-UnderRuntimeRoot -Path $temporary
-    [pscustomobject]@{
-        schemaVersion = 1
-        processes = @($Processes)
-    } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $temporary -Encoding UTF8
-    Move-Item -LiteralPath $temporary -Destination $script:StatePath -Force
+    Write-QualificationState -StatePath $script:StatePath `
+        -RuntimeRoot $script:RuntimeRoot -Processes $Processes
 }
 
 function Read-State {
-    if (-not (Test-Path -LiteralPath $script:StatePath -PathType Leaf)) {
-        return $null
-    }
-    return Get-Content -LiteralPath $script:StatePath -Raw -Encoding UTF8 |
-        ConvertFrom-Json
+    return Read-QualificationState -StatePath $script:StatePath
 }
 
 function Start-OwnedProcess {
@@ -167,24 +155,11 @@ function Start-OwnedProcess {
         [Parameter(Mandatory = $true)][string[]]$Arguments,
         [Parameter(Mandatory = $true)]$Records
     )
-    $stdout = Join-Path $script:LogRoot ($Name + '.stdout.jsonl')
-    $stderr = Join-Path $script:LogRoot ($Name + '.stderr.txt')
-    foreach ($path in @($stdout, $stderr)) { Assert-UnderRuntimeRoot -Path $path }
-    $process = Start-Process -FilePath $FilePath -ArgumentList $Arguments `
-        -WorkingDirectory $script:SourceRoot -WindowStyle Hidden -PassThru `
-        -RedirectStandardOutput $stdout -RedirectStandardError $stderr
-    $process.Refresh()
-    $record = [pscustomobject]@{
-        name = $Name
-        pid = $process.Id
-        path = [System.IO.Path]::GetFullPath($FilePath)
-        startTimeUtc = $process.StartTime.ToUniversalTime().ToString('o')
-        stdout = $stdout
-        stderr = $stderr
-    }
-    [void]$Records.Add($record)
-    Write-State -Processes $Records
-    return $process
+    return Start-QualificationOwnedProcess -Name $Name `
+        -FilePath $FilePath -Arguments $Arguments `
+        -WorkingDirectory $script:SourceRoot -LogRoot $script:LogRoot `
+        -RuntimeRoot $script:RuntimeRoot -StatePath $script:StatePath `
+        -Records $Records
 }
 
 function Wait-SafeEvent {
@@ -193,100 +168,25 @@ function Wait-SafeEvent {
         [Parameter(Mandatory = $true)][string]$Event,
         [int]$Seconds = 30
     )
-    $deadline = [DateTime]::UtcNow.AddSeconds($Seconds)
-    while ([DateTime]::UtcNow -lt $deadline) {
-        if (Test-Path -LiteralPath $Path -PathType Leaf) {
-            $text = Get-Content -LiteralPath $Path -Raw -ErrorAction SilentlyContinue
-            if ($text -match ('"event"\s*:\s*"' + [regex]::Escape($Event) + '"')) {
-                return
-            }
-        }
-        Start-Sleep -Milliseconds 100
-    }
-    throw "Timed out waiting for safe event '$Event'."
+    [void](Wait-QualificationJsonEvent -Path $Path `
+        -Event $Event -Seconds $Seconds)
 }
 
 function Stop-OwnedProcesses {
-    $state = Read-State
-    if (-not $state) {
-        return
-    }
-    foreach ($record in @($state.processes)) {
-        $process = Get-Process -Id ([int]$record.pid) -ErrorAction SilentlyContinue
-        if (-not $process) {
-            continue
-        }
-        $process.Refresh()
-        $actualPath = $process.Path
-        $actualStart = $process.StartTime.ToUniversalTime()
-        $expectedStart = [DateTime]::Parse(
-            [string]$record.startTimeUtc,
-            [Globalization.CultureInfo]::InvariantCulture,
-            [Globalization.DateTimeStyles]::RoundtripKind
-        ).ToUniversalTime()
-        if ($actualPath -ine [string]$record.path -or
-            [Math]::Abs(($actualStart - $expectedStart).TotalSeconds) -gt 1) {
-            throw "Owned process identity mismatch for PID $($record.pid); state preserved."
-        }
-        [void]$process.CloseMainWindow()
-        if (-not $process.WaitForExit(3000)) {
-            Stop-Process -Id $process.Id -Force
-            $process.WaitForExit(5000)
-        }
-    }
-    Assert-UnderRuntimeRoot -Path $script:StatePath
-    Remove-Item -LiteralPath $script:StatePath -Force -ErrorAction SilentlyContinue
+    Stop-QualificationOwnedProcesses -StatePath $script:StatePath `
+        -RuntimeRoot $script:RuntimeRoot
 }
 
 function Assert-Sample {
     param([Parameter(Mandatory = $true)]$Stream)
-    if ($Stream.codec_name -ne 'h264' -or
-        $Stream.profile -ne 'Constrained Baseline' -or
-        [int]$Stream.level -ne 31 -or
-        [int]$Stream.width -ne 1280 -or [int]$Stream.height -ne 720 -or
-        [int]$Stream.has_b_frames -ne 0 -or $Stream.r_frame_rate -ne '30/1') {
-        throw 'Generated Week 4 sample does not match H.264 42e01f constraints.'
-    }
+    Assert-QualificationSample -Stream $Stream
 }
 
 function New-QualificationSample {
     param([Parameter(Mandatory = $true)]$Tools)
-    $assetDirectory = Split-Path -Parent $script:AssetPath
-    New-Item -ItemType Directory -Force -Path $assetDirectory | Out-Null
-    Invoke-Native -FilePath $Tools.Ffmpeg -Arguments @(
-        '-hide_banner', '-loglevel', 'error', '-y',
-        '-f', 'lavfi', '-i', 'testsrc2=size=1280x720:rate=30',
-        '-t', '6', '-an', '-c:v', 'libx264', '-preset', 'ultrafast',
-        '-profile:v', 'baseline', '-level:v', '3.1', '-pix_fmt', 'yuv420p',
-        '-g', '30', '-keyint_min', '30', '-sc_threshold', '0', '-bf', '0',
-        '-movflags', '+faststart', $script:AssetPath
-    )
-    $json = & $Tools.Ffprobe -v error -select_streams v:0 `
-        -show_entries stream=codec_name,profile,level,width,height,r_frame_rate,has_b_frames `
-        -of json $script:AssetPath | Out-String | ConvertFrom-Json
-    if ($LASTEXITCODE -ne 0 -or @($json.streams).Count -ne 1) {
-        throw 'ffprobe could not validate the generated Week 4 sample.'
-    }
-    Assert-Sample -Stream $json.streams[0]
-
-    $fixtureDirectory = Split-Path -Parent $script:AudioOnlyPath
-    New-Item -ItemType Directory -Force -Path $fixtureDirectory | Out-Null
-    Invoke-Native -FilePath $Tools.Ffmpeg -Arguments @(
-        '-hide_banner', '-loglevel', 'error', '-y',
-        '-f', 'lavfi', '-i', 'sine=frequency=1000:sample_rate=48000',
-        '-t', '0.25', '-vn', '-c:a', 'aac', $script:AudioOnlyPath
-    )
-    Invoke-Native -FilePath $Tools.Ffmpeg -Arguments @(
-        '-hide_banner', '-loglevel', 'error', '-y',
-        '-f', 'lavfi', '-i', 'testsrc2=size=64x64:rate=10',
-        '-t', '0.25', '-an', '-c:v', 'mpeg4', $script:NonH264Path
-    )
-    Invoke-Native -FilePath $Tools.Ffmpeg -Arguments @(
-        '-hide_banner', '-loglevel', 'error', '-y',
-        '-f', 'lavfi', '-i', 'testsrc2=size=64x64:rate=30',
-        '-t', '0.5', '-an', '-c:v', 'libx264', '-profile:v', 'main',
-        '-g', '15', '-bf', '2', $script:BFramesPath
-    )
+    New-QualificationH264Fixtures -Tools $Tools `
+        -AssetPath $script:AssetPath -AudioOnlyPath $script:AudioOnlyPath `
+        -NonH264Path $script:NonH264Path -BFramesPath $script:BFramesPath
 }
 
 function Invoke-BuildMatrix {
@@ -353,13 +253,9 @@ function Invoke-BuildMatrix {
 }
 
 function Assert-SafeLogs {
-    $forbidden = '(?i)(candidate:|a=candidate|fingerprint|ice-ufrag|ice-pwd|stun:|turn:|token|rtmps?://|[A-Z]:\\)'
-    foreach ($file in Get-ChildItem -LiteralPath $script:LogRoot -File) {
-        $text = Get-Content -LiteralPath $file.FullName -Raw
-        if ($text -match $forbidden) {
-            throw "Sensitive output pattern found in managed log: $($file.Name)"
-        }
-    }
+    $paths = @(Get-ChildItem -LiteralPath $script:LogRoot `
+        -Filter '*.stdout.jsonl' -File | ForEach-Object { $_.FullName })
+    Assert-QualificationSafeLogs -Paths $paths
 }
 
 function Assert-ClientArguments {

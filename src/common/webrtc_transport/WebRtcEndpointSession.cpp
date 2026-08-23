@@ -1,23 +1,118 @@
 #include "webrtc_transport/WebRtcEndpointSession.h"
 
+#include "webrtc_transport/H264ReceivePipeline.h"
+
 #include <rtc/rtc.hpp>
 
 #include <algorithm>
+#include <cctype>
 #include <condition_variable>
 #include <deque>
+#include <map>
 #include <mutex>
 #include <stdexcept>
+#include <string_view>
 #include <thread>
 #include <utility>
+#include <variant>
 
 namespace rtmp_monitor::webrtc_transport {
 namespace {
 
-constexpr std::size_t kMaximumAccessUnitBytes = 4U * 1024U * 1024U;
+constexpr std::size_t kMaximumAccessUnitBytes =
+    detail::H264ReceivePipeline::kMaximumAccessUnitBytes;
 constexpr std::size_t kQueueCapacity = 2;
 constexpr std::uint8_t kPayloadType = 102;
 constexpr std::uint32_t kSsrc = 0x52544d50U;
 constexpr std::size_t kMaximumFragmentBytes = 1200;
+
+std::string trimAndLower(std::string value)
+{
+    const auto first = std::find_if_not(
+        value.begin(), value.end(),
+        [](unsigned char ch) { return std::isspace(ch) != 0; }
+    );
+    const auto last = std::find_if_not(
+        value.rbegin(), value.rend(),
+        [](unsigned char ch) { return std::isspace(ch) != 0; }
+    ).base();
+    if (first >= last) return {};
+    value = std::string(first, last);
+    std::transform(
+        value.begin(), value.end(), value.begin(),
+        [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); }
+    );
+    return value;
+}
+
+std::map<std::string, std::string> parseFmtp(
+    const std::vector<std::string> &fmtps
+)
+{
+    std::map<std::string, std::string> values;
+    for (const std::string &fmtp : fmtps) {
+        std::size_t offset = 0;
+        while (offset <= fmtp.size()) {
+            const std::size_t end = fmtp.find(';', offset);
+            const std::string token = fmtp.substr(
+                offset,
+                end == std::string::npos ? std::string::npos : end - offset
+            );
+            const std::size_t equals = token.find('=');
+            if (equals != std::string::npos) {
+                values[trimAndLower(token.substr(0, equals))] =
+                    trimAndLower(token.substr(equals + 1));
+            }
+            if (end == std::string::npos) break;
+            offset = end + 1;
+        }
+    }
+    return values;
+}
+
+bool compatibleRemoteDescription(
+    const rtc::Description &description,
+    VideoDirection localDirection
+)
+{
+    for (int index = 0; index < description.mediaCount(); ++index) {
+        const auto entry = description.media(index);
+        const auto mediaPointer =
+            std::get_if<const rtc::Description::Media *>(&entry);
+        if (mediaPointer == nullptr || *mediaPointer == nullptr) continue;
+        const rtc::Description::Media &media = **mediaPointer;
+        if (media.type() != "video" || media.mid() != "video") continue;
+
+        const rtc::Description::Direction direction = media.direction();
+        const bool directionCompatible =
+            localDirection == VideoDirection::ReceiveOnly
+                ? direction == rtc::Description::Direction::SendOnly ||
+                      direction == rtc::Description::Direction::SendRecv
+                : direction == rtc::Description::Direction::RecvOnly ||
+                      direction == rtc::Description::Direction::SendRecv;
+        if (!directionCompatible) return false;
+
+        const rtc::Description::Media::RtpMap *rtp =
+            media.rtpMap(kPayloadType);
+        if (rtp == nullptr || trimAndLower(rtp->format) != "h264" ||
+            rtp->clockRate !=
+                static_cast<int>(rtc::H264RtpPacketizer::ClockRate)) {
+            return false;
+        }
+        const auto fmtp = parseFmtp(rtp->fmtps);
+        const auto matches = [&fmtp](
+            std::string_view key,
+            std::string_view value
+        ) {
+            const auto iterator = fmtp.find(std::string(key));
+            return iterator != fmtp.end() && iterator->second == value;
+        };
+        return matches("profile-level-id", "42e01f") &&
+               matches("packetization-mode", "1") &&
+               matches("level-asymmetry-allowed", "1");
+    }
+    return false;
+}
 
 std::string candidateTypeName(rtc::Candidate::Type type)
 {
@@ -47,6 +142,7 @@ std::vector<std::string> candidateTypes(const rtc::Description &description)
 struct SharedState
 {
     std::mutex mutex;
+    std::mutex receiveCallbackMutex;
     std::condition_variable changed;
     EndpointState endpointState = EndpointState::New;
     bool closing = false;
@@ -59,12 +155,62 @@ struct SharedState
     std::uint64_t droppedAccessUnits = 0;
     std::uint64_t sentAccessUnits = 0;
     std::uint64_t receivedRtpPackets = 0;
+    std::uint64_t receivedAccessUnits = 0;
+    std::uint64_t submittedAccessUnits = 0;
+    std::uint64_t receiveDrops = 0;
+    std::uint64_t invalidAccessUnits = 0;
     std::uint64_t sendFailures = 0;
+    H264ReceiveSink receiveSink;
+    detail::H264ReceivePipeline receivePipeline;
     std::deque<H264AccessUnit> queue;
     std::shared_ptr<rtc::PeerConnection> connection;
     std::shared_ptr<rtc::Track> localTrack;
     std::shared_ptr<rtc::Track> remoteTrack;
     std::vector<std::string> localCandidateTypes;
+};
+
+class IncomingRtpCounter final : public rtc::MediaHandler
+{
+public:
+    IncomingRtpCounter(
+        std::weak_ptr<SharedState> state,
+        std::uint64_t generation
+    )
+        : state_(std::move(state)), generation_(generation)
+    {
+    }
+
+    void incoming(
+        rtc::message_vector &messages,
+        const rtc::message_callback &
+    ) override
+    {
+        std::uint64_t count = 0;
+        for (const rtc::message_ptr &message : messages) {
+            if (!message || message->type != rtc::Message::Binary ||
+                message->size() < sizeof(rtc::RtpHeader)) {
+                continue;
+            }
+            const auto *header = reinterpret_cast<const rtc::RtpHeader *>(
+                message->data()
+            );
+            if (header->version() == 2 &&
+                header->payloadType() == kPayloadType) {
+                ++count;
+            }
+        }
+        if (count == 0) return;
+        const auto state = state_.lock();
+        if (!state) return;
+        const std::lock_guard lock(state->mutex);
+        if (state->closing || state->generation != generation_) return;
+        state->receivedRtpPackets += count;
+        state->changed.notify_all();
+    }
+
+private:
+    std::weak_ptr<SharedState> state_;
+    std::uint64_t generation_ = 0;
 };
 
 H264SubmitResult enqueueAccessUnit(
@@ -133,7 +279,10 @@ public:
         if (configuration_.signalingRole != SignalingRole::Offerer) {
             return {EndpointError::InvalidRole, {}, {}};
         }
-        if (!initialize()) return {EndpointError::InvalidState, {}, {}};
+        const EndpointError initialized = initialize();
+        if (initialized != EndpointError::None) {
+            return {initialized, {}, {}};
+        }
         try {
             connection()->setLocalDescription(rtc::Description::Type::Offer);
         } catch (...) {
@@ -151,11 +300,20 @@ public:
         if (configuration_.signalingRole != SignalingRole::Answerer) {
             return {EndpointError::InvalidRole, {}, {}};
         }
-        if (offerSdp.empty() || !initialize()) {
+        if (offerSdp.empty()) {
             return {EndpointError::InvalidState, {}, {}};
         }
         try {
-            connection()->setRemoteDescription(rtc::Description(offerSdp, "offer"));
+            const rtc::Description offer(offerSdp, "offer");
+            if (!compatibleRemoteDescription(
+                    offer, configuration_.videoDirection)) {
+                return {EndpointError::IncompatibleMedia, {}, {}};
+            }
+            const EndpointError initialized = initialize();
+            if (initialized != EndpointError::None) {
+                return {initialized, {}, {}};
+            }
+            connection()->setRemoteDescription(offer);
             connection()->setLocalDescription(rtc::Description::Type::Answer);
         } catch (...) {
             fail();
@@ -176,7 +334,12 @@ public:
             return {EndpointError::InvalidState, {}};
         }
         try {
-            connection()->setRemoteDescription(rtc::Description(answerSdp, "answer"));
+            const rtc::Description answer(answerSdp, "answer");
+            if (!compatibleRemoteDescription(
+                    answer, configuration_.videoDirection)) {
+                return {EndpointError::IncompatibleMedia, {}};
+            }
+            connection()->setRemoteDescription(answer);
         } catch (...) {
             fail();
             return {EndpointError::LibraryFailure, {}};
@@ -220,6 +383,21 @@ public:
         );
     }
 
+    EndpointError setReceiveSink(H264ReceiveSink sink)
+    {
+        if (configuration_.videoDirection != VideoDirection::ReceiveOnly) {
+            return EndpointError::InvalidRole;
+        }
+        if (!sink) return EndpointError::MissingReceiveSink;
+        const std::lock_guard lock(state_->mutex);
+        if (state_->closing || state_->connection ||
+            state_->endpointState != EndpointState::New) {
+            return EndpointError::InvalidState;
+        }
+        state_->receiveSink = std::move(sink);
+        return EndpointError::None;
+    }
+
     EndpointSnapshot snapshot() const noexcept
     {
         const std::lock_guard lock(state_->mutex);
@@ -231,8 +409,15 @@ public:
         result.droppedAccessUnits = state_->droppedAccessUnits;
         result.sentAccessUnits = state_->sentAccessUnits;
         result.receivedRtpPackets = state_->receivedRtpPackets;
+        result.receivedAccessUnits = state_->receivedAccessUnits;
+        result.submittedAccessUnits = state_->submittedAccessUnits;
+        result.receiveDrops = state_->receiveDrops;
+        result.invalidAccessUnits = state_->invalidAccessUnits;
         result.sendFailures = state_->sendFailures;
-        result.waitingForKeyframe = state_->waitingForKeyframe;
+        result.waitingForKeyframe =
+            configuration_.videoDirection == VideoDirection::ReceiveOnly
+                ? state_->receivePipeline.waitingForKeyframe()
+                : state_->waitingForKeyframe;
         try {
             result.trackOpen = state_->localTrack && state_->localTrack->isOpen();
         } catch (...) {
@@ -243,10 +428,13 @@ public:
 
     void beginClose() noexcept
     {
+        const std::lock_guard callbackLock(state_->receiveCallbackMutex);
         const std::lock_guard lock(state_->mutex);
         if (state_->closing) return;
         state_->closing = true;
         ++state_->generation;
+        state_->receiveSink = {};
+        state_->receivePipeline.resetGeneration(state_->generation);
         state_->endpointState = EndpointState::Closing;
         state_->changed.notify_all();
     }
@@ -286,11 +474,17 @@ public:
     }
 
 private:
-    bool initialize()
+    EndpointError initialize()
     {
         {
             const std::lock_guard lock(state_->mutex);
-            if (state_->connection || state_->closing) return false;
+            if (state_->connection || state_->closing) {
+                return EndpointError::InvalidState;
+            }
+            if (configuration_.videoDirection == VideoDirection::ReceiveOnly &&
+                !state_->receiveSink) {
+                return EndpointError::MissingReceiveSink;
+            }
         }
 
         std::shared_ptr<rtc::PeerConnection> connectionValue;
@@ -308,7 +502,7 @@ private:
             }
             connectionValue = std::make_shared<rtc::PeerConnection>(rtcConfiguration);
         } catch (...) {
-            return false;
+            return EndpointError::LibraryFailure;
         }
 
         const std::weak_ptr<SharedState> weakState(state_);
@@ -354,35 +548,20 @@ private:
                 if (!state) return;
                 {
                     const std::lock_guard lock(state->mutex);
-                    if (!state->closing && state->generation == generation) {
+                    if (state->closing || state->generation != generation) {
+                        track.reset();
+                    } else {
                         state->remoteTrack = track;
                         state->changed.notify_all();
                     }
                 }
-                const auto current = weakState.lock();
-                if (!current) return;
-                {
-                    const std::lock_guard lock(current->mutex);
-                    if (current->closing || current->generation != generation) {
-                        try {
-                            track->close();
-                        } catch (...) {
-                        }
-                        return;
+                try {
+                    if (track) {
+                        track->resetCallbacks();
+                        track->close();
                     }
+                } catch (...) {
                 }
-                track->onMessage(
-                    [weakState, generation](rtc::binary) {
-                        const auto callbackState = weakState.lock();
-                        if (!callbackState) return;
-                        const std::lock_guard lock(callbackState->mutex);
-                        if (callbackState->closing ||
-                            callbackState->generation != generation) return;
-                        ++callbackState->receivedRtpPackets;
-                        callbackState->changed.notify_all();
-                    },
-                    nullptr
-                );
             }
         );
 
@@ -418,17 +597,31 @@ private:
                 );
                 track->setMediaHandler(std::move(packetizer));
             } else {
-                track->onMessage(
-                    [weakState, generation](rtc::binary) {
-                        const auto receiveState = weakState.lock();
-                        if (!receiveState) return;
-                        const std::lock_guard lock(receiveState->mutex);
-                        if (receiveState->closing ||
-                            receiveState->generation != generation) return;
-                        ++receiveState->receivedRtpPackets;
-                        receiveState->changed.notify_all();
-                    },
-                    nullptr
+                auto depacketizer =
+                    std::make_shared<rtc::H264RtpDepacketizer>(
+                        rtc::NalUnit::Separator::StartSequence
+                    );
+                depacketizer->addToChain(
+                    std::make_shared<rtc::RtcpReceivingSession>()
+                );
+                depacketizer->addToChain(
+                    std::make_shared<IncomingRtpCounter>(
+                        weakState, generation
+                    )
+                );
+                track->setMediaHandler(std::move(depacketizer));
+                track->onFrame(
+                    [weakState, generation](
+                        rtc::binary data,
+                        rtc::FrameInfo info
+                    ) {
+                        handleReceivedFrame(
+                            weakState,
+                            generation,
+                            std::move(data),
+                            info.timestamp
+                        );
+                    }
                 );
             }
             const std::lock_guard lock(state_->mutex);
@@ -440,11 +633,85 @@ private:
                 connectionValue->close();
             } catch (...) {
             }
-            return false;
+            return EndpointError::LibraryFailure;
         }
 
-        sender_ = std::thread([state = state_] { runSender(state); });
-        return true;
+        if (configuration_.videoDirection == VideoDirection::SendOnly) {
+            sender_ = std::thread([state = state_] { runSender(state); });
+        }
+        return EndpointError::None;
+    }
+
+    static void handleReceivedFrame(
+        const std::weak_ptr<SharedState> &weakState,
+        std::uint64_t generation,
+        rtc::binary data,
+        std::uint32_t rtpTimestamp
+    )
+    {
+        const auto state = weakState.lock();
+        if (!state) return;
+
+        std::vector<std::uint8_t> bytes;
+        bytes.reserve(data.size());
+        for (const std::byte value : data) {
+            bytes.push_back(std::to_integer<std::uint8_t>(value));
+        }
+
+        const std::lock_guard callbackLock(state->receiveCallbackMutex);
+        H264ReceiveSink sink;
+        std::optional<SessionMediaSample> sample;
+        {
+            const std::lock_guard lock(state->mutex);
+            if (state->closing || state->generation != generation) return;
+            ++state->receivedAccessUnits;
+            auto result = state->receivePipeline.process(
+                generation, std::move(bytes), rtpTimestamp
+            );
+            if (result.status ==
+                detail::H264ReceivePipelineStatus::InvalidAccessUnit) {
+                ++state->invalidAccessUnits;
+                ++state->receiveDrops;
+                state->changed.notify_all();
+                return;
+            }
+            if (result.status ==
+                detail::H264ReceivePipelineStatus::WaitingForKeyframe) {
+                ++state->receiveDrops;
+                state->changed.notify_all();
+                return;
+            }
+            sink = state->receiveSink;
+            sample = std::move(result.sample);
+        }
+
+        H264SubmitResult submitted = H264SubmitResult::Closed;
+        try {
+            if (sink && sample.has_value()) {
+                submitted = sink(std::move(*sample));
+            }
+        } catch (...) {
+            submitted = H264SubmitResult::ResourceFailure;
+        }
+
+        const std::lock_guard lock(state->mutex);
+        if (state->closing || state->generation != generation) return;
+        switch (submitted) {
+        case H264SubmitResult::Accepted:
+        case H264SubmitResult::AcceptedAfterDrop:
+            ++state->submittedAccessUnits;
+            break;
+        case H264SubmitResult::DroppedCapacity:
+        case H264SubmitResult::DroppedUntilKeyframe:
+        case H264SubmitResult::Closed:
+        case H264SubmitResult::InvalidGeneration:
+        case H264SubmitResult::InvalidAccessUnit:
+        case H264SubmitResult::ResourceFailure:
+            ++state->receiveDrops;
+            state->receivePipeline.resetRecovery();
+            break;
+        }
+        state->changed.notify_all();
     }
 
     static void runSender(const std::shared_ptr<SharedState> &state)
@@ -581,6 +848,11 @@ std::optional<H264SubmitPort> WebRtcEndpointSession::createSendPort()
     return impl_->createSendPort();
 }
 
+EndpointError WebRtcEndpointSession::setReceiveSink(H264ReceiveSink sink)
+{
+    return impl_->setReceiveSink(std::move(sink));
+}
+
 EndpointSnapshot WebRtcEndpointSession::snapshot() const noexcept
 {
     return impl_->snapshot();
@@ -602,6 +874,8 @@ const char *WebRtcEndpointSession::errorName(EndpointError error) noexcept
     case EndpointError::None: return "none";
     case EndpointError::InvalidState: return "invalid_state";
     case EndpointError::InvalidRole: return "invalid_role";
+    case EndpointError::IncompatibleMedia: return "incompatible_media";
+    case EndpointError::MissingReceiveSink: return "missing_receive_sink";
     case EndpointError::LibraryFailure: return "library_failure";
     case EndpointError::GatheringTimeout: return "gathering_timeout";
     case EndpointError::ConnectionTimeout: return "connection_timeout";

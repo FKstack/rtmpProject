@@ -313,7 +313,7 @@ if ($LASTEXITCODE -ne 0) { throw 'CMakeLists.txt differs' }
 | Week 2 | 文件 schema、原子会话包和双 probe Offer/Answer 自动技术验证已完成；`W2-GATE` 仍等待用户双控制台人工复核 | PeerConnection、non-trickle、DataChannel、异步等待和安全输出 |
 | Week 3 | 协议无关 H.264 契约、外部解码入口和 RTMP 兼容自动技术门禁已通过 | 理解未来 Track 应提交 H.264 AU，而不是侵入解码层 |
 | Week 4 | 自动技术门禁已通过 | endpoint session、MP4 publisher、SendOnly H.264 Track、同一客户端两种信令角色 |
-| Week 5 | 尚未实现 | ReceiveOnly depacketize、viewer 解码显示与同一客户端媒体回环 |
+| Week 5 | 自动技术门禁通过；人工观感待执行 | ReceiveOnly depacketize、viewer 解码显示与同一客户端双角色媒体回环 |
 
 准确结论只有：“本机两个真实 PeerConnection 已完成 DataChannel 回环。”不能写成“WebRTC 视频已完成”、
 “两台电脑已直连”或“公网 P2P 已通过”。Week 2 双控制台文件信令是课后延伸，不并入这个短小项目。

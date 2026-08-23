@@ -38,6 +38,13 @@ file(GLOB_RECURSE publisher_files
     "${PROJECT_SOURCE_DIR}/include/common/publisher/*.h"
     "${PROJECT_SOURCE_DIR}/src/common/publisher/*.h"
     "${PROJECT_SOURCE_DIR}/src/common/publisher/*.cpp")
+set(video_canvas_files
+    "${PROJECT_SOURCE_DIR}/include/common/ui/CpuVideoCanvas.h"
+    "${PROJECT_SOURCE_DIR}/src/common/ui/CpuVideoCanvas.cpp"
+    "${PROJECT_SOURCE_DIR}/include/common/ui/VideoCanvasHost.h"
+    "${PROJECT_SOURCE_DIR}/src/common/ui/VideoCanvasHost.cpp"
+    "${PROJECT_SOURCE_DIR}/include/common/ui/VideoOpenGLCanvas.h"
+    "${PROJECT_SOURCE_DIR}/src/common/ui/VideoOpenGLCanvas.cpp")
 
 foreach(source_file IN LISTS media_files)
     file(READ "${source_file}" source_text)
@@ -142,5 +149,16 @@ foreach(source_file IN LISTS publisher_files)
     if(source_text MATCHES "#[ \t]*include[ \t]*[<\"](app|device_control|diagnostics|evidence|event_center|logging|media|profiles|render|server|ui|webrtc_contracts|webrtc_dev|webrtc_transport)/")
         message(FATAL_ERROR
             "publisher source depends on transport or a product layer: ${source_file}")
+    endif()
+endforeach()
+
+foreach(source_file IN LISTS video_canvas_files)
+    if(NOT EXISTS "${source_file}")
+        continue()
+    endif()
+    file(READ "${source_file}" source_text)
+    if(source_text MATCHES "#[ \t]*include[ \t]*[<\"](app|control_policy|device_control|diagnostics|evidence|event_center|logging|profiles|publisher|server|webrtc_contracts|webrtc_dev|webrtc_transport)/")
+        message(FATAL_ERROR
+            "reusable video canvas depends on a product/transport layer: ${source_file}")
     endif()
 endforeach()
