@@ -1,5 +1,12 @@
 # RtmpMonitor 当前项目快照
 
+> OpenViking OAuth 修复（2026-08-23）：近期 Hook 实际已追加消息，但 OpenViking 后台 Phase 2 因
+> 过期且来源路径已失效的 Codex OAuth 持续返回 401，造成 commit 计数增长而 archive overview/
+> 长期记忆为空。现已备份旧 store，通过 systemd drop-in 持久绑定 Windows 当前 `CODEX_HOME`
+> 登录文件并重新 bootstrap；服务健康、认证未临近过期，当前任务重放后的 commit task 为
+> `completed`、archive overview 非空，近期 `Visual Studio 2026`/`week4`/`600K`/`main.cpp`
+> 标记均在当前会话归档内命中。详情见 ISSUE-016。
+
 > WebRTC V2 Week 4 与 VS2026 Beta 状态（2026-08-23）：已使用本机代理 `127.0.0.1:7890`
 > 核实远端并将 `7233983`、`4f355fa`、`c04ff50` 非强制推送到 GitHub `Beta`。Week 4 已新增
 > 对称 `WebRtcEndpointSession`、固定 MP4 H.264 publisher source、无窗口 publisher client 和
@@ -314,7 +321,7 @@ Windows+WSL2 侧的最小配置、生命周期脚本、URL/配置生成和只读
 | Codex Home | 使用本机 `CODEX_HOME`；用户目录下 `.codex` 是指向该目录的 Junction，个人绝对路径不入库。 |
 | ARM64 sysroot | 位于 WSL VHDX 内；本任务不移动或修改其现有工具链边界。 |
 | OpenViking Server | 0.4.11 已从预编译 wheel 安装到 `/opt/openviking/venv-0.4.11`；MCP 固定为 1.29.0；VLM 为 `openai-codex/gpt-5.6-luna`（OAuth，Responses，`reasoning.effort=none`）；配置和数据分别位于 `/etc/openviking`、`/var/lib/openviking`。`openviking.service.d/proxy.conf` 只为该服务设置本机 `127.0.0.1:7890` 代理和 localhost 例外，不修改 Clash 配置。 |
-| OpenViking Windows 客户端 | `ovcli.conf`、插件状态和日志位于本机专用配置目录，该个人绝对路径不入库；Marketplace 插件 0.7.4 已安装并启用一次。`ovcli.conf` 不再固定 `actor_peer_id`，由插件按工作目录派生 peer；当前 CLI 的通用 `hooks` 功能为稳定且默认启用，已移除失效的旧配置项 `plugin_hooks`。 |
+| OpenViking Windows 客户端 | `ovcli.conf`、插件状态和日志位于本机专用配置目录，该个人绝对路径不入库；Marketplace 插件 0.7.5 已安装并启用。`ovcli.conf` 不再固定 `actor_peer_id`，由插件按工作目录派生 peer；当前 CLI 的通用 `hooks` 功能为 stable 且已启用，已移除失效的旧配置项 `plugin_hooks`。2026-08-23 已修复 Server 侧过期 Codex OAuth 导致的 Phase 2 提取 401，见 ISSUE-016。 |
 | Kimi Code MCP 客户端 | 项目级 `.kimi-code/mcp.json`（规则 `/.kimi-code/mcp.json` 已在 `.gitignore`）连接 `http://127.0.0.1:1933/mcp`，peer 固定 `E--rtmpProject`。2026-08-08 起 `OPENVIKING_API_KEY` 持久化为 Windows 用户级环境变量（HKCU，值与受限 `ovcli.conf` 一致），根治了此前“绕开安全启动器直接启动即 401”的问题；任意方式启动的新会话均可连接。仅主动工具调用，无自动 Hook 链路。 |
 | WSL 登录保活 | `OpenViking-rtmpProject-WSL-KeepAlive` 登录后延迟 30 秒、禁止重复实例并隐藏维持 WSL 生命周期；无交互式 WSL 终端的五分钟空闲、四个 Windows HTTP 入口及任务停止/重启恢复已通过。 |
 

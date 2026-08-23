@@ -182,6 +182,17 @@
   `c04ff50`。全局 Git 代理未修改，没有 force push。
 - 保留边界：今后仍先核实远端、只做非强制快进；认证、冲突或远端改写时必须停止。
 
+## ISSUE-016 OpenViking Session commit 被接受但记忆提取因过期 Codex OAuth 失败
+
+- 状态：已解决（2026-08-23）
+- 影响范围：Codex Hook 的 `Stop`/`PreCompact` 能追加消息并收到 commit accepted，但后台 Phase 2 无法生成可召回的 archive overview 和长期记忆。
+- 根因：OpenViking 的 OAuth store 仍标记为外部管理，却指向已经删除的旧 WSL Codex auth 文件；其中 access token 已于 2026-08-07 过期，refresh token 随后持续返回 HTTP 401。Hook、OpenViking HTTP 服务、embedding 和本地消息写入均正常，因此只看 Hook 状态或 commit 计数会误判为写入成功。
+- 修复：保留权限为 `600` 的旧 OAuth store 备份；通过 systemd drop-in 将服务持久绑定到 Windows 当前 `CODEX_HOME` 的 `auth.json`，再用 OpenViking 官方 bootstrap 重建 external-owner store 并重启服务。未记录或输出任何 token。
+- 验证：修复后 auth 状态为 `external`、`expiring=false`，服务 `/health`、`/ready` 均通过；当前任务 transcript 已重放，新的 session commit 后台任务达到 `completed`，archive overview 非空。当前会话归档内对 `Visual Studio 2026`、`week4`、`600K`、`main.cpp` 的文件级命中分别为 9、19、3、37，证明近期任务原文已进入归档；服务重启后未再出现 OAuth 401。
+- 恢复说明：整份长 transcript 重放时 WM 摘要曾提示超过模型上下文，但该提交的长期提取任务仍正常 `completed`，原始 archive 与近期标记均存在。常规 Hook 继续按阈值分段提交，不应把一次性恢复重放方式作为日常路径。
+- 回滚/监测：如需回滚，移除 `codex-auth.conf` drop-in、恢复受保护的旧 store 并重启；但旧凭据已过期，回滚后提取会再次失败。Windows Codex 退出登录或认证文件被移动后，应先检查 bootstrap 路径、auth 有效期和 `/api/v1/tasks` 终态，不能只看 commit accepted。
+- 相关文档和代码：`docs/project_handoff.md`、`docs/versions/rtmp-v1/guides/development/openviking_usage_and_testing.md`、`/etc/systemd/system/openviking.service.d/codex-auth.conf`
+
 ## ISSUE-XXX 标题
 
 - 状态：
