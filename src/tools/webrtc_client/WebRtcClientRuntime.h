@@ -2,6 +2,7 @@
 
 #include "publisher/Mp4H264PublisherSource.h"
 #include "webrtc_client/WebRtcClientOptions.h"
+#include "webrtc_client/WebRtcClientRuntimePaths.h"
 #include "webrtc_transport/WebRtcEndpointSession.h"
 
 #include <QJsonObject>
@@ -56,6 +57,7 @@ private:
     void emitFailure(const QString &error, QJsonObject details = {}) const;
 
     WebRtcClientOptions options_;
+    WebRtcClientRuntimePathResolution runtimePaths_;
     ClientEventSink eventSink_;
     rtmp_monitor::webrtc_transport::H264ReceiveSink receiveSink_;
     std::shared_ptr<WebRtcViewerEvidence> viewerEvidence_;

@@ -82,16 +82,6 @@ SessionError waitForPackage(
     return error;
 }
 
-QString discoverRepositoryRoot()
-{
-    QString root =
-        SessionPackageStore::discoverRepositoryRoot(QDir::currentPath());
-    if (!root.isEmpty()) return root;
-    return SessionPackageStore::discoverRepositoryRoot(
-        QCoreApplication::applicationDirPath()
-    );
-}
-
 QJsonArray candidateArray(const std::vector<std::string> &types)
 {
     QJsonArray result;
@@ -99,6 +89,20 @@ QJsonArray candidateArray(const std::vector<std::string> &types)
         result.push_back(QString::fromStdString(type));
     }
     return result;
+}
+
+QJsonObject candidatePairObject(const EndpointCandidatePair &pair)
+{
+    return {
+        {QStringLiteral("localType"),
+         QString::fromStdString(pair.localType)},
+        {QStringLiteral("remoteType"),
+         QString::fromStdString(pair.remoteType)},
+        {QStringLiteral("localTransport"),
+         QString::fromStdString(pair.localTransport)},
+        {QStringLiteral("remoteTransport"),
+         QString::fromStdString(pair.remoteTransport)}
+    };
 }
 
 } // namespace
@@ -161,24 +165,28 @@ void WebRtcClientRuntime::run() noexcept
 
 int WebRtcClientRuntime::runSession()
 {
+    runtimePaths_ = WebRtcClientRuntimePaths::resolve(
+        QCoreApplication::applicationDirPath(),
+        QDir::currentPath()
+    );
+    if (!runtimePaths_.ok()) {
+        emitFailure(QStringLiteral("unsafe_path"));
+        return 3;
+    }
+    emitEvent(
+        QStringLiteral("runtime_ready"),
+        QJsonObject {
+            {QStringLiteral("layout"),
+             WebRtcClientRuntimePaths::layoutName(runtimePaths_.layout)}
+        }
+    );
     if (options_.mediaRole == ClientMediaRole::Publisher) {
-        const QString samplePath =
-            QDir(QCoreApplication::applicationDirPath())
-                .filePath(QStringLiteral("webrtc-assets/sample.mp4"));
-        if (!QFileInfo(samplePath).isFile()) {
+        if (!QFileInfo(runtimePaths_.samplePath).isFile()) {
             emitFailure(QStringLiteral("file_not_found"));
             return 4;
         }
     }
-
-    const QString repositoryRoot = discoverRepositoryRoot();
-    if (repositoryRoot.isEmpty()) {
-        emitFailure(QStringLiteral("unsafe_path"));
-        return 3;
-    }
-    SessionPackageStore store(
-        SessionPackageStore::exchangeRootForRepository(repositoryRoot)
-    );
+    SessionPackageStore store(runtimePaths_.exchangeRoot);
     const SessionError prepareError = store.prepare();
     if (prepareError != SessionError::None) {
         emitFailure(SessionPackageCodec::errorName(prepareError));
@@ -338,6 +346,12 @@ int WebRtcClientRuntime::runSession()
         QStringLiteral("candidateTypes"),
         candidateArray(connected.candidateTypes)
     );
+    if (connected.selectedPair.has_value()) {
+        connectedDetails.insert(
+            QStringLiteral("selectedCandidatePair"),
+            candidatePairObject(*connected.selectedPair)
+        );
+    }
     emitEvent(QStringLiteral("connected"), std::move(connectedDetails));
 
     const int result = options_.mediaRole == ClientMediaRole::Publisher
@@ -353,9 +367,7 @@ int WebRtcClientRuntime::runSession()
 
 int WebRtcClientRuntime::runPublisherMedia(WebRtcEndpointSession &endpoint)
 {
-    const QString samplePath =
-        QDir(QCoreApplication::applicationDirPath())
-            .filePath(QStringLiteral("webrtc-assets/sample.mp4"));
+    const QString samplePath = runtimePaths_.samplePath;
     if (!QFileInfo(samplePath).isFile()) {
         emitFailure(QStringLiteral("file_not_found"));
         return 4;
@@ -388,6 +400,10 @@ int WebRtcClientRuntime::runPublisherMedia(WebRtcEndpointSession &endpoint)
     emitEvent(QStringLiteral("publishing"));
     const PublisherSourceError sourceError =
         source->waitForCompletion(options_.timeout);
+    const EndpointSnapshot terminalSnapshot = endpoint.snapshot();
+    if (terminalSnapshot.state == EndpointState::Failed) {
+        emitEvent(QStringLiteral("connection_lost"));
+    }
     endpoint.beginClose();
     source->stop();
     endpoint.close();
@@ -458,7 +474,11 @@ int WebRtcClientRuntime::runViewerMedia(WebRtcEndpointSession &endpoint)
             emitEvent(QStringLiteral("media_received"), std::move(details));
             mediaEventEmitted = true;
         }
-        if (snapshot.state == EndpointState::Failed ||
+        if (snapshot.state == EndpointState::Failed) {
+            emitEvent(QStringLiteral("connection_lost"));
+            break;
+        }
+        if (
             snapshot.state == EndpointState::Closed) {
             break;
         }

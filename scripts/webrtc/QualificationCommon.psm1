@@ -1,5 +1,17 @@
 Set-StrictMode -Version Latest
 
+function Assert-QualificationConcretePath {
+    param(
+        [Parameter(Mandatory = $true)][string]$Value,
+        [Parameter(Mandatory = $true)][string]$Name
+    )
+    if ([string]::IsNullOrWhiteSpace($Value) -or
+        $Value -match '[<>]') {
+        throw "Please replace the $Name placeholder with a real local path or set its environment variable."
+    }
+    return $Value
+}
+
 function Assert-QualificationPathUnderRoot {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
@@ -271,6 +283,7 @@ function New-QualificationH264Fixtures {
 }
 
 Export-ModuleMember -Function @(
+    'Assert-QualificationConcretePath',
     'Assert-QualificationPathUnderRoot',
     'Invoke-QualificationNative',
     'Resolve-QualificationTools',

@@ -40,7 +40,7 @@ WebRtcViewerController::WebRtcViewerController(
     input_ = std::make_shared<EncodedVideoInputHandle>(std::move(input));
 
     window_ = new QWidget();
-    window_->setWindowTitle(QStringLiteral("RtmpMonitor WebRTC Week 5 Viewer"));
+    window_->setWindowTitle(QStringLiteral("RtmpMonitor WebRTC Viewer"));
     window_->resize(1280, 720);
     auto *layout = new QVBoxLayout(window_);
     layout->setContentsMargins(0, 0, 0, 0);

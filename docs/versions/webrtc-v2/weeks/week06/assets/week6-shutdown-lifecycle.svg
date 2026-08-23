@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720">
+  <style>.t{font:24px 'Microsoft YaHei',sans-serif;fill:#172033}.s{font:18px 'Microsoft YaHei',sans-serif;fill:#334155}.b{fill:#eef6ff;stroke:#2878c8;stroke-width:3}.a{stroke:#475569;stroke-width:4;marker-end:url(#e)}</style><defs><marker id="e" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#475569"/></marker></defs>
+  <rect width="1200" height="720" fill="#fafcff"/><text x="45" y="55" class="t">关闭生命周期：先失效，再汇合，锁内不等待</text>
+  <g class="b"><rect x="55" y="120" width="185" height="95" rx="15"/><rect x="285" y="120" width="185" height="95" rx="15"/><rect x="515" y="120" width="185" height="95" rx="15"/><rect x="745" y="120" width="185" height="95" rx="15"/><rect x="975" y="120" width="170" height="95" rx="15"/></g>
+  <text x="80" y="165" class="t">取消等待</text><text x="70" y="195" class="s">stopRequested</text><text x="305" y="165" class="t">代次失效</text><text x="305" y="195" class="s">beginClose</text><text x="535" y="165" class="t">汇合 worker</text><text x="545" y="195" class="s">source / control</text><text x="770" y="165" class="t">关闭传输</text><text x="765" y="195" class="s">Track / PC</text><text x="995" y="165" class="t">释放画布</text><text x="990" y="195" class="s">handle / window</text>
+  <path d="M240 167 H285" class="a"/><path d="M470 167 H515" class="a"/><path d="M700 167 H745" class="a"/><path d="M930 167 H975" class="a"/>
+  <rect x="100" y="335" width="440" height="135" rx="18" fill="#fff6e5" stroke="#c77b00" stroke-width="3"/><text x="140" y="382" class="t">已连接后的对端退出</text><text x="140" y="418" class="s">Disconnected / Failed / Closed</text><text x="140" y="450" class="s">统一收敛为 EndpointState::Failed</text>
+  <rect x="660" y="335" width="440" height="135" rx="18" fill="#effbf3" stroke="#26834a" stroke-width="3"/><text x="700" y="382" class="t">客户端稳定证据</text><text x="700" y="418" class="s">connection_lost → completed / failed</text><text x="700" y="450" class="s">不重新显示 Connecting</text>
+  <path d="M540 405 H660" class="a"/>
+  <text x="80" y="565" class="s">receiveCallbackMutex 只保护 sink 调用与 beginClose 的交叉；sink 本体仍在 endpoint 状态锁之外执行。</text>
+  <text x="80" y="605" class="s">generation 增加后，迟到 RTP/onFrame、旧 send port 和旧媒体 handle 均无法修改当前会话。</text>
+  <text x="80" y="645" class="s">重复 close 幂等；队列清空；rtc::Cleanup 只由进程组合根调用一次。</text>
+</svg>

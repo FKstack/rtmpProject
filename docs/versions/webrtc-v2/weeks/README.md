@@ -11,7 +11,8 @@
 | `week03/` | H.264 契约、解码入口与 RTMP 兼容 |
 | `week04/` | 对称 endpoint、固定 MP4 publisher 与双 Offer 角色 |
 | `week05/` | 同一客户端 viewer 与媒体回环 |
-| `week06/`～`week07/` | 社团 LAN 包与跨公网 Direct/Needs Relay |
+| `week06/` | 双机 LAN Release 便携包、runner 与资格矩阵 |
+| `week07/` | 获授权的跨公网 Direct/Needs Relay |
 | `week08/` | 正式客户端一次性接收、状态和安全集成 |
 | `week09/`～`week10/` | 摄像头、多路、故障、性能和 Beta 资格 |
 
@@ -24,7 +25,8 @@
 
 尚无正式结果的目录仅用 `.gitkeep` 保持结构；出现第一份正式结果后删除对应 `.gitkeep`。Week 2
 已有自动结果且人工门禁仍待补；Week 3 已有契约/解码入口结果；Week 4 已有 publisher/session、
-自动测试和资产边界结果；Week 5 已有 viewer 闭环、自动测试和独立测试指南。
+自动测试和资产边界结果；Week 5 已有 viewer 闭环；Week 6 已有便携包实现、自动测试、详细图文和
+双机测试指南，真实双机 W6-GATE 仍等待用户执行。
 
 ## 禁止提交
 

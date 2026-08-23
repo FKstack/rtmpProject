@@ -1,12 +1,12 @@
 # RtmpMonitor 0.2.0-beta.1 WebRTC 双客户端优先研发总计划
 
 > 文档状态：经确认的 R3 总路线；Week 2 开发者基础、Week 3 H.264/解码边界、Week 4
-> MP4 publisher/对称 endpoint 和 Week 5 测试客户端接收播放闭环已实施。`W2-GATE` 人工复核与
-> Week 5 桌面人工观感仍待执行。
+> MP4 publisher/对称 endpoint、Week 5 测试客户端接收播放闭环，以及 Week 6 脱敏 selected-pair、
+> Release 便携包和双机 runner 已实施。`W2-GATE` 人工复核、Week 5 桌面人工观感和 Week 6
+> 真实双机门禁仍待执行。
 >
-> 当前稳定产品能力仍是 `0.1.0-alpha.1` RTMP 路径。Week 5 只完成默认关闭的测试客户端；本文中
-> Week 6～10 的网络、正式 UI、性能和交付物仍为待实现目标，不能作为 WebRTC 已部署、可公网使用
-> 或已通过 ARM 真机验证的证据。
+> 当前稳定产品能力仍是 `0.1.0-alpha.1` RTMP 路径。Week 5/6 只完成默认关闭的测试客户端和资格
+> 测试包；真实双机、Week 7～10 的公网/正式 UI/性能与 ARM 交付仍不能作为已部署能力。
 
 ## 1. 决策摘要
 
@@ -352,6 +352,11 @@ Week 3 的先行实施依据上方明确授权单独记录，不反推 W2 人工
 | W6-SEC-02 | 3 | W6-LAN-01,W6-LAN-02 | 两端输出、文件和包的敏感扫描 | 任一 SDP/IP/端点命中即停线 |
 | W6-DOC-01 | 2 | W6-LAN-03,W6-LIF-01,W6-SEC-02 | 可交接 LAN 结果和限制 | 把 LAN 写成公网能力即失败 |
 | W6-GATE | 3 | W6-PKG-02,W6-DOC-01 | 社团测试包资格结论 | 样本/许可/双角色/清理任一缺失即阻塞 |
+
+实施状态（2026-08-23）：`W6-PKG-01/02`、`W6-GDE-01`、本地 `W6-SEC-01/02`、技术文档和同机
+两个独立包副本资格能力已完成；同机结果明确不声明 LAN。`W6-ENV-01`、`W6-LAN-01/02/03`、
+`W6-LIF-01` 以及最终 `W6-GATE` 等待用户在两台获准 Windows 电脑执行四组报告与窗口生命周期。
+实际代码、图文和测试入口见 `../versions/webrtc-v2/weeks/week06/`。
 
 ### Week 7：公网 Direct 或 Needs Relay
 

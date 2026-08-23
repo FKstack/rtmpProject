@@ -665,6 +665,36 @@
   `tests/WebRtcEndpointSessionTest.cpp`、`tests/WebRtcViewerPipelineTest.cpp`、
   `scripts/webrtc/QualificationCommon.psm1`、`scripts/webrtc/qualify_week5.ps1`
 
+## ADR-037 Week 6 便携信令根与脱敏 selected-pair 证据
+
+- 日期：2026-08-23
+- 状态：已采用；R2 技术实施完成，真实双机资格待用户
+- 背景：Week 5 客户端只能从 Git 仓库定位信令目录，Release ZIP 无法运行；既有
+  `candidateTypes` 只说明 description 中出现的候选，不能证明实际选中路径。直接增加任意路径 CLI
+  会扩大清理边界，输出 candidate/SDP 再脱敏会把地址带到上层。
+- 决策：新增客户端私有纯值 `WebRtcClientRuntimePaths`。exe 同级存在 `package-manifest.json` 时
+  固定使用包内 `session-exchange`，否则保持仓库模式；不增加任意目录或 source path 参数。
+  `WebRtcEndpointSession` 使用 libdatachannel `getSelectedCandidatePair()`，只返回 host/srflx/relay
+  与 udp/tcp 的 `EndpointCandidatePair`，地址、端口、candidate、SDP 和 fingerprint 不进入 DTO。
+  已 Connected 后的 Disconnected/Failed/Closed 收敛为 Failed，客户端发 `connection_lost`。
+- 原因：运行布局是客户端部署政策，selected pair 是 transport 事实，两者有独立 owner；把路径放
+  transport 或把 candidate 文本放脚本都会产生跨层耦合。marker 让仓库/包清理根固定，typed DTO
+  从源头满足最小证据。保留 `candidateTypes` 与 schema v1，兼容 Week 4/5。
+- 替代方案：`--exchange-dir`、扫描任意当前目录、在 PowerShell 解析 SDP、引入信令服务器、让
+  media/UI 查询 PeerConnection。它们分别扩大文件边界、依赖文本格式、超出 LAN 范围或反转依赖。
+- 影响：ON 客户端增加私有 path source/test；transport 公共 connection result 只做 additive 字段。
+  没有新线程、无界队列或反向链接。Release WebRTC 测试包独立包含实际 DLL、样本、许可、manifest
+  和 runner；正式 RTMP 产品包/配置不变。同机 peer-reflexive 脱敏归为 srflx，不冒充 host。
+- 验证证据：两种 endpoint RTP 拓扑取得安全 selected pair；关闭一端后对端有界 Failed、sink 不再
+  增长；path 表驱动测试覆盖 repository/portable/invalid；PowerShell parser、占位符负向和详细
+  文档门禁通过。最终 OFF/ON/Release、同机双包与旧周回归记录在 Week 6 test results；真实
+  host/host UDP 与窗口生命周期保持待用户。
+- 相关文件：`include/common/webrtc_transport/WebRtcEndpointSession.h`、
+  `src/common/webrtc_transport/WebRtcEndpointSession.cpp`、`src/tools/webrtc_client/`、
+  `scripts/webrtc/Week6LanCommon.psm1`、`scripts/webrtc/package_week6.ps1`、
+  `scripts/webrtc/qualify_week6.ps1`、`scripts/webrtc/week6_lan_test.ps1`、
+  `docs/versions/webrtc-v2/weeks/week06/`
+
 ## ADR-XXX 标题
 
 - 日期：

@@ -38,7 +38,13 @@ $script:ExchangeRoot = Join-Path $script:SourceRoot `
     'out\webrtc-p2p\session-exchange'
 
 function Assert-Prerequisites {
-    if ([string]::IsNullOrWhiteSpace($QtRoot) -or
+    [void](Assert-QualificationConcretePath -Value $QtRoot -Name 'QtRoot')
+    [void](Assert-QualificationConcretePath -Value $VcpkgRoot -Name 'VcpkgRoot')
+    if (-not [string]::IsNullOrWhiteSpace($VsDevCmd)) {
+        [void](Assert-QualificationConcretePath -Value $VsDevCmd `
+            -Name 'VsDevCmd')
+    }
+    if (
         -not (Test-Path -LiteralPath `
             (Join-Path $QtRoot 'lib\cmake\Qt6\Qt6Config.cmake') `
             -PathType Leaf)) {
@@ -133,9 +139,23 @@ function Invoke-BuildMatrix {
             if ($LASTEXITCODE -ne 0) {
                 throw "CTest listing failed for WebRTC $mode."
             }
-            $expected = if ($mode -eq 'on') { 44 } else { 39 }
-            if ($listing -notmatch "Total Tests:\s+$expected") {
-                throw "Expected $expected tests for WebRTC $mode."
+            foreach ($required in @(
+                    'rtmp_monitor_h264_contract_test',
+                    'rtmp_monitor_encoded_video_decode_test')) {
+                if ($listing -notmatch [regex]::Escape($required)) {
+                    throw "Required CTest is missing for WebRTC ${mode}: $required"
+                }
+            }
+            if ($mode -eq 'on') {
+                foreach ($required in @(
+                        'rtmp_monitor_webrtc_endpoint_test',
+                        'rtmp_monitor_webrtc_viewer_pipeline_test')) {
+                    if ($listing -notmatch [regex]::Escape($required)) {
+                        throw "Required WebRTC CTest is missing: $required"
+                    }
+                }
+            } elseif ($listing -notmatch 'rtmp_monitor_webrtc_disabled_test') {
+                throw 'WebRTC OFF dependency test is missing.'
             }
         } finally {
             $restore = @{
@@ -292,7 +312,8 @@ function Invoke-ClientTopology {
         }
         Assert-ExchangeEmpty
         Assert-QualificationSafeLogs -Paths @(
-            $viewerRecord.stdout, $publisherRecord.stdout)
+            $viewerRecord.stdout, $viewerRecord.stderr,
+            $publisherRecord.stdout, $publisherRecord.stderr)
     } finally {
         Stop-OwnedProcesses
         & $peer --cleanup | Out-Null

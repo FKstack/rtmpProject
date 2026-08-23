@@ -23,9 +23,10 @@ P2P：未来由同一测试客户端分别运行 publisher/viewer，Offerer/Answ
 
 SRS/WHIP/WHEP 公网服务器模式、自动 WSS 信令和 coturn 中继移到取得公网基础设施后的独立阶段。
 
-V2 当前不是 Alpha 已交付能力。`Beta` 分支已完成默认关闭的 Week 2 developer probe/signaling，
-以及 Week 3 协议无关 H.264 契约、外部解码入口与 RTMP 兼容自动验证；WebRTC Track、P2P H.264
-收发和产品路径尚未开始，`W2-GATE` 仍等待人工复核。请从
+V2 当前不是 Alpha 已交付能力。`Beta` 分支已完成默认关闭的 Week 2～5 developer signaling、
+对称 endpoint、固定 H.264 publisher 与单画面 viewer 闭环；Week 6 已完成脱敏 selected-pair、
+Release 便携测试包、同机双包自动化和双机 runner。真实双机 LAN/W6-GATE 仍等待用户执行，正式
+产品 UI、公网和 ARM 真机尚未验证；`W2-GATE` 的早期人工复核也保持待执行。请从
 [双客户端优先总计划](docs/roadmap/webrtc_v2_project_plan.md)、
 [六章 WebRTC 零基础动手教程](docs/versions/webrtc-v2/README.md#六章零基础动手教程)和
 [V2 Week 1～10 结果目录](docs/versions/webrtc-v2/weeks/)进入。完整设计、模块门禁和后续实施进度只在

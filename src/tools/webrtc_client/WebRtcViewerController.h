@@ -13,7 +13,7 @@ class QWidget;
 
 namespace rtmp_monitor::webrtc_client {
 
-/** UI-thread owner of the Week 5 single-stream media and canvas composition. */
+/** UI-thread owner of the single-stream media and canvas composition. */
 class WebRtcViewerController final : public QObject
 {
 public:

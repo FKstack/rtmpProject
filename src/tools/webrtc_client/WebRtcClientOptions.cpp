@@ -7,7 +7,7 @@ namespace rtmp_monitor::webrtc_client {
 void WebRtcClientOptions::configureParser(QCommandLineParser &parser)
 {
     parser.setApplicationDescription(
-        QStringLiteral("WebRTC V2 Week 5 publisher/viewer test client")
+        QStringLiteral("WebRTC V2 publisher/viewer test client")
     );
     parser.addHelpOption();
     parser.addOption({

@@ -38,6 +38,25 @@ bool onlyHostCandidates(const std::vector<std::string> &types)
     );
 }
 
+void verifySanitizedSelectedPair(const EndpointConnectionResult &result)
+{
+    QVERIFY(result.selectedPair.has_value());
+    const EndpointCandidatePair &pair = *result.selectedPair;
+    const auto safeType = [](const std::string &value) {
+        return value == "host" || value == "srflx" || value == "relay";
+    };
+    QVERIFY(safeType(pair.localType));
+    QVERIFY(safeType(pair.remoteType));
+    QCOMPARE(pair.localTransport, std::string("udp"));
+    QCOMPARE(pair.remoteTransport, std::string("udp"));
+    for (const std::string *value : {
+             &pair.localType, &pair.remoteType,
+             &pair.localTransport, &pair.remoteTransport}) {
+        QVERIFY(value->find('.') == std::string::npos);
+        QVERIFY(value->find(':') == std::string::npos);
+    }
+}
+
 void verifyFixedH264Description(const std::string &sdp)
 {
     QVERIFY(sdp.find("a=rtpmap:102 H264/90000") != std::string::npos);
@@ -384,6 +403,8 @@ private:
         );
         QVERIFY(onlyHostCandidates(senderConnected.candidateTypes));
         QVERIFY(onlyHostCandidates(receiverConnected.candidateTypes));
+        verifySanitizedSelectedPair(senderConnected);
+        verifySanitizedSelectedPair(receiverConnected);
 
         QTRY_VERIFY_WITH_TIMEOUT(sender.snapshot().trackOpen, 5000);
         auto port = sender.createSendPort();
@@ -407,6 +428,18 @@ private:
         );
         sender.close();
         sender.close();
+        QTRY_COMPARE_WITH_TIMEOUT(
+            receiver.snapshot().state,
+            EndpointState::Failed,
+            35000
+        );
+        const std::uint64_t receivedBeforeClose =
+            received.load(std::memory_order_relaxed);
+        QTest::qWait(250);
+        QCOMPARE(
+            received.load(std::memory_order_relaxed),
+            receivedBeforeClose
+        );
         receiver.close();
         receiver.close();
         QCOMPARE(sender.snapshot().queueDepth, std::size_t(0));

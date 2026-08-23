@@ -1399,3 +1399,16 @@ CTest 14/14 通过；ARM64 RASTER 构建 NEEDED 无 Qt6OpenGL*/EGL/GLES，GLES3 
 - Windows 参考发布工具支持可选 DirectShow 音频或合成音；Linux ARM 参考脚本使用 V4L2/ALSA；构建和包依赖加入 Qt Multimedia、ALSA、AAC 与 `swresample`。
 - 自动化门禁加入系统默认输出 AAC 资格测试、唯一活动源策略、UI/全屏交互和 300 样本延迟报告器。2026-08-15 已完成真实 MP4 → FFmpeg → WSL2 SRS → 生产音频引擎链路、三轮 320 秒、单轮 600 秒、真实 GUI 和 Windows 最终包冒烟；Windows Debug/Release 29/29 与 ARM64 RASTER/GLES3 交叉门禁通过。声学硬件和 ARM 真机仍按 ISSUE-014 待验证。
 - 发布判定：受控软件链路已连续满足 P50 ≤100 ms、P95 ≤150 ms、最大值 ≤250 ms，且切换/静音/A-V 偏差门禁通过；其测量范围止于 QAudioSink 写入。声卡/扬声器实际出声、ARM 真机和后续双向语音仍使用独立门禁，不得用软件 Sink 指标替代声学结论。
+
+## 22. WebRTC V2 双客户端与 LAN 便携测试包（2026-08-23）
+
+- 稳定产品仍为 RTMP `0.1.0-alpha.1`；WebRTC 默认关闭，只在 `Beta` 开发/资格路径启用。
+- Week 5 已完成 publisher/viewer 与 Offerer/Answerer 正交组合、RTP→官方 H.264 depacketizer→既有
+  FFmpeg decoder→capacity-1 mailbox→CPU canvas 的测试客户端闭环。
+- Week 6 已增加脱敏 selected candidate pair、已连接后断线终态、manifest marker 便携信令根、
+  Release 专用包、固定可分发样本、许可、同机双包资格和随包双机 runner。
+- transport、publisher、media、render/UI 保持兄弟模块，具体装配只在测试客户端组合根；OFF 产品
+  目标与 schema v1 不变。
+- 实施与测试入口见 [WebRTC V2 总计划](webrtc_v2_project_plan.md) 和
+  [Week 6 详细结果](../versions/webrtc-v2/weeks/week06/summary.md)。真实双机 host/host UDP、双方先关
+  与最终 `W6-GATE` 等待用户执行；同机自动结果不得冒充 LAN、公网或正式产品 UI。

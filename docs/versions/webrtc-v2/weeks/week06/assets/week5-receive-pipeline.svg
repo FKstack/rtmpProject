@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="620" viewBox="0 0 1200 620">
+  <style>.t{font:24px 'Microsoft YaHei',sans-serif;fill:#172033}.s{font:18px 'Microsoft YaHei',sans-serif;fill:#334155}.b{fill:#eef6ff;stroke:#2878c8;stroke-width:3}.m{fill:#fff8e8;stroke:#d48a00;stroke-width:3}.a{stroke:#475569;stroke-width:4;marker-end:url(#e)}</style>
+  <defs><marker id="e" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#475569"/></marker></defs>
+  <rect width="1200" height="620" fill="#fafcff"/><text x="50" y="55" class="t">Week 5 接收播放闭环：跨层连接只发生在客户端组合根</text>
+  <rect x="45" y="130" width="180" height="110" rx="16" class="b"/><text x="78" y="180" class="t">RTP / H.264</text><text x="70" y="215" class="s">libdatachannel Track</text>
+  <rect x="280" y="130" width="210" height="110" rx="16" class="b"/><text x="310" y="180" class="t">官方解包器</text><text x="302" y="215" class="s">onFrame Annex-B AU</text>
+  <rect x="545" y="115" width="260" height="140" rx="16" class="b"/><text x="570" y="165" class="t">接收恢复门控</text><text x="570" y="200" class="s">generation / SPS / PPS</text><text x="570" y="230" class="s">IDR / 4 MiB / 时间戳</text>
+  <rect x="860" y="130" width="280" height="110" rx="16" class="m"/><text x="895" y="180" class="t">EncodedVideoInputHandle</text><text x="900" y="215" class="s">弱引用提交，媒体代次重盖</text>
+  <path d="M225 185 H280" class="a"/><path d="M490 185 H545" class="a"/><path d="M805 185 H860" class="a"/>
+  <rect x="170" y="355" width="250" height="120" rx="16" class="m"/><text x="205" y="405" class="t">FFmpeg 解码会话</text><text x="210" y="440" class="s">media-owned worker</text>
+  <rect x="485" y="355" width="230" height="120" rx="16" class="m"/><text x="520" y="405" class="t">最新帧邮箱</text><text x="515" y="440" class="s">capacity = 1</text>
+  <rect x="780" y="355" width="250" height="120" rx="16" class="m"/><text x="820" y="405" class="t">CPU 画布</text><text x="815" y="440" class="s">rendered / presented</text>
+  <path d="M1000 240 V305 H295 V355" class="a"/><path d="M420 415 H485" class="a"/><path d="M715 415 H780" class="a"/>
+  <text x="55" y="555" class="s">背压：接收 sink 返回容量丢弃后清空恢复缓存，必须等待当前代新的 SPS/PPS/IDR；网络线程不访问 QWidget。</text>
+</svg>

@@ -48,10 +48,20 @@ struct EndpointDescriptionResult
     }
 };
 
+/** Address-free evidence for the ICE pair selected by libdatachannel. */
+struct EndpointCandidatePair
+{
+    std::string localType;
+    std::string remoteType;
+    std::string localTransport;
+    std::string remoteTransport;
+};
+
 struct EndpointConnectionResult
 {
     EndpointError error = EndpointError::None;
     std::vector<std::string> candidateTypes;
+    std::optional<EndpointCandidatePair> selectedPair;
 
     [[nodiscard]] bool ok() const noexcept
     {

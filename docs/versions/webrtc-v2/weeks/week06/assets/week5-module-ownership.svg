@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="700" viewBox="0 0 1200 700">
+  <style>.t{font:24px 'Microsoft YaHei',sans-serif;fill:#172033}.s{font:18px 'Microsoft YaHei',sans-serif;fill:#334155}.x{fill:#eef6ff;stroke:#2878c8;stroke-width:3}.y{fill:#effbf3;stroke:#26834a;stroke-width:3}.z{fill:#fff6e5;stroke:#c77b00;stroke-width:3}.a{stroke:#475569;stroke-width:4;marker-end:url(#e)}</style><defs><marker id="e" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#475569"/></marker></defs>
+  <rect width="1200" height="700" fill="#fafcff"/><text x="48" y="55" class="t">Week 5 模块依赖与所有权：兄弟模块由组合根装配</text>
+  <rect x="420" y="95" width="360" height="105" rx="16" class="z"/><text x="470" y="142" class="t">WebRtcClientMain / Runtime</text><text x="485" y="175" class="s">唯一跨层组合根与关闭编排</text>
+  <rect x="55" y="285" width="280" height="130" rx="16" class="x"/><text x="105" y="335" class="t">webrtc_transport</text><text x="90" y="370" class="s">PC / Track / generation</text><text x="100" y="400" class="s">接收与 selected 证据</text>
+  <rect x="460" y="285" width="280" height="130" rx="16" class="y"/><text x="555" y="335" class="t">media</text><text x="500" y="370" class="s">FFmpeg / mailbox</text><text x="500" y="400" class="s">decode worker owner</text>
+  <rect x="865" y="285" width="280" height="130" rx="16" class="z"/><text x="950" y="335" class="t">render / UI</text><text x="905" y="370" class="s">VideoCanvasHost</text><text x="905" y="400" class="s">CPU canvas / QWidget</text>
+  <path d="M520 200 L250 285" class="a"/><path d="M600 200 V285" class="a"/><path d="M680 200 L950 285" class="a"/>
+  <rect x="275" y="510" width="650" height="100" rx="16" fill="#fff" stroke="#64748b" stroke-width="3"/><text x="340" y="555" class="t">协议无关 H264AccessUnit / SessionMediaSample</text><text x="390" y="588" class="s">值传递契约，不包含 QWidget、FFmpeg 或 SDP</text>
+  <path d="M195 415 L400 510" class="a"/><path d="M600 415 V510" class="a"/>
+  <text x="65" y="665" class="s">禁止边：transport → media/render/ui；media → render/ui；render → ui。画布窄目标只依赖 render 与 Qt Widgets。</text>
+</svg>

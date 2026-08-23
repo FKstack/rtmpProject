@@ -126,6 +126,55 @@ std::string candidateTypeName(rtc::Candidate::Type type)
     return "unknown";
 }
 
+std::string selectedCandidateTypeName(rtc::Candidate::Type type)
+{
+    switch (type) {
+    case rtc::Candidate::Type::Host: return "host";
+    case rtc::Candidate::Type::ServerReflexive:
+    case rtc::Candidate::Type::PeerReflexive: return "srflx";
+    case rtc::Candidate::Type::Relayed: return "relay";
+    case rtc::Candidate::Type::Unknown: break;
+    }
+    return "unknown";
+}
+
+std::string candidateTransportName(rtc::Candidate::TransportType type)
+{
+    switch (type) {
+    case rtc::Candidate::TransportType::Udp: return "udp";
+    case rtc::Candidate::TransportType::TcpActive:
+    case rtc::Candidate::TransportType::TcpPassive:
+    case rtc::Candidate::TransportType::TcpSo:
+    case rtc::Candidate::TransportType::TcpUnknown: return "tcp";
+    case rtc::Candidate::TransportType::Unknown: break;
+    }
+    return "unknown";
+}
+
+std::optional<EndpointCandidatePair> selectedCandidatePair(
+    const std::shared_ptr<rtc::PeerConnection> &connection
+)
+{
+    if (!connection) return std::nullopt;
+    rtc::Candidate local;
+    rtc::Candidate remote;
+    if (!connection->getSelectedCandidatePair(&local, &remote)) {
+        return std::nullopt;
+    }
+    EndpointCandidatePair pair {
+        selectedCandidateTypeName(local.type()),
+        selectedCandidateTypeName(remote.type()),
+        candidateTransportName(local.transportType()),
+        candidateTransportName(remote.transportType())
+    };
+    if (pair.localType == "unknown" || pair.remoteType == "unknown" ||
+        pair.localTransport == "unknown" ||
+        pair.remoteTransport == "unknown") {
+        return std::nullopt;
+    }
+    return pair;
+}
+
 std::vector<std::string> candidateTypes(const rtc::Description &description)
 {
     std::vector<std::string> result;
@@ -148,6 +197,7 @@ struct SharedState
     bool closing = false;
     bool gatheringComplete = false;
     bool connected = false;
+    bool hasConnected = false;
     bool failed = false;
     bool waitingForKeyframe = false;
     std::uint64_t generation = 1;
@@ -349,7 +399,7 @@ public:
 
     EndpointConnectionResult waitConnected(std::chrono::milliseconds timeout)
     {
-        if (!connection()) return {EndpointError::InvalidState, {}};
+        if (!connection()) return {EndpointError::InvalidState, {}, {}};
         std::unique_lock lock(state_->mutex);
         const bool signaled = state_->changed.wait_for(
             lock,
@@ -358,11 +408,20 @@ public:
                 return state->connected || state->failed || state->closing;
             }
         );
-        if (!signaled) return {EndpointError::ConnectionTimeout, {}};
-        if (!state_->connected) return {EndpointError::ConnectionFailed, {}};
+        if (!signaled) return {EndpointError::ConnectionTimeout, {}, {}};
+        if (!state_->connected) {
+            return {EndpointError::ConnectionFailed, {}, {}};
+        }
         const auto types = state_->localCandidateTypes;
+        const auto connectionValue = state_->connection;
         lock.unlock();
-        return {EndpointError::None, types};
+        std::optional<EndpointCandidatePair> pair;
+        try {
+            pair = selectedCandidatePair(connectionValue);
+        } catch (...) {
+            pair.reset();
+        }
+        return {EndpointError::None, types, std::move(pair)};
     }
 
     std::optional<H264SubmitPort> createSendPort()
@@ -529,12 +588,19 @@ private:
                 if (!state) return;
                 const std::lock_guard lock(state->mutex);
                 if (state->closing || state->generation != generation) return;
-                state->connected = value == rtc::PeerConnection::State::Connected;
-                state->failed = value == rtc::PeerConnection::State::Failed ||
-                                value == rtc::PeerConnection::State::Closed;
-                if (state->connected) {
+                const bool nowConnected =
+                    value == rtc::PeerConnection::State::Connected;
+                const bool terminal =
+                    value == rtc::PeerConnection::State::Failed ||
+                    value == rtc::PeerConnection::State::Closed ||
+                    (state->hasConnected &&
+                     value == rtc::PeerConnection::State::Disconnected);
+                state->connected = nowConnected;
+                if (nowConnected) state->hasConnected = true;
+                state->failed = terminal;
+                if (nowConnected) {
                     state->endpointState = EndpointState::Connected;
-                } else if (state->failed) {
+                } else if (terminal) {
                     state->endpointState = EndpointState::Failed;
                 } else {
                     state->endpointState = EndpointState::Connecting;

@@ -4,8 +4,9 @@
 publisher/viewer，并独立选择 Offerer/Answerer。Week 2 已完成默认关闭的开发者信令与回环基础，
 Week 3 已完成协议无关 H.264 契约、外部解码入口和 RTMP 兼容；Week 4 已完成对称 endpoint、固定
 MP4 publisher 和 SendOnly H.264 Track；Week 5 已在同一测试客户端完成 ReceiveOnly depacketize、
-既有 FFmpeg/mailbox/CPU 画布闭环和双信令角色自动技术门禁。正式产品 UI、桌面人工观感、双机
-LAN、跨公网和 ARM 真机均未实现或验证。RTMP `0.1.0-alpha.1` 仍是稳定路径。
+既有 FFmpeg/mailbox/CPU 画布闭环和双信令角色自动技术门禁；Week 6 已增加脱敏 selected-pair、
+便携信令根、Release 测试包、同机双包黑盒和双机 runner。真实双机 LAN/W6-GATE、正式产品 UI、
+跨公网和 ARM 真机仍未验证。RTMP `0.1.0-alpha.1` 仍是稳定路径。
 
 ## 总计划
 
@@ -90,7 +91,9 @@ Week 3，其自动技术门禁已通过，实际结果见 [Week 3 summary](weeks
 [summary](weeks/week04/summary.md) 与 [test results](weeks/week04/test_results.md)。Week 5 的接收播放
 闭环、测试结果和用户测试步骤见 [summary](weeks/week05/summary.md)、
 [test results](weeks/week05/test_results.md) 与 [testing guide](weeks/week05/testing_guide.md)。Week 1
-学习状态保持未开始；其他周只有实际完成相应任务后才写入结果。大型日志、会话包、SDP/candidate
+学习状态保持未开始。Week 6 的 Week 5 深度回顾、便携包实现与类职责见
+[summary](weeks/week06/summary.md)，实际结果见 [test results](weeks/week06/test_results.md)，自动与
+真实双机步骤见 [testing guide](weeks/week06/testing_guide.md)。其他周只有实际完成相应任务后才写入结果。大型日志、会话包、SDP/candidate
 和二进制制品不进入 Git。
 
 ## 安全提醒

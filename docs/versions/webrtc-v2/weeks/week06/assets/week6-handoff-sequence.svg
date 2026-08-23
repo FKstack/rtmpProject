@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760">
+  <style>.t{font:24px 'Microsoft YaHei',sans-serif;fill:#172033}.s{font:18px 'Microsoft YaHei',sans-serif;fill:#334155}.l{stroke:#94a3b8;stroke-width:3;stroke-dasharray:8 8}.a{stroke:#2878c8;stroke-width:4;marker-end:url(#e)}.b{stroke:#c77b00;stroke-width:4;marker-end:url(#e)}</style><defs><marker id="e" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#475569"/></marker></defs>
+  <rect width="1200" height="760" fill="#fafcff"/><text x="45" y="55" class="t">Offer/Answer：内部交换目录与用户 handoff 目录分离</text>
+  <text x="75" y="110" class="t">PC A runner</text><text x="390" y="110" class="t">A outbox / B inbox</text><text x="760" y="110" class="t">PC B runner</text><text x="1030" y="110" class="t">endpoint</text>
+  <path d="M150 130 V700" class="l"/><path d="M510 130 V700" class="l"/><path d="M835 130 V700" class="l"/><path d="M1080 130 V700" class="l"/>
+  <path d="M150 180 H1080" class="a"/><text x="365" y="168" class="s">1. Offerer 创建完整 *.offer.json</text>
+  <path d="M150 260 H510" class="b"/><text x="205" y="245" class="s">2. runner 原子复制到 outbox</text>
+  <path d="M510 340 H835" class="b"/><text x="555" y="325" class="s">3. 用户复制完整文件到对端 inbox</text>
+  <path d="M835 420 H1080" class="a"/><text x="855" y="405" class="s">4. 导入内部目录并生成 Answer</text>
+  <path d="M1080 500 H835" class="a"/><text x="850" y="485" class="s">5. *.answer.json</text>
+  <path d="M835 580 H510" class="b"/><path d="M510 620 H150" class="b"/><text x="270" y="605" class="s">6. 反向复制完整 Answer 包</text>
+  <path d="M150 675 H1080" class="a"/><text x="390" y="660" class="s">7. 双方应用 Answer，建立 RTP；轮次结束清理</text>
+  <text x="75" y="735" class="s">禁止手工编辑 SDP；handoff 只处理由 schema v1 编解码器验证的完整 JSON 文件。</text>
+</svg>

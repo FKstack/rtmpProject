@@ -1005,6 +1005,8 @@ if(RTMP_MONITOR_ENABLE_WEBRTC)
         src/tools/WebRtcClientMain.cpp
         src/tools/webrtc_client/WebRtcClientOptions.h
         src/tools/webrtc_client/WebRtcClientOptions.cpp
+        src/tools/webrtc_client/WebRtcClientRuntimePaths.h
+        src/tools/webrtc_client/WebRtcClientRuntimePaths.cpp
         src/tools/webrtc_client/WebRtcClientRuntime.h
         src/tools/webrtc_client/WebRtcClientRuntime.cpp
         src/tools/webrtc_client/WebRtcViewerController.h
@@ -1298,6 +1300,20 @@ if(BUILD_TESTING)
             RUN_SERIAL TRUE
             TIMEOUT 120)
 
+        qt_add_executable(rtmp_monitor_webrtc_runtime_paths_test
+            tests/WebRtcClientRuntimePathsTest.cpp
+            src/tools/webrtc_client/WebRtcClientRuntimePaths.h
+            src/tools/webrtc_client/WebRtcClientRuntimePaths.cpp)
+        target_link_libraries(rtmp_monitor_webrtc_runtime_paths_test PRIVATE
+            Qt6::Test rtmp_monitor_webrtc_signaling)
+        target_include_directories(
+            rtmp_monitor_webrtc_runtime_paths_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/tools)
+        rtmp_monitor_apply_project_options(
+            rtmp_monitor_webrtc_runtime_paths_test)
+        add_test(NAME rtmp_monitor_webrtc_runtime_paths_test
+            COMMAND rtmp_monitor_webrtc_runtime_paths_test)
+
         qt_add_executable(rtmp_monitor_webrtc_viewer_pipeline_test
             tests/WebRtcViewerPipelineTest.cpp)
         target_link_libraries(rtmp_monitor_webrtc_viewer_pipeline_test PRIVATE
@@ -1351,6 +1367,7 @@ if(BUILD_TESTING)
             rtmp_monitor_webrtc_h264_test
             rtmp_monitor_webrtc_loopback_test
             rtmp_monitor_webrtc_endpoint_test
+            rtmp_monitor_webrtc_runtime_paths_test
             rtmp_monitor_webrtc_viewer_pipeline_test
             rtmp_monitor_h264_publisher_source_test
             rtmp_monitor_webrtc_publisher_peer)
