@@ -15,6 +15,7 @@
 #include "media/PlaybackTypes.h"
 
 class QThread;
+class EncodedVideoDecodeSession;
 
 /**
  * @brief 一路 RTMP/H.264 的网络会话与共享解码池入口。
@@ -65,11 +66,6 @@ signals:
     void reconnectScheduled(int consecutiveFailures, int delayMs);
 
 private:
-    struct StreamDecodeSession;
-
-    static void drainDecodeSession(
-        const std::shared_ptr<StreamDecodeSession> &session
-    );
     void decodeNetworkLoop(QString rtmpUrl, std::uint64_t sessionId);
     void enqueueDecoderConfiguration(
         const std::shared_ptr<void> &codecConfiguration,
@@ -89,9 +85,6 @@ private:
         qint64 receivedMonotonicMs,
         std::uint64_t sessionId
     );
-    void scheduleDecodeLocked(
-        const std::shared_ptr<StreamDecodeSession> &session
-    );
     void postState(DeviceStatus state, std::uint64_t sessionId);
     void postError(PlaybackError error, std::uint64_t sessionId);
     void postReconnectScheduled(
@@ -104,7 +97,7 @@ private:
 
     std::unique_ptr<DecodeWorkerPool> ownedDecodeWorkerPool_;
     DecodeWorkerPool *decodeWorkerPool_ = nullptr;
-    std::shared_ptr<StreamDecodeSession> decodeSession_;
+    std::unique_ptr<EncodedVideoDecodeSession> decodeSession_;
     std::unique_ptr<QThread> networkThread_;
     AudioPacketSink *audioPacketSink_ = nullptr;
 
@@ -119,9 +112,4 @@ private:
     std::condition_variable reconnectCondition_;
 
     DeviceStatus state_ = DeviceStatus::Disconnected;
-    qint64 lastMetricsSampleMs_ = 0;
-    std::uint64_t lastDecodedSample_ = 0;
-    std::uint64_t lastRenderedSample_ = 0;
-    double decodeFps_ = 0.0;
-    double displayFps_ = 0.0;
 };

@@ -28,6 +28,7 @@ class FFmpegPlayerLifecycleTest final : public QObject
 
 private slots:
     void rejectsInvalidUrls();
+    void invalidUrlSignalOrderRemainsCompatible();
     void stopIsIdempotent();
     void reconnectWaitCanBeInterrupted();
     void finiteReconnectLimitEndsInErrorAndResetsOnRestart();
@@ -50,6 +51,36 @@ void FFmpegPlayerLifecycleTest::rejectsInvalidUrls()
         );
     }
     QVERIFY(!player.isRunning());
+}
+
+void FFmpegPlayerLifecycleTest::invalidUrlSignalOrderRemainsCompatible()
+{
+    QStringList events;
+    // The observer storage must outlive player because the compatibility
+    // façade emits Disconnected during explicit/destructor stop.
+    FFmpegPlayer player;
+    connect(
+        &player,
+        &FFmpegPlayer::errorOccurred,
+        &player,
+        [&events](const PlaybackError &) {
+            events.append(QStringLiteral("error"));
+        }
+    );
+    connect(
+        &player,
+        &FFmpegPlayer::stateChanged,
+        &player,
+        [&events](DeviceStatus) {
+            events.append(QStringLiteral("state"));
+        }
+    );
+
+    QVERIFY(!player.start(QStringLiteral("https://127.0.0.1/video")));
+    QCOMPARE(
+        events,
+        QStringList({QStringLiteral("error"), QStringLiteral("state")})
+    );
 }
 
 void FFmpegPlayerLifecycleTest::stopIsIdempotent()

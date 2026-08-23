@@ -15,17 +15,26 @@ Python 单元测试及固定 SRS 6.0.184 故障矩阵。上述自动化结果不
 
 ## V2 WebRTC Beta
 
-下一研发版本为 `0.2.0-beta.1`，在保留 RTMP 手动回滚路径的前提下，规划两种 WebRTC 模式：
+下一研发版本为 `0.2.0-beta.1`。第一阶段在保留 RTMP 稳定路径的前提下优先研发一对一 WebRTC
+P2P：未来由同一测试客户端分别运行 publisher/viewer，Offerer/Answerer 与媒体方向独立选择；先用
+一次性 Offer/Answer 文件和经许可的 H.264 样本验证两种角色组合，再接入电脑摄像头、同局域网与
+获授权的跨公网 Direct。第三方 STUN 只能由用户运行时明确输入；当前没有 TURN 时，无法直连的网络
+会明确显示需要 Relay，不会伪装成功。
 
-- 公网服务器模式：设备或参考发布器通过 WHIP 发布到 SRS，客户端通过 WHEP 接收。
-- P2P 模式：设备与 Qt 客户端优先直连，由独立 WSS 服务交换信令，复杂 NAT 下允许 TURN 中继。
+SRS/WHIP/WHEP 公网服务器模式、自动 WSS 信令和 coturn 中继移到取得公网基础设施后的独立阶段。
 
-V2 当前是研发计划，不是 Alpha 已交付能力；`Beta` 分支目前也只包含规划文档，尚未开始
-WebRTC 生产代码实现。请从 [V2 总计划](docs/roadmap/webrtc_v2_project_plan.md)、
-[WebRTC 新手指南](docs/versions/webrtc-v2/guides/webrtc_beginner_guide.md)和
-[V2 Week 1～12 周计划](docs/versions/webrtc-v2/weeks/)进入。完整设计、模块门禁和后续实施进度只在
+V2 当前不是 Alpha 已交付能力。`Beta` 分支已完成默认关闭的 Week 2 developer probe/signaling，
+以及 Week 3 协议无关 H.264 契约、外部解码入口与 RTMP 兼容自动验证；WebRTC Track、P2P H.264
+收发和产品路径尚未开始，`W2-GATE` 仍等待人工复核。请从
+[双客户端优先总计划](docs/roadmap/webrtc_v2_project_plan.md)、
+[六章 WebRTC 零基础动手教程](docs/versions/webrtc-v2/README.md#六章零基础动手教程)和
+[V2 Week 1～10 结果目录](docs/versions/webrtc-v2/weeks/)进入。完整设计、模块门禁和后续实施进度只在
 [`Beta` 分支](https://github.com/FKstack/rtmpProject/tree/Beta)维护；`master` 与
 `v0.1.0-alpha.1` 继续代表已验证的 RTMP 稳定基线。
+
+教程配套的 [`webrtc_minilab`](tutorials/webrtc-minilab/) 是独立 C++17/CMake 小项目：同一进程内
+两个真实 PeerConnection 通过 non-trickle 内存 Offer/Answer 建立 DataChannel 并完成 `ping → pong`。
+它不进入根工程或正式程序，也不代表 WebRTC 视频、双机 LAN 或公网能力已经实现。
 
 ## 当前界面
 
@@ -209,6 +218,7 @@ resources/  Qt 资源、样式和默认配置
 scripts/    可移植开发、打包、SRS 与设备资格入口
 src/        应用、播放、渲染、平台和日志实现
 tests/      CTest 使用的 C++ 自动测试
+tutorials/  与产品构建隔离的短小教学项目
 ```
 
 ## 测试与文档

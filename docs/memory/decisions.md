@@ -514,6 +514,99 @@
 - 相关文件：`docs/versions/rtmp-v1/architecture/mobile_security_single_vehicle_operator_loop_design.md`、
   `docs/roadmap/mobile_security_product_module_recommendations.md`
 
+## ADR-032 WebRTC Week 2 采用默认关闭的开发者隔离边界与一次性 schema v1
+
+- 日期：2026-08-20
+- 状态：已采用；产品门禁等待人工复核
+- 背景：Week 2 需要验证 libdatachannel、non-trickle 手工信令、文件安全和 H.264 handler API，
+  但不得提前改变稳定 RTMP 产品、Week 3 Transport 公共契约或产品网络默认行为。
+- 决策：新增默认 OFF 的 `RTMP_MONITOR_ENABLE_WEBRTC`；只有 ON 才创建 Qt Core signaling、
+  libdatachannel probe core、developer CLI 和测试，依赖固定为 `probe/test -> probe_core ->
+  signaling/libdatachannel`。schema v1 严格七字段并只存于仓库忽略的固定交换目录，使用原子提交、
+  当前用户专用 DACL、10 分钟过期和非递归受管清理。PeerConnection 只建 DataChannel，显式空 ICE
+  server；日志使用字段允许列表。
+- 原因：schema/文件安全、异步协议生命周期和产品媒体链具有不同变化原因。隔离 target 能让 OFF
+  构建不发现、不链接、不部署 libdatachannel，同时为 Week 3 前提供真实 API 和生命周期证据。
+- 替代方案：无条件把 libdatachannel 链入主程序；把 probe 放入 media/ui；使用任意 CLI 文件路径；
+  接入 Track 或预建 Transport/MediaSource；使用独立 candidate 文件或长期信令服务。这些方案会污染
+  稳定产品边界、扩大敏感数据面或提前冻结 Week 3 契约。
+- 影响：新增的外部接口只有 CMake 开关、developer CLI 和一次性 schema v1。RTMP、MQTT、保存流、
+  UI、媒体解码和安装包契约不变；WebRTC 静态库、probe/test 和运行 DLL 均在 ON 专用输出目录。
+  `W2-GATE` 在用户完成周末人工 Offer/Answer 与隐私复核前保持阻塞。
+- 验证证据：Windows Debug OFF/ON 全目标构建通过，CTest 分别 37/37 与 39/39；ON 缺依赖配置按
+  预期失败；额外 200 个 host-candidate loopback 连接/重复关闭周期、Windows DACL 结构检查、H.264
+  离线样本和 probe 输出敏感模式扫描通过。
+- 相关文件：`CMakeLists.txt`、`include/common/webrtc_dev/`、`src/common/webrtc_dev/`、
+  `src/tools/WebRtcProbeMain.cpp`、`docs/versions/webrtc-v2/weeks/week02/`
+
+## ADR-033 WebRTC 媒体阶段采用同一双角色客户端和兄弟模块 H.264 契约
+
+- 日期：2026-08-21
+- 状态：R3 方向已确认；Week 3 契约/解码边界已实施并通过自动技术门禁
+- 背景：原 P2P 路线把独立参考发布器固定为 Offerer/send-only、正式客户端固定为
+  Answerer/recv-only，并计划在 Week 3 提前引入 `MediaSource`、`PeerSource` 和 profiles→transport
+  依赖。实际代码中的 RTMP URL、StreamId、设备身份、事件、控制和保存档案已有稳定且不同的语义，
+  直接统一会扩大迁移面；社团测试又要求两台电脑能使用同一客户端版本。
+- 决策：未来建立同一 `rtmp_monitor_webrtc_client`，分别选择 publisher/viewer 和
+  Offerer/Answerer，第一阶段只实现 SendOnly/ReceiveOnly。transport、publisher source 和 media
+  是兄弟模块，只共享协议无关的 H.264 AU/source/sink 契约并由组合根装配；transport 与 media 互不
+  依赖，profiles 不依赖 transport。Week 3 不创建 MediaSource/PeerSource/schema v2；正式客户端
+  后续只接入一次性 WebRTC session，原 RTMP façade 和保存流 schema v1 保持不变。
+- 原因：信令发起权与媒体方向是不同变化原因；媒体源、PeerConnection 和 FFmpeg decoder 也拥有
+  独立线程、状态和停止终点。兄弟模块和同一测试组合根既能覆盖两种 Offer 角色，又避免把人工会话
+  的 sessionId 虚构成长期设备或 peer 身份。
+- 替代方案：继续维护两个 executable；让 media 依赖 transport；让 profiles 保存 peer ID；立即迁移
+  所有 RTMP 调用到统一 variant；预建 SendReceive。它们分别降低测试对称性、制造反向耦合、混淆
+  身份或为未出现的用例冻结空契约。
+- 影响：Week 3 已按该决定新增纯 C++ H.264/session 契约，把 decoder/有界压缩队列/worker affinity/
+  mailbox 迁到 media-owned `EncodedVideoDecodeSession`，并由 manager 创建 move-only generation
+  handle。`FFmpegPlayer` 保留 RTMP 网络、重连、AAC 和 signal façade。停止顺序固定为停止输入、
+  generation 失效、worker 汇合、队列/decoder/mailbox 清理；未来 Track/PC 仍遵循先失效再关闭。
+  WebRTC 不授予机器人控制；控制媒体新鲜度继续采用实际代码的 1,000 ms。
+- 验证证据：用户明确授权先行完成 Week 3；Windows Debug OFF/ON 全目标构建与完整 CTest 分别
+  39/39、41/41，固定离线 Annex-B IDR 实际解码、容量/generation/十轮重复关闭、RTMP/AAC/MQTT/UI、
+  Week 2 loopback 和依赖门禁均通过。`W3-GATE` 自动技术通过；`W2-GATE` 人工复核仍待补充，
+  Track、双客户端和产品 WebRTC 路径未实施。
+- 相关文件：`docs/roadmap/webrtc_v2_project_plan.md`、
+  `docs/versions/webrtc-v2/guides/`、`docs/versions/webrtc-v2/weeks/week02/`、
+  `docs/versions/webrtc-v2/weeks/week03/`
+
+## ADR-034 WebRTC 入门教程采用独立单进程 DataChannel MiniLab
+
+- 日期：2026-08-22
+- 状态：已采用
+- 背景：现有六篇指南偏理论，初学者缺少一条从环境配置到可观察结果的短路线。直接复用 Week 2
+  probe 会同时引入 Qt、文件 schema、ACL 和双控制台操作，容易把信令文件安全与 WebRTC 基础协商
+  混成一个学习问题；直接进入视频 Track 又会提前引入 RTP/H.264 和媒体线程生命周期。
+- 决策：保留六个指南路径并改写为六章 Kilo 式微步骤教程；仓库只保存一份最终源码。新增独立
+  `tutorials/webrtc-minilab/`，仅依赖精确版本的 `LibDataChannel::LibDataChannel`，在单进程中使用
+  两个真实 PeerConnection、空 ICE server、内存 non-trickle Offer/Answer 和 DataChannel
+  `ping -> pong`。每个代码步骤必须给出函数级小块、彩色删除/新增说明、无变更标记的可复制权威
+  代码、构建/运行/实际证据和稳定通过条件；每个代码块后立即说明函数/API、参数、返回值、线程、
+  所有权、失败方式、执行链和限制。每章必须给出非照抄实验、完整答案和验证命令。步骤快照只在
+  Git 已忽略的 `out/` 重放，不接入根 CMake、产品 target 或既有公共头文件。
+- 修订（2026-08-23）：最初采用 unified diff 作为增量载体，但初学者复制时容易把行首变更符号写入
+  源码，长重构也不利于逐函数理解。因此改用浅红删除区块、浅黄新增区块和紧随其后的普通代码围栏；
+  若预览器过滤颜色，文字标签与无标记复制块仍能工作。检查点仍按顺序重放，最终项目、隔离边界和
+  仓库只保存一份最终源码的决定不变。
+- 原因：MiniLab 把学习闭环限制在 PeerConnection、SDP/ICE、DataChannel、异步等待和安全关闭五个
+  核心概念，同时保留真实库行为。彩色变更说明、可复制代码与即时检查点共同避免“解释概念后直接
+  复制最终源码”的跳步，并降低把展示符号误复制进源码的风险；独立组合根让教程的构建、CLI 和失败
+  模式不会扩散到 RTMP 产品，单份最终源码则避免六套步骤快照长期漂移。
+- 替代方案：扩展 Week 2 probe 作为教程；保存六份逐章源码；第一天直接实现 Track/H.264 视频；使用
+  mock PeerConnection。它们分别增加前置概念、维护重复、扩大生命周期风险或失去真实协商证据。
+- 影响：新增外部表面只有独立教程项目及其 `webrtc_minilab` CLI；产品安装、运行时、网络默认值、
+  Week 2 schema/probe 和 Week 3 媒体契约均不变。MiniLab 不创建信令文件、不访问 STUN/TURN，也不
+  宣称已经实现视频、双机 LAN 或公网穿透。
+- 验证证据：2026-08-23 使用 VS2026/MSVC 19.51 从全新目录重放 14 个正文检查点，全部配置、构建
+  和运行成功；角色反转实验返回 0，协议不匹配实验立即给出固定分类并返回 1。最终 MiniLab CTest
+  2/2 通过；帮助、非法参数、十轮运行、shutdown/Cleanup/summary 计数和敏感输出扫描通过；隐藏依赖
+  时配置返回 1 且出现固定修复提示。六章结构校验为 0 错误、0 警告，彩色 HTML 配对、代码围栏、
+  无变更标记、相对链接和最终检查点逐文件一致性检查通过。根项目既有 OFF/ON 39/39、41/41 证据
+  未被本次纯文档修订改写。
+- 相关文件：`tutorials/webrtc-minilab/`、`docs/versions/webrtc-v2/guides/`、
+  `docs/versions/webrtc-v2/README.md`
+
 ## ADR-XXX 标题
 
 - 日期：

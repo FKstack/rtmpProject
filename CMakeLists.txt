@@ -118,6 +118,25 @@ set(CMAKE_AUTORCC ON)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(ProjectOptions)
 
+option(RTMP_MONITOR_ENABLE_WEBRTC
+    "Build developer-only WebRTC signaling probes." OFF)
+
+if(RTMP_MONITOR_ENABLE_WEBRTC)
+    find_package(LibDataChannel 0.24.5 EXACT CONFIG QUIET)
+    if(NOT LibDataChannel_FOUND)
+        message(FATAL_ERROR
+            "RTMP_MONITOR_ENABLE_WEBRTC=ON requires libdatachannel 0.24.5. "
+            "Install the matching target architecture and reconfigure."
+        )
+    endif()
+    if(NOT TARGET LibDataChannel::LibDataChannel)
+        message(FATAL_ERROR
+            "libdatachannel 0.24.5 was found without the required "
+            "LibDataChannel::LibDataChannel imported target."
+        )
+    endif()
+endif()
+
 find_package(eclipse-paho-mqtt-c CONFIG REQUIRED)
 
 # ---------------------------------------------------------------------------
@@ -343,6 +362,83 @@ target_link_libraries(rtmp_monitor_logging
 
 rtmp_monitor_apply_project_options(rtmp_monitor_logging)
 
+if(RTMP_MONITOR_ENABLE_WEBRTC)
+    # Week 2 is an isolated developer boundary. It intentionally does not
+    # create the Week 3 transport API or link into the product executable.
+    qt_add_library(rtmp_monitor_webrtc_signaling STATIC
+        include/common/webrtc_dev/SessionPackage.h
+        src/common/webrtc_dev/SessionPackage.cpp
+    )
+    target_include_directories(rtmp_monitor_webrtc_signaling
+        PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include/common)
+    target_link_libraries(rtmp_monitor_webrtc_signaling PUBLIC Qt6::Core)
+    set_target_properties(rtmp_monitor_webrtc_signaling PROPERTIES
+        ARCHIVE_OUTPUT_DIRECTORY
+            "${CMAKE_BINARY_DIR}/webrtc/lib/$<CONFIG>"
+        COMPILE_PDB_OUTPUT_DIRECTORY
+            "${CMAKE_BINARY_DIR}/webrtc/lib/$<CONFIG>")
+    if(WIN32)
+        target_link_libraries(rtmp_monitor_webrtc_signaling PRIVATE advapi32)
+    endif()
+    rtmp_monitor_apply_project_options(rtmp_monitor_webrtc_signaling)
+
+    qt_add_library(rtmp_monitor_webrtc_probe_core STATIC
+        include/common/webrtc_dev/PeerConnectionProbe.h
+        include/common/webrtc_dev/LoopbackExchange.h
+        src/common/webrtc_dev/PeerConnectionProbe.cpp
+        src/common/webrtc_dev/LoopbackExchange.cpp
+    )
+    target_include_directories(rtmp_monitor_webrtc_probe_core
+        PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include/common)
+    target_link_libraries(rtmp_monitor_webrtc_probe_core
+        PUBLIC
+            rtmp_monitor_webrtc_signaling
+        PRIVATE
+            LibDataChannel::LibDataChannel
+    )
+    set_target_properties(rtmp_monitor_webrtc_probe_core PROPERTIES
+        ARCHIVE_OUTPUT_DIRECTORY
+            "${CMAKE_BINARY_DIR}/webrtc/lib/$<CONFIG>"
+        COMPILE_PDB_OUTPUT_DIRECTORY
+            "${CMAKE_BINARY_DIR}/webrtc/lib/$<CONFIG>")
+    rtmp_monitor_apply_project_options(rtmp_monitor_webrtc_probe_core)
+
+    qt_add_executable(rtmp_monitor_webrtc_probe
+        src/tools/WebRtcProbeMain.cpp)
+    set_target_properties(rtmp_monitor_webrtc_probe
+        PROPERTIES
+            WIN32_EXECUTABLE FALSE
+            RUNTIME_OUTPUT_DIRECTORY
+                "${CMAKE_BINARY_DIR}/webrtc/$<CONFIG>")
+    target_link_libraries(rtmp_monitor_webrtc_probe
+        PRIVATE rtmp_monitor_webrtc_probe_core Qt6::Core)
+    rtmp_monitor_apply_project_options(rtmp_monitor_webrtc_probe)
+
+    function(rtmp_monitor_copy_webrtc_runtime target_name)
+        if(NOT WIN32)
+            return()
+        endif()
+        add_custom_command(TARGET ${target_name} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_RUNTIME_DLLS:${target_name}>
+                $<TARGET_FILE_DIR:${target_name}>
+            COMMAND_EXPAND_LISTS
+            VERBATIM
+        )
+    endfunction()
+    rtmp_monitor_copy_webrtc_runtime(rtmp_monitor_webrtc_probe)
+endif()
+
+# Protocol-neutral, header-only encoded media contract. Future publisher,
+# transport and media targets may depend on it without depending on each other.
+add_library(rtmp_monitor_h264_contracts INTERFACE)
+target_sources(rtmp_monitor_h264_contracts INTERFACE
+    include/common/h264/H264MediaContracts.h
+)
+target_include_directories(rtmp_monitor_h264_contracts INTERFACE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/common
+)
+
 # 媒体服务器边界库：只读配置、URL 生成和异步健康观察，
 # 不包含任何服务器进程管理能力。
 set(RTMP_MONITOR_SERVER_SOURCES
@@ -465,6 +561,12 @@ target_link_libraries(rtmp_monitor_device_control
 rtmp_monitor_apply_project_options(rtmp_monitor_device_control)
 
 set(RTMP_MONITOR_MEDIA_SOURCES
+    include/common/media/EncodedVideoDecodeSession.h
+    src/common/media/EncodedVideoDecodeSession.cpp
+    src/common/media/EncodedVideoDecodeSessionFfmpegAccess.h
+    include/common/media/EncodedVideoInputHandle.h
+    src/common/media/EncodedVideoInputHandle.cpp
+    src/common/media/EncodedVideoInputControl.h
     include/common/media/LatencyMarkerCodec.h
     src/common/media/LatencyMarkerCodec.cpp
     include/common/media/VideoFrame.h
@@ -503,6 +605,7 @@ target_include_directories(rtmp_monitor_media
 target_link_libraries(rtmp_monitor_media
     PUBLIC
         Qt6::Gui
+        rtmp_monitor_h264_contracts
     PRIVATE
         rtmp_monitor_ffmpeg
         Qt6::Multimedia
@@ -1011,6 +1114,72 @@ if(BUILD_TESTING)
 
     find_package(Qt6 REQUIRED COMPONENTS Test)
     find_package(Python3 QUIET COMPONENTS Interpreter)
+
+    qt_add_executable(rtmp_monitor_h264_contract_test
+        tests/H264MediaContractsTest.cpp
+        include/common/webrtc_contracts/WebRtcSessionContracts.h
+    )
+    target_link_libraries(rtmp_monitor_h264_contract_test PRIVATE
+        Qt6::Test rtmp_monitor_h264_contracts)
+    rtmp_monitor_apply_project_options(rtmp_monitor_h264_contract_test)
+    add_test(NAME rtmp_monitor_h264_contract_test
+        COMMAND rtmp_monitor_h264_contract_test)
+
+    qt_add_executable(rtmp_monitor_encoded_video_decode_test
+        tests/EncodedVideoDecodeSessionTest.cpp)
+    target_link_libraries(rtmp_monitor_encoded_video_decode_test PRIVATE
+        Qt6::Test rtmp_monitor_media)
+    rtmp_monitor_apply_project_options(rtmp_monitor_encoded_video_decode_test)
+    add_test(NAME rtmp_monitor_encoded_video_decode_test
+        COMMAND rtmp_monitor_encoded_video_decode_test)
+    rtmp_monitor_copy_ffmpeg_runtime(rtmp_monitor_encoded_video_decode_test)
+
+    if(RTMP_MONITOR_ENABLE_WEBRTC)
+        qt_add_executable(rtmp_monitor_webrtc_session_test
+            tests/WebRtcSessionPackageTest.cpp)
+        target_link_libraries(rtmp_monitor_webrtc_session_test PRIVATE
+            Qt6::Test rtmp_monitor_webrtc_signaling)
+        if(WIN32)
+            target_link_libraries(rtmp_monitor_webrtc_session_test PRIVATE
+                advapi32)
+        endif()
+        rtmp_monitor_apply_project_options(rtmp_monitor_webrtc_session_test)
+        add_test(NAME rtmp_monitor_webrtc_session_test
+            COMMAND rtmp_monitor_webrtc_session_test)
+
+        qt_add_executable(rtmp_monitor_webrtc_h264_test
+            tests/WebRtcH264ApiTest.cpp)
+        target_link_libraries(rtmp_monitor_webrtc_h264_test PRIVATE
+            Qt6::Test LibDataChannel::LibDataChannel)
+        rtmp_monitor_apply_project_options(rtmp_monitor_webrtc_h264_test)
+        add_test(NAME rtmp_monitor_webrtc_h264_test
+            COMMAND rtmp_monitor_webrtc_h264_test)
+
+        qt_add_executable(rtmp_monitor_webrtc_loopback_test
+            tests/WebRtcLoopbackTest.cpp)
+        target_link_libraries(rtmp_monitor_webrtc_loopback_test PRIVATE
+            Qt6::Test rtmp_monitor_webrtc_probe_core)
+        rtmp_monitor_apply_project_options(rtmp_monitor_webrtc_loopback_test)
+        add_test(NAME rtmp_monitor_webrtc_loopback_test
+            COMMAND rtmp_monitor_webrtc_loopback_test)
+        set_tests_properties(rtmp_monitor_webrtc_loopback_test PROPERTIES
+            TIMEOUT 360)
+
+        foreach(webrtc_test_target IN ITEMS
+            rtmp_monitor_webrtc_session_test
+            rtmp_monitor_webrtc_h264_test
+            rtmp_monitor_webrtc_loopback_test)
+            set_target_properties(${webrtc_test_target} PROPERTIES
+                RUNTIME_OUTPUT_DIRECTORY
+                    "${CMAKE_BINARY_DIR}/webrtc/$<CONFIG>")
+            rtmp_monitor_copy_webrtc_runtime(${webrtc_test_target})
+        endforeach()
+    else()
+        add_test(NAME rtmp_monitor_webrtc_disabled_test
+            COMMAND ${CMAKE_COMMAND}
+                -DARTIFACT_ROOT=$<TARGET_FILE_DIR:rtmp_monitor>
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/VerifyWebRtcDisabled.cmake)
+    endif()
     if(Python3_Interpreter_FOUND)
         add_test(
             NAME rtmp_monitor_audio_latency_report_test
@@ -1503,6 +1672,7 @@ message(STATUS "Linux render mode    : ${RTMP_MONITOR_LINUX_RENDER_MODE_EFFECTIV
 message(STATUS "CPU canvas compiled  : ON")
 message(STATUS "OpenGL backend       : ${RTMP_MONITOR_HAS_OPENGL}")
 message(STATUS "OpenGL prototype     : ${RTMP_MONITOR_BUILD_OPENGL_PROTOTYPE}")
+message(STATUS "WebRTC developer path: ${RTMP_MONITOR_ENABLE_WEBRTC}")
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     message(STATUS "Target sysroot       : ${CMAKE_SYSROOT}")
     if(RTMP_MONITOR_HAS_OPENGL)

@@ -21,7 +21,7 @@
 | 版本目录 | 状态 | 内容入口 |
 | --- | --- | --- |
 | `versions/rtmp-v1/` | 当前稳定基线 `0.1.0-alpha.1` | [RTMP V1 文档](versions/rtmp-v1/README.md) |
-| `versions/webrtc-v2/` | `0.2.0-beta.1` 规划阶段 | [WebRTC V2 文档](versions/webrtc-v2/README.md) |
+| `versions/webrtc-v2/` | `0.2.0-beta.1`：Week 2～3 技术基础，产品路径未实现 | [WebRTC V2 文档](versions/webrtc-v2/README.md) |
 
 ## 归档规则
 

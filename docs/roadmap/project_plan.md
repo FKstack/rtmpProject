@@ -7,10 +7,12 @@
 > 4/16 路与 600 秒结果属于历史证据；ARM 真机、真实摄像头和网页现场结果仍为
 > `[需要验证]`。
 
-> V2 路线（2026-08-19）：`Beta` 分支已建立“公网服务器 + P2P”两种 WebRTC 模式的
-> [十二周研发总计划](webrtc_v2_project_plan.md)和逐周任务书。当前阶段仅完成规划，RTMP 仍是
-> 稳定路径；未修改生产代码、CMake、schema 或测试。实际研发必须按周通过门禁，不能把计划项
-> 或本机已安装的依赖表述为产品能力。
+> V2 路线（2026-08-21）：`Beta` 分支已将后续路线修订为“双客户端优先、服务器模式后置”的
+> [十周研发总计划](webrtc_v2_project_plan.md)：未来由同一测试客户端分别运行 publisher/viewer，
+> Offerer/Answerer 与媒体方向正交；transport、publisher source 和 media 通过低层 H.264 契约在
+> 组合根协作，不提前创建 MediaSource、P2P 保存档案或 schema v2。Week 2 默认关闭的开发者基础
+> 与 Week 3 H.264 契约/外部解码入口已完成自动验证，但 RTMP 仍是唯一稳定产品路径；
+> `W1-GATE` 未开始，`W2-GATE` 等待人工复核，WebRTC Track 与 Week 4 尚未开始。
 
 ## 目录
 

@@ -1,5 +1,63 @@
 # RtmpMonitor 当前项目快照
 
+> WebRTC MiniLab 深度讲解与可复制代码重写（2026-08-23）：在不改动独立 MiniLab、根 CMake、
+> 产品源码、Week 2 probe 或 Week 3 媒体实现的前提下，六章指南已改用“浅红删除说明、浅黄新增
+> 说明、无变更标记复制块”；每个函数级代码单元紧随 API、参数、返回值、线程、所有权、失败方式、
+> 执行链、设计原因和限制说明。第 5 章已拆成错误分类、side-index、channel helper、generation/幂等
+> 关闭和受限 CLI 五个可编译阶段；第 6 章拆开依赖诊断、DLL 部署、CTest 和隐私脚本。教程主线改为
+> VS2026 18.9.1/MSVC 19.51.36256，VS2022 仅保留兼容提示。VS2026 下 14 个正文检查点全部从全新目录
+> 配置、构建、运行成功；角色反转返回 0，协议错误固定分类并返回 1；最终 CTest 2/2、帮助/非法参数/
+> 十轮计数、隐藏依赖负向配置和敏感输出扫描通过。结构校验六章 0 错误、0 警告，HTML/围栏/相对
+> 链接/无补丁标记检查通过；第 1 章 CMake 连续沿用到第 5 章，第 6 章只追加 CTest，`onDataChannel()`
+> 首次讲解准确位于第 4 章，最终检查点与 `tutorials/webrtc-minilab/` 逐文件一致。Week 1 学习状态、
+> `W2-GATE` 人工复核、Week 3 既有证据和根工程既有 OFF/ON 结果不变；未提交、未推送、未打标签。
+
+> WebRTC 零基础 MiniLab 教程（2026-08-22）：现有六篇 WebRTC 指南已重写为一条可在一天内完成的
+> 微步骤学习路线，并新增独立项目 `tutorials/webrtc-minilab/`。最终程序使用两个真实
+> `PeerConnection`、空 ICE server、内存 non-trickle Offer/Answer 和 DataChannel 完成
+> `ping -> pong`；它不接入根 CMake、Qt、FFmpeg、产品 target、Week 2 文件信令或 Week 3 媒体入口。
+> libdatachannel 0.24.5 精确配置、全新构建、单轮/十轮运行、CTest 2/2、非法参数、缺依赖负向配置、
+> 六章可编译检查点和输出敏感模式扫描均通过。根项目 Windows Debug OFF/ON 全目标构建与 CTest
+> 分别 39/39、41/41 通过，证明教程未改变产品路径。学习门禁和 Week 2 人工复核状态保持不变，
+> Week 3 既有技术证据未改写；未提交、未推送、未打标签。
+
+> WebRTC V2 Week 3 技术状态（2026-08-21）：按用户“先完成开发、后补手工验证”的明确授权，
+> 在已确认双客户端 R3 路线内完成协议无关 `H264AccessUnit`/`SessionMediaSample`、正交 session
+> 配置、显式有界提交结果、media-owned `EncodedVideoDecodeSession` 和 manager generation handle。
+> `FFmpegPlayer` 保留 RTMP 网络/重连/AAC façade并复用同一解码会话；依赖保持
+> `media -> h264 contracts`，未创建 Track、publisher/viewer、产品 UI、MediaSource、PeerSource 或
+> schema v2。Windows Debug OFF/ON 全目标构建与 CTest 分别 39/39、41/41 通过，固定 46 字节离线
+> Annex-B IDR 实际解码、十轮 handle 重复关闭、RTMP/AAC/MQTT/UI、Week 2 回环和层门禁均通过。
+> 新增 lifecycle 测试的一处观察者析构顺序缺陷由 MSVC AddressSanitizer 定位并修复，修复后连续
+> 5 轮 sanitizer 复验通过；当前 ON 产物的独立 Offer/Answer 双进程也再次连接成功且交换目录清零。
+> 没有可复现的未解决 Week 3 问题。
+> `W3-GATE` 为自动技术通过；`W2-GATE` 人工双控制台项仍待用户补充，Week 4 未开始。未提交、
+> 未推送、未打标签。
+
+> WebRTC V2 双客户端架构修订（2026-08-21）：经用户确认，Week 3～10 路线已改为同一
+> `rtmp_monitor_webrtc_client` 分别运行 publisher/viewer，Offerer/Answerer 与媒体方向正交；第一阶段
+> 只规划 SendOnly/ReceiveOnly。未来 transport、publisher source 和 media 作为兄弟模块，只通过
+> 协议无关 H.264 契约在组合根装配；不提前创建 MediaSource、PeerSource、P2P 保存档案或 schema v2。
+> 计划同时纠正停止顺序和安全新鲜度：先 closing/generation/回调失效再关闭 Track/PeerConnection，
+> 控制阈值保持实际代码的 1,000 ms。本轮只改文档，没有修改 CMake、源码或测试；`W1-GATE` 仍未
+> 开始，`W2-GATE` 仍等待人工复核；“Week 3 未开始”仅描述该修订时点，后续状态以上方最新记录为准。
+
+> WebRTC V2 Week 2 自动复核（2026-08-21）：两个独立 probe 进程已完成真实文件 Offer/Answer
+> 自动交换。自动化先观察到唯一 Offer 包再启动 Answer；双方均产生
+> `description_exported -> connected`、退出码 0、同一脱敏 session 和 host-only candidate，最终交换
+> 目录、stderr 与敏感模式命中均为 0。WebRTC 专项 CTest 3/3、ON 完整 CTest 39/39 通过。该证据
+> 不替代用户人工复核，`W2-GATE` 仍等待后续双控制台检查，Week 3 不开始。
+
+> WebRTC V2 Week 2 技术状态（2026-08-20）：按“开发优先”授权在本地 `Beta` 实施默认关闭的
+> developer-only 基础。ON 路径精确使用 libdatachannel 0.24.5 的
+> `LibDataChannel::LibDataChannel`，新增隔离的 signaling、probe core、CLI 与三类测试；OFF 产品
+> target、CLI、运行依赖和行为边界不变。schema v1、Windows 当前用户专用 DACL、原子文件、受限
+> 清理、空 ICE server non-trickle DataChannel 回环及离线 H.264 API 验证已落地。Windows Debug
+> OFF 全构建与 CTest 37/37、ON 全构建与 CTest 39/39、额外 200 个 loopback 连接/重复关闭周期和
+> probe 输出敏感模式扫描通过；ON 缺依赖按预期在配置阶段失败。`W1-GATE` 仍为“未开始”，
+> `W2-GATE` 为“自动技术门禁通过，等待用户周末人工复核”，不得进入 Week 3。未提交、未推送、
+> 未打标签。
+
 > WebRTC V2 规划状态（2026-08-19）：本地 `Beta` 已先精确恢复到远端稳定基线
 > `116e33b`，提前产生的 WebRTC 提交、未提交 RTP 重组源码、Go 信令服务及其测试均已撤销；
 > `out/build-windows-x64/beta-vs`、`out/build-windows-x64/debug` 和 `out/go-cache` 已删除。

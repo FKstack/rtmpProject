@@ -8,6 +8,7 @@
 
 #include "media/DecodeWorkerPool.h"
 #include "media/AudioPlaybackEngine.h"
+#include "media/EncodedVideoInputHandle.h"
 #include "media/FFmpegPlayer.h"
 #include "media/PlaybackTypes.h"
 
@@ -42,6 +43,10 @@ public:
     [[nodiscard]] QList<StreamId> streamIds() const;
 
     StreamId addStream(const QString &displayName, const QString &rtmpUrl);
+    /** Creates a runtime-only external H.264 stream and current generation. */
+    EncodedVideoInputHandle createEncodedVideoInput(
+        const QString &displayName
+    );
     bool removeStream(StreamId streamId);
     bool restartStream(StreamId streamId);
     bool startStream(StreamId streamId);
@@ -81,6 +86,16 @@ private:
 
     [[nodiscard]] Entry *entryFor(StreamId streamId) noexcept;
     [[nodiscard]] const Entry *entryFor(StreamId streamId) const noexcept;
+    void postExternalState(
+        StreamId streamId,
+        std::uint64_t generation,
+        DeviceStatus state
+    );
+    void postExternalError(
+        StreamId streamId,
+        std::uint64_t generation,
+        PlaybackError error
+    );
     void publishMetrics();
 
     PlaybackPerformanceOptions options_;
@@ -89,4 +104,5 @@ private:
     std::vector<std::unique_ptr<Entry>> entries_;
     std::unique_ptr<QTimer> metricsTimer_;
     StreamId nextStreamId_ = 1;
+    std::uint64_t nextExternalGeneration_ = 1;
 };

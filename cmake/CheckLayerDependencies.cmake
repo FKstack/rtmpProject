@@ -22,11 +22,23 @@ file(GLOB_RECURSE evidence_files
     "${PROJECT_SOURCE_DIR}/include/common/evidence/*.h"
     "${PROJECT_SOURCE_DIR}/src/common/evidence/*.h"
     "${PROJECT_SOURCE_DIR}/src/common/evidence/*.cpp")
+file(GLOB_RECURSE webrtc_dev_files
+    "${PROJECT_SOURCE_DIR}/include/common/webrtc_dev/*.h"
+    "${PROJECT_SOURCE_DIR}/src/common/webrtc_dev/*.h"
+    "${PROJECT_SOURCE_DIR}/src/common/webrtc_dev/*.cpp")
+file(GLOB_RECURSE h264_contract_files
+    "${PROJECT_SOURCE_DIR}/include/common/h264/*.h")
+file(GLOB_RECURSE webrtc_contract_files
+    "${PROJECT_SOURCE_DIR}/include/common/webrtc_contracts/*.h")
 
 foreach(source_file IN LISTS media_files)
     file(READ "${source_file}" source_text)
     if(source_text MATCHES "#[ \t]*include[ \t]*[<\"](render|ui)/")
         message(FATAL_ERROR "media layer depends on render/ui: ${source_file}")
+    endif()
+    if(source_text MATCHES "#[ \t]*include[ \t]*[<\"]webrtc_contracts/")
+        message(FATAL_ERROR
+            "media layer depends on WebRTC session contracts: ${source_file}")
     endif()
 endforeach()
 
@@ -90,5 +102,21 @@ foreach(source_file IN LISTS render_files)
     file(READ "${source_file}" source_text)
     if(source_text MATCHES "#[ \t]*include[ \t]*[<\"]ui/")
         message(FATAL_ERROR "render layer depends on ui: ${source_file}")
+    endif()
+endforeach()
+
+foreach(source_file IN LISTS webrtc_dev_files)
+    file(READ "${source_file}" source_text)
+    if(source_text MATCHES "#[ \t]*include[ \t]*[<\"](app|device_control|diagnostics|evidence|event_center|media|profiles|render|server|ui)/")
+        message(FATAL_ERROR
+            "Week 2 WebRTC developer boundary depends on a product layer: ${source_file}")
+    endif()
+endforeach()
+
+foreach(source_file IN LISTS h264_contract_files webrtc_contract_files)
+    file(READ "${source_file}" source_text)
+    if(source_text MATCHES "#[ \t]*include[ \t]*[<\"](app|control_policy|device_control|diagnostics|evidence|event_center|logging|media|profiles|render|server|ui|webrtc_dev)/")
+        message(FATAL_ERROR
+            "low-level realtime contract depends on an outer layer: ${source_file}")
     endif()
 endforeach()

@@ -1,5 +1,9 @@
 #include "media/MultiStreamPlaybackManager.h"
 
+#include "EncodedVideoInputControl.h"
+#include "media/EncodedVideoDecodeSession.h"
+
+#include <QMetaObject>
 #include <QThread>
 #include <QTimer>
 
@@ -25,6 +29,14 @@ struct MultiStreamPlaybackManager::Entry
 {
     StreamConnection connection;
     std::unique_ptr<FFmpegPlayer> player;
+    std::shared_ptr<EncodedVideoDecodeSession> externalDecodeSession;
+    std::shared_ptr<EncodedVideoInputControl> externalControl;
+    DeviceStatus externalState = DeviceStatus::Disconnected;
+
+    [[nodiscard]] bool isExternal() const noexcept
+    {
+        return externalDecodeSession != nullptr;
+    }
 };
 
 MultiStreamPlaybackManager::MultiStreamPlaybackManager(
@@ -176,6 +188,58 @@ StreamId MultiStreamPlaybackManager::addStream(
     return streamId;
 }
 
+EncodedVideoInputHandle MultiStreamPlaybackManager::createEncodedVideoInput(
+    const QString &displayName
+)
+{
+    Q_ASSERT(QThread::currentThread() == thread());
+    const QString normalizedName = displayName.trimmed();
+    if (streamCount() >= kMaximumStreams || normalizedName.isEmpty()) {
+        return {};
+    }
+
+    auto entry = std::make_unique<Entry>();
+    entry->connection = {
+        nextStreamId_++,
+        normalizedName,
+        QString()
+    };
+    const StreamId streamId = entry->connection.id;
+    const std::uint64_t generation = nextExternalGeneration_++;
+    entry->externalDecodeSession =
+        std::make_shared<EncodedVideoDecodeSession>(
+            streamId,
+            normalizedName,
+            decodeWorkerPool_.get(),
+            options_,
+            [this, streamId](DeviceStatus state, std::uint64_t current) {
+                postExternalState(streamId, current, state);
+            },
+            [this, streamId](PlaybackError error, std::uint64_t current) {
+                postExternalError(
+                    streamId, current, std::move(error)
+                );
+            }
+        );
+    entry->externalControl = std::make_shared<EncodedVideoInputControl>();
+    entry->externalControl->session = entry->externalDecodeSession;
+    entry->externalControl->streamId = streamId;
+    entry->externalControl->generation = generation;
+    audioPlaybackEngine_->setVideoClockSource(
+        streamId, entry->externalDecodeSession->frameMailbox()
+    );
+
+    auto control = entry->externalControl;
+    entries_.push_back(std::move(entry));
+    if (!entryFor(streamId)->externalDecodeSession->beginExternalGeneration(
+            generation
+        )) {
+        removeStream(streamId);
+        return {};
+    }
+    return EncodedVideoInputHandle(std::move(control));
+}
+
 bool MultiStreamPlaybackManager::removeStream(StreamId streamId)
 {
     Q_ASSERT(QThread::currentThread() == thread());
@@ -193,7 +257,16 @@ bool MultiStreamPlaybackManager::removeStream(StreamId streamId)
         audioPlaybackEngine_->clearSelection();
     }
     audioPlaybackEngine_->setVideoClockSource(streamId, nullptr);
-    (*iterator)->player->stop();
+    if ((*iterator)->isExternal()) {
+        (*iterator)->externalControl->closed.store(
+            true, std::memory_order_release
+        );
+        (*iterator)->externalDecodeSession->closeGeneration(
+            (*iterator)->externalControl->generation
+        );
+    } else {
+        (*iterator)->player->stop();
+    }
     entries_.erase(iterator);
     return true;
 }
@@ -204,6 +277,9 @@ bool MultiStreamPlaybackManager::restartStream(StreamId streamId)
     if (entry == nullptr) {
         return false;
     }
+    if (entry->isExternal()) {
+        return false;
+    }
     entry->player->stop();
     return entry->player->start(entry->connection.url);
 }
@@ -212,14 +288,24 @@ bool MultiStreamPlaybackManager::startStream(StreamId streamId)
 {
     Q_ASSERT(QThread::currentThread() == thread());
     Entry *entry = entryFor(streamId);
-    return entry != nullptr && entry->player->start(entry->connection.url);
+    return entry != nullptr && !entry->isExternal() &&
+           entry->player->start(entry->connection.url);
 }
 
 void MultiStreamPlaybackManager::stopStream(StreamId streamId)
 {
     Q_ASSERT(QThread::currentThread() == thread());
     if (Entry *entry = entryFor(streamId); entry != nullptr) {
-        entry->player->stop();
+        if (entry->isExternal()) {
+            entry->externalControl->closed.store(
+                true, std::memory_order_release
+            );
+            entry->externalDecodeSession->closeGeneration(
+                entry->externalControl->generation
+            );
+        } else {
+            entry->player->stop();
+        }
         if (audioPlaybackEngine_->selectedStream() == streamId) {
             audioPlaybackEngine_->clearSelection();
         }
@@ -231,7 +317,8 @@ int MultiStreamPlaybackManager::startAll()
     Q_ASSERT(QThread::currentThread() == thread());
     int count = 0;
     for (const auto &entry : entries_) {
-        if (entry->player->start(entry->connection.url)) {
+        if (!entry->isExternal() &&
+            entry->player->start(entry->connection.url)) {
             ++count;
         }
     }
@@ -242,10 +329,21 @@ void MultiStreamPlaybackManager::stopAll()
 {
     Q_ASSERT(QThread::currentThread() == thread());
     for (const auto &entry : entries_) {
-        entry->player->requestStop();
+        if (!entry->isExternal()) {
+            entry->player->requestStop();
+        }
     }
     for (const auto &entry : entries_) {
-        entry->player->stop();
+        if (entry->isExternal()) {
+            entry->externalControl->closed.store(
+                true, std::memory_order_release
+            );
+            entry->externalDecodeSession->closeGeneration(
+                entry->externalControl->generation
+            );
+        } else {
+            entry->player->stop();
+        }
     }
     audioPlaybackEngine_->clearSelection();
 }
@@ -254,20 +352,34 @@ bool MultiStreamPlaybackManager::isStreamRunning(StreamId streamId) const noexce
 {
     Q_ASSERT(QThread::currentThread() == thread());
     const Entry *entry = entryFor(streamId);
-    return entry != nullptr && entry->player->isRunning();
+    if (entry == nullptr) {
+        return false;
+    }
+    return entry->isExternal()
+        ? entry->externalDecodeSession->activeGeneration() != 0
+        : entry->player->isRunning();
 }
 
 std::shared_ptr<LatestFrameMailbox>
 MultiStreamPlaybackManager::frameMailbox(StreamId streamId) const
 {
     const Entry *entry = entryFor(streamId);
-    return entry != nullptr ? entry->player->frameMailbox() : nullptr;
+    if (entry == nullptr) {
+        return nullptr;
+    }
+    return entry->isExternal()
+        ? entry->externalDecodeSession->frameMailbox()
+        : entry->player->frameMailbox();
 }
 
 StreamMetrics MultiStreamPlaybackManager::streamMetrics(StreamId streamId)
 {
     if (Entry *entry = entryFor(streamId); entry != nullptr) {
-        return entry->player->metricsSnapshot();
+        return entry->isExternal()
+            ? entry->externalDecodeSession->metricsSnapshot(
+                  entry->externalState
+              )
+            : entry->player->metricsSnapshot();
     }
     return {};
 }
@@ -277,7 +389,13 @@ QList<StreamMetrics> MultiStreamPlaybackManager::metricsSnapshot()
     QList<StreamMetrics> result;
     result.reserve(streamCount());
     for (const auto &entry : entries_) {
-        result.append(entry->player->metricsSnapshot());
+        result.append(
+            entry->isExternal()
+                ? entry->externalDecodeSession->metricsSnapshot(
+                      entry->externalState
+                  )
+                : entry->player->metricsSnapshot()
+        );
     }
     return result;
 }
@@ -285,7 +403,8 @@ QList<StreamMetrics> MultiStreamPlaybackManager::metricsSnapshot()
 bool MultiStreamPlaybackManager::selectAudioStream(StreamId streamId)
 {
     Q_ASSERT(QThread::currentThread() == thread());
-    if (entryFor(streamId) == nullptr) return false;
+    const Entry *entry = entryFor(streamId);
+    if (entry == nullptr || entry->isExternal()) return false;
     audioPlaybackEngine_->selectStream(streamId);
     return true;
 }
@@ -348,6 +467,61 @@ MultiStreamPlaybackManager::entryFor(StreamId streamId) const noexcept
         }
     );
     return iterator != entries_.end() ? iterator->get() : nullptr;
+}
+
+void MultiStreamPlaybackManager::postExternalState(
+    StreamId streamId,
+    std::uint64_t generation,
+    DeviceStatus state
+)
+{
+    QMetaObject::invokeMethod(
+        this,
+        [this, streamId, generation, state] {
+            Entry *entry = entryFor(streamId);
+            if (entry == nullptr || !entry->isExternal() ||
+                entry->externalControl->generation != generation) {
+                return;
+            }
+            const std::uint64_t active =
+                entry->externalDecodeSession->activeGeneration();
+            if (state != DeviceStatus::Disconnected &&
+                active != generation) {
+                return;
+            }
+            if (entry->externalState != state) {
+                entry->externalState = state;
+                emit stateChanged(streamId, state);
+            }
+        },
+        Qt::QueuedConnection
+    );
+}
+
+void MultiStreamPlaybackManager::postExternalError(
+    StreamId streamId,
+    std::uint64_t generation,
+    PlaybackError error
+)
+{
+    QMetaObject::invokeMethod(
+        this,
+        [this, streamId, generation, error = std::move(error)] {
+            Entry *entry = entryFor(streamId);
+            if (entry == nullptr || !entry->isExternal() ||
+                entry->externalControl->generation != generation ||
+                entry->externalDecodeSession->activeGeneration() !=
+                    generation) {
+                return;
+            }
+            if (entry->externalState != DeviceStatus::Error) {
+                entry->externalState = DeviceStatus::Error;
+                emit stateChanged(streamId, DeviceStatus::Error);
+            }
+            emit errorOccurred(streamId, error);
+        },
+        Qt::QueuedConnection
+    );
 }
 
 void MultiStreamPlaybackManager::publishMetrics()
