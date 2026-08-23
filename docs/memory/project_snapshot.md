@@ -1,5 +1,15 @@
 # RtmpMonitor 当前项目快照
 
+> WebRTC V2 Week 6 技术状态（2026-08-24）：在 Week 5 单画面 viewer 闭环之上新增脱敏
+> `EndpointCandidatePair`、Connected 后断线终态、portable marker 运行布局、Release 专用测试包、
+> 固定 H.264 样本、许可/manifest、包内双机 runner 和 LAN 报告聚合。VS2026 fresh Debug OFF、
+> Debug ON、Release ON 全构建与 CTest 分别 39/39、45/45、45/45；最终提交 `ada15ac` 的 ZIP 从
+> 全新目录展开后通过包扫描、help/非法参数、包内 Check/SelfTest，并以两个独立副本完成两种拓扑
+> 各 10 轮，RTP/AU/decoded/presented、selected UDP pair、退出和交换目录清零均通过。Week 4、
+> Week 5 完整 Run 也再次通过。资格测试误载 MinGW `Qt6Test.dll` 的弹窗已通过收敛 MSVC Qt
+> 运行时 PATH 修复，Release 45/45 复验无弹窗。该结果明确标记 `sameMachinePortable=true`、
+> `lanClaimed=false`；真实双机 `host/host + udp`、双方先关和最终 `W6-GATE` 等待用户执行。
+
 > WebRTC V2 Week 5 技术状态（2026-08-23）：同一 `rtmp_monitor_webrtc_client` 已同时支持
 > publisher/viewer 与 Offerer/Answerer 正交组合。ReceiveOnly Track 使用 libdatachannel 0.24.5
 > 官方 H.264 depacketizer，当前 endpoint generation 内执行 Annex-B、SPS/PPS/IDR、4 MiB 上限和

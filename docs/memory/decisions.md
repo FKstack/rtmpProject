@@ -686,9 +686,9 @@
   没有新线程、无界队列或反向链接。Release WebRTC 测试包独立包含实际 DLL、样本、许可、manifest
   和 runner；正式 RTMP 产品包/配置不变。同机 peer-reflexive 脱敏归为 srflx，不冒充 host。
 - 验证证据：两种 endpoint RTP 拓扑取得安全 selected pair；关闭一端后对端有界 Failed、sink 不再
-  增长；path 表驱动测试覆盖 repository/portable/invalid；PowerShell parser、占位符负向和详细
-  文档门禁通过。最终 OFF/ON/Release、同机双包与旧周回归记录在 Week 6 test results；真实
-  host/host UDP 与窗口生命周期保持待用户。
+  增长；path 表驱动测试覆盖 repository/portable/invalid。fresh Debug OFF、Debug ON、Release ON
+  分别 39/39、45/45、45/45；最终 ZIP 全新展开、禁入扫描、CLI/runner 和同机双包两拓扑各十轮
+  通过，Week 4/5 完整回归通过。真实 host/host UDP 与窗口生命周期保持待用户。
 - 相关文件：`include/common/webrtc_transport/WebRtcEndpointSession.h`、
   `src/common/webrtc_transport/WebRtcEndpointSession.cpp`、`src/tools/webrtc_client/`、
   `scripts/webrtc/Week6LanCommon.psm1`、`scripts/webrtc/package_week6.ps1`、

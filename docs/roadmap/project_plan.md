@@ -1407,6 +1407,8 @@ CTest 14/14 通过；ARM64 RASTER 构建 NEEDED 无 Qt6OpenGL*/EGL/GLES，GLES3 
   FFmpeg decoder→capacity-1 mailbox→CPU canvas 的测试客户端闭环。
 - Week 6 已增加脱敏 selected candidate pair、已连接后断线终态、manifest marker 便携信令根、
   Release 专用包、固定可分发样本、许可、同机双包资格和随包双机 runner。
+- 实际 fresh Debug OFF、Debug ON、Release ON CTest 为 39/39、45/45、45/45；最终 ZIP 全新展开后
+  两种同机便携拓扑各 10/10 通过，Week 4/5 完整回归通过。
 - transport、publisher、media、render/UI 保持兄弟模块，具体装配只在测试客户端组合根；OFF 产品
   目标与 schema v1 不变。
 - 实施与测试入口见 [WebRTC V2 总计划](webrtc_v2_project_plan.md) 和
