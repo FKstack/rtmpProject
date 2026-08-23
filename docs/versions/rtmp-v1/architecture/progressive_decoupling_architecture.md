@@ -82,7 +82,7 @@
 | 优先级 | 热点 | 先处理的原因 | 拆分结果 |
 | --- | --- | --- | --- |
 | P0.1 | `MultiStreamPlaybackManager` / 指标类型 | 存在 media 对 render/UI 语义的反向了解 | `RuntimeMetricsReporter`、`RenderRuntimeMetrics` |
-| P0.2 | `FFmpegPlayer` | 线程、网络、FFmpeg 资源和重连风险最高 | `FfmpegInputSession`、私有 `StreamDecodeSession` |
+| P0.2 | `FFmpegPlayer` | 线程、网络、FFmpeg 资源和重连风险最高 | `FfmpegInputSession`、`EncodedVideoDecodeSession` |
 | P1.1 | `StreamConnectionController` | 业务编排与日志/UI/注册混合，变更扩散明显 | `ConnectionBindingRegistry`、`ConnectionEventReporter` |
 | P1.2 | `FullscreenVideoWindow` | 状态机与动画、计时器、截图 I/O 混合 | `FullscreenChromeController`、`FullscreenScreenshotService` |
 | P2 | `VideoGridWidget` | 纯计算、动画资源和场景转换被控件生命周期包围 | `MonitoringGridLayout`、`GridTransitionAnimator`、`VideoGridSceneBuilder` |
@@ -244,12 +244,13 @@ flowchart LR
 | --- | --- | --- |
 | `FFmpegPlayer` façade | 公共 start/stop/signals/metrics、网络 QThread、重连策略、session generation | 单次 `AVFormatContext` 细节、直接 UI 操作 |
 | `FfmpegInputSession` | 一次 `AVFormatContext` 打开/探测/读取、interrupt callback、向外移交 packet/configuration | 重连次数、Qt 状态、解码器、长期队列 |
-| 私有 `StreamDecodeSession` | 有界包队列、解码器状态、worker 调度标志、邮箱、解码/呈现指标 | URL、连接退避、QWidget/OpenGL |
+| `EncodedVideoDecodeSession` | 有界包/AU 队列、解码器状态、worker 调度标志、邮箱、generation 与解码/呈现指标 | URL、连接退避、QWidget/OpenGL、WebRTC 对象 |
 | `DecodeWorkerPool` | 固定 worker、按流调度任务 | 阻塞网络读取、UI 展示 |
 
-`FfmpegInputSession` 位于 `src/common/media/`，属于实现私有头文件；
-`StreamDecodeSession` 是 `FFmpegPlayer.cpp` 中的私有嵌套实现。它们没有成为新的公共 API，
-避免调用方绕过 façade 操作半初始化的 FFmpeg 状态。
+`FfmpegInputSession` 位于 `src/common/media/`，属于实现私有头文件。原私有
+`StreamDecodeSession` 已在 WebRTC V2 Week 3 迁出为 media-owned `EncodedVideoDecodeSession`；
+`FFmpegPlayer` 通过私有 FFmpeg access seam 复用它，外部 publisher/transport 只能提交协议无关
+Annex-B AU，不能操作半初始化的 FFmpeg 状态。
 
 ### 7.3 拆分过程
 
@@ -261,7 +262,7 @@ flowchart LR
 4. 输入 session 通过两个回调交出 codec configuration 和 owned packet；它不直接访问
    解码队列内部字段。
 5. 把有界队列、decoder reset、关键帧恢复、worker 调度和邮箱提交集中到
-   `StreamDecodeSession`。
+   `EncodedVideoDecodeSession`。
 6. `FFmpegPlayer::decodeNetworkLoop()` 只编排“创建一次输入 session → 处理结果 → 更新失败
    计数 → 等待重连或退出”。
 7. 保留 `sessionId_` generation 检查；所有配置、packet、状态、错误和重连通知在提交前
@@ -278,7 +279,7 @@ flowchart LR
     end
 
     subgraph DecodeWorkers["共享 DecodeWorkerPool"]
-        Queue["StreamDecodeSession<br/>有界 packet 队列"]
+        Queue["EncodedVideoDecodeSession<br/>有界 packet/AU 队列"]
         Decoder["AVCodecContext<br/>同一路 worker 亲和"]
         Queue --> Decoder
     end
@@ -658,7 +659,7 @@ flowchart LR
         Manager["MultiStreamPlaybackManager"]
         Player["FFmpegPlayer façade × N"]
         Input["FfmpegInputSession × attempt"]
-        Decode["StreamDecodeSession × stream"]
+        Decode["EncodedVideoDecodeSession × stream"]
         Pool["DecodeWorkerPool"]
         Mailbox["LatestFrameMailbox × stream"]
     end
@@ -731,7 +732,7 @@ flowchart TB
     end
 
     subgraph WorkerThreads["固定 DecodeWorkerPool"]
-        Decoders["StreamDecodeSession drain<br/>同一路固定 worker"]
+        Decoders["EncodedVideoDecodeSession drain<br/>同一路固定 worker"]
     end
 
     subgraph FileWork["异步文件工作"]
@@ -816,7 +817,7 @@ flowchart TB
 | --- | --- | --- | --- |
 | 增加 schema 字段 | Manager + render/UI | `RuntimeMetricsReporter` + 对应指标契约 | 不触碰流生命周期 |
 | 调整 RTMP 打开参数 | `FFmpegPlayer` 大状态机 | `FfmpegInputSession` | 不触碰解码队列 |
-| 调整解码背压 | 网络/重连混合实现 | 私有 `StreamDecodeSession` | 明确互斥和 worker 所有权 |
+| 调整解码背压 | 网络/重连混合实现 | `EncodedVideoDecodeSession` | 明确互斥、generation 和 worker 所有权 |
 | 增加 cameraId 规则 | Controller 全流程 | `ConnectionBindingRegistry` | 规则单点维护 |
 | 修改用户错误文案 | Controller 多个槽 | `ConnectionEventReporter` / message service | 系统日志和业务事务不受影响 |
 | 调整控制栏隐藏 | 全屏状态机 | `FullscreenChromeController` | 不影响退出过渡和画布 |
@@ -845,8 +846,9 @@ flowchart TB
    领域仓储；若未来需要 headless application service，再把 UI handle 抽成端口。
 4. **ApplicationBootstrap 和 Controller 编入 executable**：当前只有一个产品进程，没有
    第二个前端复用用例，不为抽象而抽象。
-5. **`StreamDecodeSession` 仍在 `FFmpegPlayer.cpp`**：它与 façade 的生命周期高度相关，保持
-   私有能阻止错误复用；只有文件维护成本继续上升时才考虑移动到私有编译单元。
+5. **`EncodedVideoDecodeSession` 是 media-owned 公共类型**：它允许组合根通过 generation handle
+   提交协议无关 H.264 AU，但 FFmpeg packet/configuration 入口仍由私有 access seam 限制；transport
+   与 publisher source 不得直接依赖 media。
 6. **Fullscreen Window 仍负责 Toast**：Toast 是全屏交互反馈和 transition state 的一部分，
    当前无需再拆一个通知控制器。
 7. **`LogManager` 与 `OpenGLGridRenderer` 暂不拆**：两者实现虽大，但资源和公共职责仍内聚；
@@ -868,7 +870,7 @@ flowchart TB
 | 新增渲染指标 | `RenderRuntimeMetrics`、renderer | Reporter schema 和 CPU fallback 默认值 |
 | 修改重连策略 | `FFmpegPlayer::decodeNetworkLoop()` / options | stop 可中断性、失败上限和事件顺序 |
 | 修改 FFmpeg 打开/读取 | `FfmpegInputSession` | interrupt callback、错误映射、真实流测试 |
-| 修改队列或关键帧恢复 | 私有 `StreamDecodeSession` | 上限、worker 亲和、session generation、性能 |
+| 修改队列或关键帧恢复 | `EncodedVideoDecodeSession` | 上限、worker 亲和、session generation、性能 |
 | 新增连接唯一性规则 | `ConnectionBindingRegistry` | profile 接入和容量测试 |
 | 修改日志/审计/用户事件 | `ConnectionEventReporter` | 脱敏、去重和三类输出边界 |
 | 修改全屏控制栏 | `FullscreenChromeController` | 鼠标区域、动画中断和 cursor timer |

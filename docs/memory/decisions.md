@@ -607,6 +607,34 @@
 - 相关文件：`tutorials/webrtc-minilab/`、`docs/versions/webrtc-v2/guides/`、
   `docs/versions/webrtc-v2/README.md`
 
+## ADR-035 Week 4 publisher 采用 transport/source 兄弟目标与测试专用接收 peer
+
+- 日期：2026-08-23
+- 状态：已采用；R2 实施完成
+- 背景：Week 4 需要在不扩展 Week 2 DataChannel probe、不让 media/UI 依赖 WebRTC 的前提下，
+  同时证明 Offerer/Answerer 两种 publisher 角色、H.264 Track、MP4 pacing 和安全关闭。产品
+  ReceiveOnly depacketize/viewer 属于 Week 5，不能为测试方便提前进入产品路径。
+- 决策：新增纯契约 `rtmp_monitor_webrtc_contracts`、只依赖契约和 libdatachannel 的
+  `rtmp_monitor_webrtc_transport`、只依赖 H.264 契约和 FFmpeg 的
+  `rtmp_monitor_h264_publisher_source`；仅 `rtmp_monitor_webrtc_client` 组合 source、transport 与
+  schema-v1 文件信令。`WebRtcEndpointSession` 唯一拥有 PC、Track、generation、容量 2 队列和
+  sender；source 只持有注入的 H.264 提交端口。BUILD_TESTING 下另建 ReceiveOnly peer，通过
+  libdatachannel H.264 depacketizer 验证 SPS/PPS/IDR，不把它作为产品 viewer。
+- 原因：PeerConnection、文件/FFmpeg source 和产品 decoder 分别有独立依赖与生命周期。兄弟目标
+  保持变化隔离；测试 peer 既能提供 AU 级证据，也不冻结 Week 5 的产品接收契约。
+- 替代方案：扩展 Week 2 probe；让 transport 创建 source；让 source 直接持有 Track；在 Week 4
+  产品 endpoint 中加入 depacketize/viewer。它们分别混合学习探针、反转依赖、泄露协议对象或提前
+  扩大 Week 5 契约。
+- 影响：WebRTC 默认仍 OFF。ON 时新增 publisher client；CLI 只接受 publisher、sample、
+  offer/answer 和有界超时。关闭固定为 generation/回调失效、source join、sender join、Track/PC
+  关闭与一次有界 Cleanup。样本仅在忽略目录合成，不提交、不安装、不分发。
+- 验证证据：VS2026 Debug fresh OFF/ON 全目标构建与 CTest 39/39、43/43；两种 publisher 信令
+  角色经真实 Track 自然退出；测试 peer 验证首个可恢复 AU 含 SPS/PPS/IDR；容量溢出/等待 IDR、
+  generation、十轮关闭、MP4/BSF/pacing/停止/错误、CLI、层依赖、OFF 产物和输出脱敏门禁通过。
+- 相关文件：`CMakeLists.txt`、`include/common/webrtc_transport/`、`include/common/publisher/`、
+  `src/common/webrtc_transport/`、`src/common/publisher/`、`src/tools/WebRtcClientMain.cpp`、
+  `scripts/webrtc/qualify_week4.ps1`、`docs/versions/webrtc-v2/weeks/week04/`
+
 ## ADR-XXX 标题
 
 - 日期：

@@ -1,12 +1,13 @@
 # RtmpMonitor 当前项目快照
 
-> VS2026 Beta 基线提交与远端阻塞（2026-08-23）：VS2026 18.9.1/MSVC 19.51 下全新 Debug
-> WebRTC OFF/ON 构建和 CTest 分别 39/39、41/41 通过，ON/OFF `--version`、隐藏 GUI 精确 PID
-> 关闭、层依赖和残留检查通过。`setup_windows_dev.ps1` 已兼容 VS 安装目录内置 Ninja，`SelfTest`
-> 与真实 `Check` 通过。本地 `Beta` 已形成 `7233983`（Week 1～3 checkpoint）和 `4f355fa`
->（VS2026 toolchain）两笔提交。GitHub 实时查询和非强制推送仍被本机失效回环代理及直连 443
-> 不可达阻塞，`origin/Beta` 的远端实际状态待网络恢复后重新核实；为保持“基线先推送、再实施
-> Week 4”的顺序，Week 4 生产实现尚未开始。
+> WebRTC V2 Week 4 与 VS2026 Beta 状态（2026-08-23）：已使用本机代理 `127.0.0.1:7890`
+> 核实远端并将 `7233983`、`4f355fa`、`c04ff50` 非强制推送到 GitHub `Beta`。Week 4 已新增
+> 对称 `WebRtcEndpointSession`、固定 MP4 H.264 publisher source、无窗口 publisher client 和
+> 仅测试 ReceiveOnly peer；默认 WebRTC 仍为 OFF。VS2026 18.9.1/MSVC 19.51 fresh Debug OFF/ON
+> 构建与 CTest 分别 39/39、43/43 通过；publisher=Offerer/Answerer 都经真实 Track 发送并由测试
+> peer depacketize，首个可恢复 AU 含 SPS/PPS/IDR。队列容量/generation/等待 IDR、pacing、关闭、
+> CLI、PID/交换文件归零、层依赖、OFF 产物和敏感输出门禁通过。`W4-GATE` 为自动技术通过；
+> `W2-GATE` 人工复核仍待执行，viewer 出画、双机 LAN、公网、样本分发和 ARM 真机未完成。
 
 > WebRTC MiniLab 深度讲解与可复制代码重写（2026-08-23）：在不改动独立 MiniLab、根 CMake、
 > 产品源码、Week 2 probe 或 Week 3 媒体实现的前提下，六章指南已改用“浅红删除说明、浅黄新增
@@ -39,7 +40,8 @@
 > 新增 lifecycle 测试的一处观察者析构顺序缺陷由 MSVC AddressSanitizer 定位并修复，修复后连续
 > 5 轮 sanitizer 复验通过；当前 ON 产物的独立 Offer/Answer 双进程也再次连接成功且交换目录清零。
 > 没有可复现的未解决 Week 3 问题。
-> `W3-GATE` 为自动技术通过；`W2-GATE` 人工双控制台项仍待用户补充，Week 4 未开始。未提交、
+> `W3-GATE` 为自动技术通过；`W2-GATE` 人工双控制台项仍待用户补充。该阶段 Week 4 尚未开始，
+> 当前状态以本文首段为准。未提交、
 > 未推送、未打标签。
 
 > WebRTC V2 双客户端架构修订（2026-08-21）：经用户确认，Week 3～10 路线已改为同一
@@ -319,7 +321,7 @@ Windows+WSL2 侧的最小配置、生命周期脚本、URL/配置生成和只读
 ## 当前主要模块
 
 - 应用组合：`ApplicationOptions`、`ApplicationBootstrap`、`StreamConnectionController`、`ConnectionBindingRegistry`、`ConnectionEventReporter`、`StyleLoader`。
-- 播放与并发：`FFmpegPlayer` façade、`FfmpegInputSession`、私有 `StreamDecodeSession`、`MultiStreamPlaybackManager`、`DecodeWorkerPool`。
+- 播放与并发：`FFmpegPlayer` façade、`FfmpegInputSession`、media-owned `EncodedVideoDecodeSession`、`MultiStreamPlaybackManager`、`DecodeWorkerPool`。
 - 诊断：`RuntimeMetricsReporter` 组合媒体/渲染指标并原子输出 schema v4。
 - UI：`MainWindow`、`DeviceControlPanel`、`VirtualJoystickWidget`、`DeviceControlInputRouter`、`VideoGridWidget`、`MonitoringGridLayout`、`GridTransitionAnimator`、`VideoGridSceneBuilder`、`VideoWidget`、`FullscreenVideoWindow`、`FullscreenChromeController`、`FullscreenScreenshotService`、`VideoCanvasHost`、`CpuVideoCanvas`、`VideoOpenGLCanvas`（GL 可选编译）、`LogPanel`。
 - 视频帧与渲染：`VideoFrame`、`LatestFrameMailbox`、`VideoRenderController`、`OpenGLGridRenderer`（仅 `RTMP_MONITOR_HAS_OPENGL=1` 时编译）、`EmbeddedGlCapabilities`；旧 `VideoRenderWidget` 仅保留为历史 RGB 原型冒烟。

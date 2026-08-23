@@ -30,6 +30,14 @@ file(GLOB_RECURSE h264_contract_files
     "${PROJECT_SOURCE_DIR}/include/common/h264/*.h")
 file(GLOB_RECURSE webrtc_contract_files
     "${PROJECT_SOURCE_DIR}/include/common/webrtc_contracts/*.h")
+file(GLOB_RECURSE webrtc_transport_files
+    "${PROJECT_SOURCE_DIR}/include/common/webrtc_transport/*.h"
+    "${PROJECT_SOURCE_DIR}/src/common/webrtc_transport/*.h"
+    "${PROJECT_SOURCE_DIR}/src/common/webrtc_transport/*.cpp")
+file(GLOB_RECURSE publisher_files
+    "${PROJECT_SOURCE_DIR}/include/common/publisher/*.h"
+    "${PROJECT_SOURCE_DIR}/src/common/publisher/*.h"
+    "${PROJECT_SOURCE_DIR}/src/common/publisher/*.cpp")
 
 foreach(source_file IN LISTS media_files)
     file(READ "${source_file}" source_text)
@@ -118,5 +126,21 @@ foreach(source_file IN LISTS h264_contract_files webrtc_contract_files)
     if(source_text MATCHES "#[ \t]*include[ \t]*[<\"](app|control_policy|device_control|diagnostics|evidence|event_center|logging|media|profiles|render|server|ui|webrtc_dev)/")
         message(FATAL_ERROR
             "low-level realtime contract depends on an outer layer: ${source_file}")
+    endif()
+endforeach()
+
+foreach(source_file IN LISTS webrtc_transport_files)
+    file(READ "${source_file}" source_text)
+    if(source_text MATCHES "#[ \t]*include[ \t]*[<\"](app|device_control|diagnostics|evidence|event_center|logging|media|profiles|publisher|render|server|ui|webrtc_dev)/")
+        message(FATAL_ERROR
+            "WebRTC transport depends on a source or product layer: ${source_file}")
+    endif()
+endforeach()
+
+foreach(source_file IN LISTS publisher_files)
+    file(READ "${source_file}" source_text)
+    if(source_text MATCHES "#[ \t]*include[ \t]*[<\"](app|device_control|diagnostics|evidence|event_center|logging|media|profiles|render|server|ui|webrtc_contracts|webrtc_dev|webrtc_transport)/")
+        message(FATAL_ERROR
+            "publisher source depends on transport or a product layer: ${source_file}")
     endif()
 endforeach()

@@ -2,8 +2,9 @@
 
 本目录对应计划版本 `0.2.0-beta.1`。当前采用“双客户端优先”路线：同一测试客户端未来可分别运行
 publisher/viewer，并独立选择 Offerer/Answerer。Week 2 已完成默认关闭的开发者信令与回环基础，
-Week 3 已完成协议无关 H.264 契约、外部解码入口和 RTMP 兼容；WebRTC Track、P2P H.264 收发、
-跨公网和 ARM 真机均未实现或验证。RTMP `0.1.0-alpha.1` 仍是稳定路径。
+Week 3 已完成协议无关 H.264 契约、外部解码入口和 RTMP 兼容；Week 4 已完成对称 endpoint、固定
+MP4 publisher 和 SendOnly H.264 Track 的自动技术门禁。viewer 出画、双机 LAN、跨公网和 ARM
+真机均未实现或验证。RTMP `0.1.0-alpha.1` 仍是稳定路径。
 
 ## 总计划
 
@@ -84,8 +85,10 @@ Track、RTP/H.264 收发、双客户端视频、LAN 和公网能力仍不在教�
 
 Week 2 已有自动技术结果，但 `W2-GATE` 仍等待用户双控制台人工复核；用户随后明确授权先完成
 Week 3，其自动技术门禁已通过，实际结果见 [Week 3 summary](weeks/week03/summary.md) 与
-[test results](weeks/week03/test_results.md)。Week 1 学习状态保持未开始，Week 4 未启动。其他周
-只有实际完成相应任务后才写入结果；大型日志、会话包、SDP/candidate 和二进制制品不进入 Git。
+[test results](weeks/week03/test_results.md)。Week 4 的自动技术结果见
+[summary](weeks/week04/summary.md) 与 [test results](weeks/week04/test_results.md)。Week 1 学习状态
+保持未开始；其他周只有实际完成相应任务后才写入结果。大型日志、会话包、SDP/candidate 和二进制
+制品不进入 Git。
 
 ## 安全提醒
 

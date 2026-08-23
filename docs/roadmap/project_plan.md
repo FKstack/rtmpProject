@@ -11,8 +11,9 @@
 > [十周研发总计划](webrtc_v2_project_plan.md)：未来由同一测试客户端分别运行 publisher/viewer，
 > Offerer/Answerer 与媒体方向正交；transport、publisher source 和 media 通过低层 H.264 契约在
 > 组合根协作，不提前创建 MediaSource、P2P 保存档案或 schema v2。Week 2 默认关闭的开发者基础
-> 与 Week 3 H.264 契约/外部解码入口已完成自动验证，但 RTMP 仍是唯一稳定产品路径；
-> `W1-GATE` 未开始，`W2-GATE` 等待人工复核，WebRTC Track 与 Week 4 尚未开始。
+> 与 Week 3 H.264 契约/外部解码入口已完成自动验证；Week 4 对称 endpoint、MP4 publisher 和
+> SendOnly Track 已通过自动技术门禁，但 RTMP 仍是唯一稳定产品路径；`W1-GATE` 未开始，
+> `W2-GATE` 等待人工复核，viewer 出画、双机 LAN 与公网均未完成。
 
 ## 目录
 

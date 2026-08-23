@@ -9,7 +9,8 @@
 | --- | --- |
 | `week01/`～`week02/` | M0 学习、环境和手工信令基线 |
 | `week03/` | H.264 契约、解码入口与 RTMP 兼容 |
-| `week04/`～`week05/` | 同一客户端 publisher/viewer 与双 Offer 角色 PoC |
+| `week04/` | 对称 endpoint、固定 MP4 publisher 与双 Offer 角色 |
+| `week05/` | 同一客户端 viewer 与媒体回环 |
 | `week06/`～`week07/` | 社团 LAN 包与跨公网 Direct/Needs Relay |
 | `week08/` | 正式客户端一次性接收、状态和安全集成 |
 | `week09/`～`week10/` | 摄像头、多路、故障、性能和 Beta 资格 |
@@ -21,7 +22,8 @@
 - `known_issues.md`：只在存在可复现且未解决的问题时创建。
 
 尚无正式结果的目录仅用 `.gitkeep` 保持结构；出现第一份正式结果后删除对应 `.gitkeep`。Week 2
-已有自动结果且人工门禁仍待补；Week 3 已有契约/解码入口的 summary/test results 和自动技术门禁。
+已有自动结果且人工门禁仍待补；Week 3 已有契约/解码入口结果；Week 4 已有 publisher/session、
+自动测试和资产边界结果。
 
 ## 禁止提交
 

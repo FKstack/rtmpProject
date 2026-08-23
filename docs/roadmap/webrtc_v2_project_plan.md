@@ -1,9 +1,9 @@
 # RtmpMonitor 0.2.0-beta.1 WebRTC 双客户端优先研发总计划
 
-> 文档状态：经确认的 R3 架构路线；Week 2 开发者技术基础与 Week 3 H.264/解码边界已实施，
-> 产品 WebRTC Track 与双客户端媒体路径仍未开始。
+> 文档状态：经确认的 R3 总路线；Week 2 开发者基础、Week 3 H.264/解码边界和 Week 4
+> MP4 publisher/对称 endpoint 已实施。`W2-GATE` 人工复核仍待执行。
 >
-> 当前稳定能力仍是 `0.1.0-alpha.1` RTMP 路径。本文中的 Week 4～10 类型、模块、CLI、
+> 当前稳定能力仍是 `0.1.0-alpha.1` RTMP 路径。本文中的 Week 5～10 类型、模块、CLI、
 > 性能指标和交付物均为待实现目标，不能作为 WebRTC 已交付、已部署或已通过 ARM 真机验证的证据。
 
 ## 1. 决策摘要
@@ -294,21 +294,24 @@ Week 3 的先行实施依据上方明确授权单独记录，不反推 W2 人工
 
 ### Week 4：对称 endpoint session 与 MP4 publisher
 
-| ID | h | 前置 | 单一输出与验收 | 失败/停线 |
-| --- | ---: | --- | --- | --- |
-| W4-ARC-01 | 3 | W3-GATE | session/source/test-client 目标与依赖冻结 | transport 创建 source/UI 即停止 |
-| W4-SES-01 | 3 | W4-ARC-01,W3-CON-02 | 两种信令角色×两种媒体方向的合法配置表 | 固定 publisher=Offerer 即失败 |
-| W4-SES-02 | 4 | W4-SES-01 | `WebRtcEndpointSession` 唯一拥有 PC/Track/generation | 多 owner 或全局 PC 即失败 |
-| W4-SES-03 | 4 | W4-SES-02 | 弱状态、有界回调和控制线程投递 | 裸 this、回调访问 UI 即停止 |
-| W4-SES-04 | 4 | W4-SES-03 | closing→generation→callback invalidation→close | 关闭顺序倒置或死锁即失败 |
-| W4-PUB-01 | 3 | W4-ARC-01 | 固定 MP4 的许可、编码属性和分发阻塞记录 | 未知许可样本不得进入测试包 |
-| W4-PUB-02 | 4 | W4-PUB-01,W3-CON-01 | MP4 H.264 demux、AVCC→Annex-B 与 SPS/PPS/IDR 输出 | 无界 AU 或错误格式即失败 |
-| W4-PUB-03 | 4 | W4-PUB-02 | 基于媒体时间和单调时钟的可中断 pacing | 固定 sleep 累积漂移即失败 |
-| W4-PUB-04 | 3 | W4-PUB-03,W3-CON-03 | 有界发送入口、超限策略和关键帧恢复 | source 阻塞 libdatachannel 回调即失败 |
-| W4-CLI-01 | 4 | W4-SES-04,W4-PUB-04 | 同一 `rtmp_monitor_webrtc_client` 的 publisher shell | 新建独立 publisher executable 即失败 |
-| W4-TST-01 | 4 | W4-CLI-01 | sender/offer 与 sender/answer、停止和错误测试 | 只覆盖固定 Offerer 即失败 |
-| W4-DOC-01 | 2 | W4-TST-01 | MP4 publisher 结果和资产边界 | 未分发样本写成可复现即失败 |
-| W4-GATE | 3 | W4-TST-01,W4-DOC-01 | publisher/session 门禁 | 未证明角色正交或幂等关闭不得进入 Week 5 |
+| ID | 状态 | h | 前置 | 单一输出与验收 | 失败/停线 |
+| --- | --- | ---: | --- | --- | --- |
+| W4-ARC-01 | 通过 | 3 | W3-GATE | session/source/test-client 目标与依赖冻结 | transport 创建 source/UI 即停止 |
+| W4-SES-01 | 通过 | 3 | W4-ARC-01,W3-CON-02 | 两种信令角色×两种媒体方向的合法配置表 | 固定 publisher=Offerer 即失败 |
+| W4-SES-02 | 通过 | 4 | W4-SES-01 | `WebRtcEndpointSession` 唯一拥有 PC/Track/generation | 多 owner 或全局 PC 即失败 |
+| W4-SES-03 | 通过 | 4 | W4-SES-02 | 弱状态、有界回调和控制线程投递 | 裸 this、回调访问 UI 即停止 |
+| W4-SES-04 | 通过 | 4 | W4-SES-03 | closing→generation→callback invalidation→close | 关闭顺序倒置或死锁即失败 |
+| W4-PUB-01 | 通过 | 3 | W4-ARC-01 | 固定 MP4 的许可、编码属性和分发阻塞记录 | 未知许可样本不得进入测试包 |
+| W4-PUB-02 | 通过 | 4 | W4-PUB-01,W3-CON-01 | MP4 H.264 demux、AVCC→Annex-B 与 SPS/PPS/IDR 输出 | 无界 AU 或错误格式即失败 |
+| W4-PUB-03 | 通过 | 4 | W4-PUB-02 | 基于媒体时间和单调时钟的可中断 pacing | 固定 sleep 累积漂移即失败 |
+| W4-PUB-04 | 通过 | 3 | W4-PUB-03,W3-CON-03 | 有界发送入口、超限策略和关键帧恢复 | source 阻塞 libdatachannel 回调即失败 |
+| W4-CLI-01 | 通过 | 4 | W4-SES-04,W4-PUB-04 | 同一 `rtmp_monitor_webrtc_client` 的 publisher shell | 新建独立 publisher executable 即失败 |
+| W4-TST-01 | 通过 | 4 | W4-CLI-01 | sender/offer 与 sender/answer、停止和错误测试 | 只覆盖固定 Offerer 即失败 |
+| W4-DOC-01 | 通过 | 2 | W4-TST-01 | MP4 publisher 结果和资产边界 | 未分发样本写成可复现即失败 |
+| W4-GATE | **通过（自动技术门禁）** | 3 | W4-TST-01,W4-DOC-01 | publisher/session 门禁 | 未证明角色正交或幂等关闭不得进入 Week 5 |
+
+实际边界和脱敏证据见 `../versions/webrtc-v2/weeks/week04/`。该门禁证明本机 publisher、Track、
+首个可恢复 H.264 AU 和资源清理；不证明 viewer 出画、双机 LAN、公网或分发样本完成。
 
 ### Week 5：同一客户端 viewer 与双角色媒体回环
 
