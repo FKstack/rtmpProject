@@ -206,6 +206,64 @@ function Invoke-PortableTopology {
     }
 }
 
+function Invoke-PortableCliChecks {
+    param([Parameter(Mandatory = $true)][string]$PackageRoot)
+    $client = Join-Path $PackageRoot 'rtmp_monitor_webrtc_client.exe'
+    $previous = $env:QT_QPA_PLATFORM
+    $env:QT_QPA_PLATFORM = 'offscreen'
+    try {
+        $help = & $client --help 2>&1 | Out-String
+        if ($LASTEXITCODE -ne 0 -or
+            $help -notmatch 'WebRTC V2 publisher/viewer test client') {
+            throw 'Portable client help check failed.'
+        }
+        $invalid = & $client --media-role viewer --signaling-role offer `
+            --source sample --timeout-ms 1000 2>&1 | Out-String
+        if ($LASTEXITCODE -eq 0 -or $invalid -notmatch 'invalid_arguments') {
+            throw 'Portable client invalid-argument check failed.'
+        }
+    } finally {
+        if ($null -eq $previous) {
+            Remove-Item Env:QT_QPA_PLATFORM -ErrorAction SilentlyContinue
+        } else { $env:QT_QPA_PLATFORM = $previous }
+    }
+}
+
+function Assert-PortablePackageClean {
+    param([Parameter(Mandatory = $true)][string]$PackageRoot)
+    $files = @(Get-ChildItem -LiteralPath $PackageRoot -Recurse -File)
+    $forbiddenExtensions = @('.pdb','.lib','.exp','.obj','.cpp','.c','.h','.hpp')
+    $forbidden = @($files | Where-Object {
+        $_.Extension.ToLowerInvariant() -in $forbiddenExtensions -or
+        $_.Name -in @('CMakeCache.txt','qualification-state.json') -or
+        $_.Name -match '\.(offer|answer)\.json$'
+    })
+    if ($forbidden.Count -ne 0) {
+        throw "Portable package contains forbidden artifacts: $($forbidden.Name -join ', ')"
+    }
+    foreach ($name in @('logs','results','session-exchange')) {
+        $runtimeDirectories = @(Get-ChildItem -LiteralPath $PackageRoot -Recurse `
+            -Directory -ErrorAction SilentlyContinue | Where-Object {
+                $_.Name -eq $name -and
+                @(Get-ChildItem -LiteralPath $_.FullName -Force `
+                    -ErrorAction SilentlyContinue).Count -ne 0
+            })
+        if ($runtimeDirectories.Count -ne 0) {
+            throw "Portable package contains non-empty runtime directory: $name"
+        }
+    }
+    $textFiles = @($files | Where-Object {
+        $_.Extension.ToLowerInvariant() -in @('.json','.md','.ps1','.psm1','.txt')
+    })
+    foreach ($file in $textFiles) {
+        $text = Get-Content -LiteralPath $file.FullName -Raw
+        if ($text -match '(?i)[A-Z]:\\Users\\[^\\\s]+' -or
+            $text -match '(?i)[A-Z]:\\rtmpProject') {
+            throw "Portable package leaks a development-machine path: $($file.Name)"
+        }
+    }
+}
+
 function Invoke-DocChecks {
     $week = Join-Path $script:SourceRoot 'docs\versions\webrtc-v2\weeks\week06'
     foreach ($file in @('summary.md','testing_guide.md','test_results.md')) {
@@ -285,12 +343,24 @@ function Invoke-Run {
     $stage = Get-ChildItem -LiteralPath $script:PackageRoot -Directory |
         Sort-Object LastWriteTime -Descending | Select-Object -First 1
     if (-not $stage) { throw 'Week 6 staged package was not found.' }
+    $zip = Get-ChildItem -LiteralPath $script:PackageRoot -Filter '*.zip' -File |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if (-not $zip) { throw 'Week 6 ZIP package was not found.' }
+    $expanded = Join-Path $script:RuntimeRoot 'zip-expanded'
+    if (Test-Path -LiteralPath $expanded) {
+        Remove-Item -LiteralPath $expanded -Recurse -Force
+    }
+    Expand-Archive -LiteralPath $zip.FullName -DestinationPath $expanded
+    Assert-PortablePackageClean -PackageRoot $expanded
+    Invoke-PortableCliChecks -PackageRoot $expanded
+    & (Join-Path $expanded 'week6_lan_test.ps1') -Action Check
+    & (Join-Path $expanded 'week6_lan_test.ps1') -Action SelfTest
     $copyRoot = Join-Path $script:RuntimeRoot 'portable-copies'
     New-Item -ItemType Directory -Force -Path $copyRoot | Out-Null
     $a = Join-Path $copyRoot 'package-a'; $b = Join-Path $copyRoot 'package-b'
     foreach ($path in @($a,$b)) {
         if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force }
-        Copy-Item -LiteralPath $stage.FullName -Destination $path -Recurse
+        Copy-Item -LiteralPath $expanded -Destination $path -Recurse
     }
     $results = [System.Collections.Generic.List[object]]::new()
     foreach ($round in 1..$RoundsPerTopology) {
@@ -318,7 +388,8 @@ switch ($Action) {
             -File -Recurse | ForEach-Object {
                 Get-Content -LiteralPath $_.FullName -Raw | ConvertFrom-Json
             })
-        if (-not (Test-Week6LanReportSet -Reports $reports)) {
+        if ($reports.Count -eq 0 -or
+            -not (Test-Week6LanReportSet -Reports $reports)) {
             throw 'W6-GATE is blocked: four valid dual-PC reports were not found.'
         }
         Write-Host 'W6-GATE passed from four dual-PC host/host UDP reports.'
