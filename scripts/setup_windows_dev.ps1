@@ -86,7 +86,7 @@ function Find-VsDevCmd {
         }
     }
 
-    throw 'Visual Studio 2022 C++ tools were not found. Install the Desktop development with C++ workload or pass -VsDevCmd.'
+    throw 'Visual Studio C++ tools were not found. Install the Desktop development with C++ workload or pass -VsDevCmd.'
 }
 
 function Get-DeveloperEnvironment {
@@ -115,7 +115,8 @@ function Get-DeveloperEnvironment {
 function Find-ExecutableInEnvironment {
     param(
         [Parameter(Mandatory = $true)][string]$Name,
-        [Parameter(Mandatory = $true)]$Environment
+        [Parameter(Mandatory = $true)]$Environment,
+        [switch]$AllowMissing
     )
 
     foreach ($directory in @($Environment['Path'] -split ';')) {
@@ -127,7 +128,54 @@ function Find-ExecutableInEnvironment {
             return (Resolve-FullPath -Path $candidate)
         }
     }
+    if ($AllowMissing) {
+        return $null
+    }
     throw "Required command was not found in the Visual Studio environment: $Name"
+}
+
+function Get-VisualStudioInstallationRoot {
+    param([Parameter(Mandatory = $true)][string]$BatchPath)
+
+    $toolsDirectory = Split-Path -Parent (Resolve-FullPath -Path $BatchPath)
+    $common7Directory = Split-Path -Parent $toolsDirectory
+    return (Resolve-FullPath -Path (Split-Path -Parent $common7Directory))
+}
+
+function Find-VisualStudioBundledExecutable {
+    param(
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)]$Environment,
+        [Parameter(Mandatory = $true)][string]$BatchPath
+    )
+
+    $fromPath = Find-ExecutableInEnvironment -Name $Name `
+        -Environment $Environment -AllowMissing
+    if (-not [string]::IsNullOrWhiteSpace($fromPath)) {
+        return $fromPath
+    }
+
+    $installationRoot = Get-VisualStudioInstallationRoot -BatchPath $BatchPath
+    $relativeCandidates = switch ($Name.ToLowerInvariant()) {
+        'cmake.exe' {
+            'Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe'
+        }
+        'ctest.exe' {
+            'Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\ctest.exe'
+        }
+        'ninja.exe' {
+            'Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe'
+        }
+        default { @() }
+    }
+    foreach ($relativePath in @($relativeCandidates)) {
+        $candidate = Join-Path $installationRoot $relativePath
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+            return (Resolve-FullPath -Path $candidate)
+        }
+    }
+
+    throw "Required command was not found in the Visual Studio environment or installation: $Name"
 }
 
 function ConvertTo-NativeArgument {
@@ -296,6 +344,34 @@ function Invoke-SelfTest {
             throw 'System-drive path policy self-test failed.'
         }
     }
+
+    $selfTestRoot = Join-Path ([System.IO.Path]::GetTempPath()) `
+        ("rtmp-monitor-vs-tool-self-test-{0}" -f [Guid]::NewGuid().ToString('N'))
+    try {
+        $fakeVsDevCmd = Join-Path $selfTestRoot 'Common7\Tools\VsDevCmd.bat'
+        $fakeNinja = Join-Path $selfTestRoot `
+            'Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe'
+        [void](New-Item -ItemType Directory -Force `
+            -Path (Split-Path -Parent $fakeVsDevCmd))
+        [void](New-Item -ItemType Directory -Force `
+            -Path (Split-Path -Parent $fakeNinja))
+        [void](New-Item -ItemType File -Force -Path $fakeVsDevCmd)
+        [void](New-Item -ItemType File -Force -Path $fakeNinja)
+
+        $emptyEnvironment = [System.Collections.Generic.Dictionary[string,string]]::new(
+            [System.StringComparer]::OrdinalIgnoreCase)
+        $emptyEnvironment['Path'] = ''
+        $resolvedNinja = Find-VisualStudioBundledExecutable `
+            -Name 'ninja.exe' -Environment $emptyEnvironment `
+            -BatchPath $fakeVsDevCmd
+        if ($resolvedNinja -ne (Resolve-FullPath -Path $fakeNinja)) {
+            throw 'Visual Studio bundled Ninja fallback self-test failed.'
+        }
+    } finally {
+        if (Test-Path -LiteralPath $selfTestRoot) {
+            Remove-Item -LiteralPath $selfTestRoot -Recurse -Force
+        }
+    }
     Write-Host 'Windows development setup self-test passed.'
 }
 
@@ -356,9 +432,12 @@ New-Item -ItemType Directory -Path $ResolvedTemporaryRoot -Force | Out-Null
 $resolvedVsDevCmd = Find-VsDevCmd
 $developerEnvironment = Get-DeveloperEnvironment -BatchPath $resolvedVsDevCmd
 $cleanEnvironment = New-CleanEnvironment -DeveloperEnvironment $developerEnvironment
-$cmake = Find-ExecutableInEnvironment -Name 'cmake.exe' -Environment $cleanEnvironment
-$ctest = Join-Path (Split-Path -Parent $cmake) 'ctest.exe'
-$ninja = Find-ExecutableInEnvironment -Name 'ninja.exe' -Environment $cleanEnvironment
+$cmake = Find-VisualStudioBundledExecutable -Name 'cmake.exe' `
+    -Environment $cleanEnvironment -BatchPath $resolvedVsDevCmd
+$ctest = Find-VisualStudioBundledExecutable -Name 'ctest.exe' `
+    -Environment $cleanEnvironment -BatchPath $resolvedVsDevCmd
+$ninja = Find-VisualStudioBundledExecutable -Name 'ninja.exe' `
+    -Environment $cleanEnvironment -BatchPath $resolvedVsDevCmd
 $cl = Find-ExecutableInEnvironment -Name 'cl.exe' -Environment $cleanEnvironment
 
 Write-Host "MSVC: $((Get-Item -LiteralPath $cl).VersionInfo.FileVersion)"
