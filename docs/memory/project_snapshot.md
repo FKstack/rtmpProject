@@ -1,5 +1,13 @@
 # RtmpMonitor 当前项目快照
 
+> VS2026 Beta 基线提交与远端阻塞（2026-08-23）：VS2026 18.9.1/MSVC 19.51 下全新 Debug
+> WebRTC OFF/ON 构建和 CTest 分别 39/39、41/41 通过，ON/OFF `--version`、隐藏 GUI 精确 PID
+> 关闭、层依赖和残留检查通过。`setup_windows_dev.ps1` 已兼容 VS 安装目录内置 Ninja，`SelfTest`
+> 与真实 `Check` 通过。本地 `Beta` 已形成 `7233983`（Week 1～3 checkpoint）和 `4f355fa`
+>（VS2026 toolchain）两笔提交。GitHub 实时查询和非强制推送仍被本机失效回环代理及直连 443
+> 不可达阻塞，`origin/Beta` 的远端实际状态待网络恢复后重新核实；为保持“基线先推送、再实施
+> Week 4”的顺序，Week 4 生产实现尚未开始。
+
 > WebRTC MiniLab 深度讲解与可复制代码重写（2026-08-23）：在不改动独立 MiniLab、根 CMake、
 > 产品源码、Week 2 probe 或 Week 3 媒体实现的前提下，六章指南已改用“浅红删除说明、浅黄新增
 > 说明、无变更标记复制块”；每个函数级代码单元紧随 API、参数、返回值、线程、所有权、失败方式、
