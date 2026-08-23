@@ -12,6 +12,25 @@ function Assert-QualificationConcretePath {
     return $Value
 }
 
+function Get-QualificationRuntimePath {
+    param(
+        [Parameter(Mandatory = $true)][string]$QtRoot,
+        [Parameter(Mandatory = $true)][string]$VcpkgRoot,
+        [ValidateSet('Debug','Release')][string]$Configuration
+    )
+    $vcpkgBin = if ($Configuration -eq 'Debug') {
+        Join-Path $VcpkgRoot 'installed\x64-windows\debug\bin'
+    } else {
+        Join-Path $VcpkgRoot 'installed\x64-windows\bin'
+    }
+    return @(
+        (Join-Path $QtRoot 'bin'),
+        $vcpkgBin,
+        (Join-Path $env:SystemRoot 'System32'),
+        $env:SystemRoot
+    ) -join ';'
+}
+
 function Assert-QualificationPathUnderRoot {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
@@ -284,6 +303,7 @@ function New-QualificationH264Fixtures {
 
 Export-ModuleMember -Function @(
     'Assert-QualificationConcretePath',
+    'Get-QualificationRuntimePath',
     'Assert-QualificationPathUnderRoot',
     'Invoke-QualificationNative',
     'Resolve-QualificationTools',

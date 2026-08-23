@@ -110,11 +110,14 @@ function Invoke-BuildMatrix {
             '--parallel', '4'
         )
 
+        $previousPath = $env:Path
         $previousSample = $env:RTMP_MONITOR_WEEK4_SAMPLE
         $previousAudioOnly = $env:RTMP_MONITOR_WEEK4_AUDIO_ONLY
         $previousNonH264 = $env:RTMP_MONITOR_WEEK4_NON_H264
         $previousBFrames = $env:RTMP_MONITOR_WEEK4_B_FRAMES
         try {
+            $env:Path = Get-QualificationRuntimePath -QtRoot $QtRoot `
+                -VcpkgRoot $VcpkgRoot -Configuration $Configuration
             if ($mode -eq 'on') {
                 $env:RTMP_MONITOR_WEEK4_SAMPLE = $script:AssetPath
                 $env:RTMP_MONITOR_WEEK4_AUDIO_ONLY = $script:AudioOnlyPath
@@ -158,6 +161,7 @@ function Invoke-BuildMatrix {
                 throw 'WebRTC OFF dependency test is missing.'
             }
         } finally {
+            $env:Path = $previousPath
             $restore = @{
                 RTMP_MONITOR_WEEK4_SAMPLE = $previousSample
                 RTMP_MONITOR_WEEK4_AUDIO_ONLY = $previousAudioOnly

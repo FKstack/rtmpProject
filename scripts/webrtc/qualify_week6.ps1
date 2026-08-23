@@ -59,11 +59,14 @@ function Invoke-Week6ConfigureBuildTest {
     Invoke-QualificationNative -FilePath $Tools.CMake -Arguments @(
         '--build',$directory,'--config',$Configuration,'--parallel','4')
     $previous = @{}
+    $previousPath = $env:Path
     foreach ($name in @('RTMP_MONITOR_WEEK4_SAMPLE','RTMP_MONITOR_WEEK4_AUDIO_ONLY',
             'RTMP_MONITOR_WEEK4_NON_H264','RTMP_MONITOR_WEEK4_B_FRAMES')) {
         $previous[$name] = [Environment]::GetEnvironmentVariable($name,'Process')
     }
     try {
+        $env:Path = Get-QualificationRuntimePath -QtRoot $QtRoot `
+            -VcpkgRoot $VcpkgRoot -Configuration $Configuration
         if ($WebRtc) {
             $env:RTMP_MONITOR_WEEK4_SAMPLE = $script:AssetPath
             $env:RTMP_MONITOR_WEEK4_AUDIO_ONLY = Join-Path $script:RuntimeRoot 'fixtures\audio-only.mp4'
@@ -89,6 +92,7 @@ function Invoke-Week6ConfigureBuildTest {
         $count = [regex]::Match($listing,'Total Tests:\s+(\d+)').Groups[1].Value
         return [int]$count
     } finally {
+        $env:Path = $previousPath
         foreach ($name in $previous.Keys) {
             if ($null -eq $previous[$name]) {
                 Remove-Item "Env:$name" -ErrorAction SilentlyContinue
