@@ -214,11 +214,15 @@ function Stop-QualificationOwnedProcesses {
             -ErrorAction SilentlyContinue
         if (-not $process) { continue }
         $process.Refresh()
-        $expectedStart = [DateTime]::Parse(
-            [string]$record.startTimeUtc,
-            [Globalization.CultureInfo]::InvariantCulture,
-            [Globalization.DateTimeStyles]::RoundtripKind
-        ).ToUniversalTime()
+        $expectedStart = if ($record.startTimeUtc -is [DateTime]) {
+            ([DateTime]$record.startTimeUtc).ToUniversalTime()
+        } else {
+            [DateTime]::Parse(
+                [string]$record.startTimeUtc,
+                [Globalization.CultureInfo]::InvariantCulture,
+                [Globalization.DateTimeStyles]::RoundtripKind
+            ).ToUniversalTime()
+        }
         $actualStart = $process.StartTime.ToUniversalTime()
         if ($process.Path -ine [string]$record.path -or
             [Math]::Abs(($actualStart - $expectedStart).TotalSeconds) -gt 1) {

@@ -54,9 +54,9 @@ function Invoke-ConfigureBuildTest {
         "-DCMAKE_PREFIX_PATH=$QtRoot",
         "-DCMAKE_TOOLCHAIN_FILE=$(Join-Path $VcpkgRoot 'scripts\buildsystems\vcpkg.cmake')",
         '-DVCPKG_TARGET_TRIPLET=x64-windows','-DBUILD_TESTING=ON',
-        "-DRTMP_MONITOR_ENABLE_WEBRTC=$enabled")
+        "-DRTMP_MONITOR_ENABLE_WEBRTC=$enabled") | Out-Host
     Invoke-QualificationNative -FilePath $Tools.CMake -Arguments @(
-        '--build',$directory,'--config',$Configuration,'--parallel','4')
+        '--build',$directory,'--config',$Configuration,'--parallel','4') | Out-Host
     $previousPath = $env:Path
     try {
         $env:Path = Get-QualificationRuntimePath -QtRoot $QtRoot `
@@ -66,7 +66,8 @@ function Invoke-ConfigureBuildTest {
         $env:RTMP_MONITOR_WEEK4_NON_H264 = Join-Path $script:RuntimeRoot 'fixtures\non-h264.mp4'
         $env:RTMP_MONITOR_WEEK4_B_FRAMES = Join-Path $script:RuntimeRoot 'fixtures\h264-bframes.mp4'
         Invoke-QualificationNative -FilePath $Tools.CTest -Arguments @(
-            '--test-dir',$directory,'-C',$Configuration,'--output-on-failure')
+            '--test-dir',$directory,'-C',$Configuration,'--output-on-failure') |
+            Out-Host
         $listing = & $Tools.CTest --test-dir $directory -C $Configuration -N `
             2>&1 | Out-String
         if ($LASTEXITCODE -ne 0) { throw "CTest listing failed: $Name" }
