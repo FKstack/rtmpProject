@@ -1,5 +1,23 @@
 # RtmpMonitor 当前项目快照
 
+> WebRTC V2 Week 8 正式客户端一次性接收（2026-08-25）：本地 `Beta` 功能提交
+> `749a229` 已完成默认 OFF、显式 ON 的产品入口。新增 product 组合层和 runtime 会话层；组合层唯一
+> 装配 ReceiveOnly transport、既有外部 H.264 media ingress、capacity-1 mailbox 与 `VideoWidget`，
+> runtime 只拥有一个可取消 endpoint、受管 Offer/Answer 文件交换和 worker。请求是纯运行期值，
+> 不进入 profiles/schema，不保存 Peer/设备/ICE，不授权设备控制，也不静默回退 RTMP。`Direct` 必须
+> 同时看到 Connected、非 relay selected pair 和 1,000 ms 内实际呈现帧；明确的 ICE Failed + srflx
+> 才分类为 `NeedsRelay`。关闭顺序为失效 session token、停止轮询、请求 endpoint 关闭、join worker、
+> 关闭媒体 generation、移除流/画面，应用结束时再执行一次全局 WebRTC cleanup。
+
+> Week 8 最终验证（2026-08-25）：VS2026 fresh-ish Debug WebRTC OFF、Debug ON、Release ON 全目标
+> 构建与 CTest 分别 39/39（125.20 秒）、47/47（196.46 秒）、47/47（167.05 秒）。新增产品集成测试
+> 用两个真实 PeerConnection 覆盖接收端 Answerer/Offerer、真实 H.264 RTP→Annex-B→FFmpeg→mailbox→
+> CPU canvas、Direct、呈现超时中断、恢复、取消、动作恢复、无控制和无 RTMP fallback；单项最终
+> Debug/Release 分别 3.32/3.23 秒。`W8-GATE` 的本地研发门禁通过；真实双机 LAN/公网、可视人工
+> 操作和 ARM 资格仍明确未执行。Week 8 总结、测试指南、结果和七张 SVG 已写入
+> `docs/versions/webrtc-v2/weeks/week08/`。实际架构风险为 R2；计划中的 R3 是实施前估计，本次没有
+> 新增反向依赖、schema 或外部公共契约，因此未触发 R3 停止条件。
+
 > WebRTC V2 Week 7 双机人工测试文档补充（2026-08-24）：新增面向 KUNLUN 远程公司电脑的
 > 手把手双电脑公网测试手册，明确“资格 runner 强制 offscreen、可视观感必须直接运行客户端”的
 > 真实行为；完整覆盖 ZIP 文件传输、两端展开/packageId 核对、授权 STUN 交互配置、staging 原子
