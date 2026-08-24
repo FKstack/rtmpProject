@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="460" viewBox="0 0 1200 460">
+  <rect width="1200" height="460" fill="#0f172a"/><text x="55" y="55" fill="#f8fafc" font-size="28">STUN 不是媒体 Relay</text>
+  <circle cx="220" cy="225" r="95" fill="#17304d" stroke="#60a5fa" stroke-width="3"/><text x="220" y="215" text-anchor="middle" fill="#fff" font-size="22">Peer A</text><text x="220" y="248" text-anchor="middle" fill="#bfdbfe" font-size="17">收集 host / srflx</text>
+  <circle cx="980" cy="225" r="95" fill="#17304d" stroke="#60a5fa" stroke-width="3"/><text x="980" y="215" text-anchor="middle" fill="#fff" font-size="22">Peer B</text><text x="980" y="248" text-anchor="middle" fill="#bfdbfe" font-size="17">收集 host / srflx</text>
+  <rect x="480" y="95" width="240" height="100" rx="15" fill="#3b3320" stroke="#fbbf24" stroke-width="3"/><text x="600" y="135" text-anchor="middle" fill="#fef3c7" font-size="22">STUN</text><text x="600" y="167" text-anchor="middle" fill="#fff" font-size="17">只帮助观察映射地址</text>
+  <path d="M310 195Q390 115 480 145" fill="none" stroke="#fbbf24" stroke-width="4"/><path d="M720 145Q810 115 890 195" fill="none" stroke="#fbbf24" stroke-width="4"/><path d="M315 260H885" stroke="#34d399" stroke-width="7"/><text x="600" y="300" text-anchor="middle" fill="#a7f3d0" font-size="20">媒体仍直接在两个 Peer 之间传输</text>
+  <rect x="455" y="345" width="290" height="70" rx="12" fill="#3b1d2b" stroke="#fb7185" stroke-width="2"/><text x="600" y="388" text-anchor="middle" fill="#fecdd3" font-size="19">Week 7 不实现 TURN allocation</text>
+</svg>

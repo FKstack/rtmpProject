@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420">
+  <rect width="1200" height="420" fill="#0b1220"/><text x="60" y="55" fill="#e5e7eb" font-size="28">Week 5 接收播放闭环（Week 7 的媒体事实基线）</text>
+  <g font-family="Segoe UI,Microsoft YaHei" font-size="18" text-anchor="middle">
+    <g fill="#16324f" stroke="#60a5fa" stroke-width="2"><rect x="55" y="135" width="170" height="100" rx="12"/><rect x="265" y="135" width="170" height="100" rx="12"/><rect x="475" y="135" width="170" height="100" rx="12"/><rect x="685" y="135" width="170" height="100" rx="12"/><rect x="895" y="135" width="245" height="100" rx="12"/></g>
+    <g fill="#fff"><text x="140" y="178">RTP / RTCP</text><text x="140" y="205">libdatachannel Track</text><text x="350" y="178">H264 depacketizer</text><text x="350" y="205">Annex-B AU 门控</text><text x="560" y="178">既有 FFmpeg</text><text x="560" y="205">解码 session</text><text x="770" y="178">capacity-1</text><text x="770" y="205">LatestFrameMailbox</text><text x="1018" y="178">VideoCanvasHost</text><text x="1018" y="205">CPU canvas / 非黑帧</text></g>
+    <g stroke="#34d399" stroke-width="5"><path d="M225 185h40"/><path d="M435 185h40"/><path d="M645 185h40"/><path d="M855 185h40"/></g>
+  </g><text x="60" y="315" fill="#93c5fd" font-size="19">资格证据必须逐层成立：RTP → AU → submitted → decoded → rendered → presented。</text><text x="60" y="350" fill="#cbd5e1" font-size="17">ICE Connected 只说明传输检查成功，不能替代当前 generation 的真实画面证据。</text>
+</svg>

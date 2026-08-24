@@ -45,6 +45,12 @@ private slots:
             QDir::cleanPath(result.exchangeRoot),
             QDir(root).filePath(QStringLiteral("out/webrtc-p2p/session-exchange"))
         );
+        QCOMPARE(
+            QDir::cleanPath(result.iceConfigPath),
+            QDir(root).filePath(
+                QStringLiteral("out/webrtc-p2p/local-config/ice-runtime.json")
+            )
+        );
         QCOMPARE(WebRtcClientRuntimePaths::layoutName(result.layout),
                  QStringLiteral("repository"));
     }
@@ -71,6 +77,12 @@ private slots:
             QDir::cleanPath(first.samplePath),
             QDir(app).filePath(QStringLiteral("webrtc-assets/sample.mp4"))
         );
+        QCOMPARE(
+            QDir::cleanPath(first.iceConfigPath),
+            QDir(app).filePath(
+                QStringLiteral("local-config/ice-runtime.json")
+            )
+        );
     }
 
     void missingLayoutIsRejected()
@@ -85,6 +97,7 @@ private slots:
         QVERIFY(!result.ok());
         QCOMPARE(result.layout, WebRtcClientRuntimeLayout::Invalid);
         QVERIFY(result.exchangeRoot.isEmpty());
+        QVERIFY(result.iceConfigPath.isEmpty());
     }
 };
 

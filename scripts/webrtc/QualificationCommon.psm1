@@ -152,6 +152,7 @@ function Start-QualificationOwnedProcess {
     )
     $stdout = Join-Path $LogRoot ($Name + '.stdout.jsonl')
     $stderr = Join-Path $LogRoot ($Name + '.stderr.txt')
+    New-Item -ItemType Directory -Force -Path $LogRoot | Out-Null
     foreach ($path in @($stdout, $stderr)) {
         [void](Assert-QualificationPathUnderRoot `
             -Path $path -Root $RuntimeRoot -Label 'runtime')
@@ -159,6 +160,9 @@ function Start-QualificationOwnedProcess {
     $process = Start-Process -FilePath $FilePath -ArgumentList $Arguments `
         -WorkingDirectory $WorkingDirectory -WindowStyle Hidden -PassThru `
         -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+    if ($null -eq $process) {
+        throw "Failed to start owned process: $Name"
+    }
     $process.Refresh()
     $record = [pscustomobject]@{
         name = $Name

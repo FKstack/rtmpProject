@@ -24,7 +24,10 @@ WebRtcClientRuntimePathResolution WebRtcClientRuntimePaths::resolve(
         return {
             WebRtcClientRuntimeLayout::Portable,
             applicationDir.absoluteFilePath(QStringLiteral("session-exchange")),
-            samplePath
+            samplePath,
+            applicationDir.absoluteFilePath(
+                QStringLiteral("local-config/ice-runtime.json")
+            )
         };
     }
 
@@ -39,7 +42,10 @@ WebRtcClientRuntimePathResolution WebRtcClientRuntimePaths::resolve(
     return {
         WebRtcClientRuntimeLayout::Repository,
         SessionPackageStore::exchangeRootForRepository(repositoryRoot),
-        samplePath
+        samplePath,
+        QDir(repositoryRoot).absoluteFilePath(
+            QStringLiteral("out/webrtc-p2p/local-config/ice-runtime.json")
+        )
     };
 }
 

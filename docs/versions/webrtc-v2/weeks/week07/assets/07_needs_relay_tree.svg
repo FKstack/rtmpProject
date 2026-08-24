@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="590" viewBox="0 0 1200 590">
+  <rect width="1200" height="590" fill="#0b1220"/><text x="55" y="55" fill="#f8fafc" font-size="28">NeedsRelay 严格判定树</text>
+  <rect x="410" y="90" width="380" height="65" rx="12" fill="#17304d" stroke="#60a5fa" stroke-width="2"/><text x="600" y="130" text-anchor="middle" fill="#fff" font-size="19">两种拓扑都完成合法 Offer/Answer？</text>
+  <path d="M600 155v55" stroke="#fbbf24" stroke-width="4"/><rect x="410" y="210" width="380" height="65" rx="12" fill="#17304d" stroke="#60a5fa" stroke-width="2"/><text x="600" y="250" text-anchor="middle" fill="#fff" font-size="19">双方都观察到 srflx？</text>
+  <path d="M600 275v55" stroke="#fbbf24" stroke-width="4"/><rect x="410" y="330" width="380" height="65" rx="12" fill="#17304d" stroke="#60a5fa" stroke-width="2"/><text x="600" y="370" text-anchor="middle" fill="#fff" font-size="19">ICE checks 明确 Failed 且无 non-relay pair？</text>
+  <path d="M600 395v55" stroke="#fbbf24" stroke-width="4"/><rect x="430" y="450" width="340" height="70" rx="12" fill="#3b3320" stroke="#fbbf24" stroke-width="3"/><text x="600" y="493" text-anchor="middle" fill="#fef3c7" font-size="22">NeedsRelay</text>
+  <rect x="855" y="225" width="285" height="170" rx="14" fill="#3b1d2b" stroke="#fb7185" stroke-width="2"/><text x="997" y="265" text-anchor="middle" fill="#fecdd3" font-size="19">任一否定分支</text><text x="997" y="305" text-anchor="middle" fill="#fff" font-size="17">timeout / 对端未启动</text><text x="997" y="337" text-anchor="middle" fill="#fff" font-size="17">配置 / codec / handoff 错误</text><text x="997" y="369" text-anchor="middle" fill="#fff" font-size="17">→ Inconclusive</text><path d="M790 242h65" stroke="#fb7185" stroke-width="4"/>
+</svg>

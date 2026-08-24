@@ -10,6 +10,7 @@ foreach(forbidden_name IN ITEMS
     libcrypto-3-x64.dll
     rtmp_monitor_webrtc_probe.exe
     rtmp_monitor_webrtc_client.exe
+    rtmp_monitor_webrtc_stun_fixture.exe
     rtmp_monitor_webrtc_publisher_peer.exe)
     if(EXISTS "${ARTIFACT_ROOT}/${forbidden_name}")
         message(FATAL_ERROR

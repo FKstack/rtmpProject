@@ -1007,6 +1007,8 @@ if(RTMP_MONITOR_ENABLE_WEBRTC)
         src/tools/webrtc_client/WebRtcClientOptions.cpp
         src/tools/webrtc_client/WebRtcClientRuntimePaths.h
         src/tools/webrtc_client/WebRtcClientRuntimePaths.cpp
+        src/tools/webrtc_client/WebRtcIceRuntimeConfigLoader.h
+        src/tools/webrtc_client/WebRtcIceRuntimeConfigLoader.cpp
         src/tools/webrtc_client/WebRtcClientRuntime.h
         src/tools/webrtc_client/WebRtcClientRuntime.cpp
         src/tools/webrtc_client/WebRtcViewerController.h
@@ -1255,6 +1257,20 @@ if(BUILD_TESTING)
     rtmp_monitor_copy_ffmpeg_runtime(rtmp_monitor_encoded_video_decode_test)
 
     if(RTMP_MONITOR_ENABLE_WEBRTC)
+        find_package(LibJuice CONFIG REQUIRED)
+
+        add_executable(rtmp_monitor_webrtc_stun_fixture
+            tests/WebRtcStunFixtureMain.cpp)
+        target_link_libraries(rtmp_monitor_webrtc_stun_fixture PRIVATE
+            LibJuice::LibJuice)
+        set_target_properties(rtmp_monitor_webrtc_stun_fixture PROPERTIES
+            RUNTIME_OUTPUT_DIRECTORY
+                "${CMAKE_BINARY_DIR}/webrtc/$<CONFIG>")
+        rtmp_monitor_apply_project_options(
+            rtmp_monitor_webrtc_stun_fixture)
+        rtmp_monitor_copy_webrtc_runtime(
+            rtmp_monitor_webrtc_stun_fixture)
+
         qt_add_executable(rtmp_monitor_webrtc_session_test
             tests/WebRtcSessionPackageTest.cpp)
         target_link_libraries(rtmp_monitor_webrtc_session_test PRIVATE
@@ -1290,7 +1306,8 @@ if(BUILD_TESTING)
         target_link_libraries(rtmp_monitor_webrtc_endpoint_test PRIVATE
             Qt6::Test
             rtmp_monitor_webrtc_transport
-            LibDataChannel::LibDataChannel)
+            LibDataChannel::LibDataChannel
+            LibJuice::LibJuice)
         target_include_directories(rtmp_monitor_webrtc_endpoint_test PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/src/common)
         rtmp_monitor_apply_project_options(rtmp_monitor_webrtc_endpoint_test)
@@ -1313,6 +1330,25 @@ if(BUILD_TESTING)
             rtmp_monitor_webrtc_runtime_paths_test)
         add_test(NAME rtmp_monitor_webrtc_runtime_paths_test
             COMMAND rtmp_monitor_webrtc_runtime_paths_test)
+
+        qt_add_executable(rtmp_monitor_webrtc_client_ice_config_test
+            tests/WebRtcClientIceConfigTest.cpp
+            src/tools/webrtc_client/WebRtcClientOptions.h
+            src/tools/webrtc_client/WebRtcClientOptions.cpp
+            src/tools/webrtc_client/WebRtcIceRuntimeConfigLoader.h
+            src/tools/webrtc_client/WebRtcIceRuntimeConfigLoader.cpp)
+        target_link_libraries(
+            rtmp_monitor_webrtc_client_ice_config_test PRIVATE
+            Qt6::Test
+            rtmp_monitor_webrtc_contracts
+            LibDataChannel::LibDataChannel)
+        target_include_directories(
+            rtmp_monitor_webrtc_client_ice_config_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/tools)
+        rtmp_monitor_apply_project_options(
+            rtmp_monitor_webrtc_client_ice_config_test)
+        add_test(NAME rtmp_monitor_webrtc_client_ice_config_test
+            COMMAND rtmp_monitor_webrtc_client_ice_config_test)
 
         qt_add_executable(rtmp_monitor_webrtc_viewer_pipeline_test
             tests/WebRtcViewerPipelineTest.cpp)

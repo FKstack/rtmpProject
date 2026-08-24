@@ -14,10 +14,16 @@ enum class ClientMediaRole {
     Viewer,
 };
 
+enum class ClientIceMode {
+    HostOnly,
+    Stun,
+};
+
 struct WebRtcClientOptions
 {
     ClientMediaRole mediaRole = ClientMediaRole::Publisher;
     SignalingRole signalingRole = SignalingRole::Offerer;
+    ClientIceMode iceMode = ClientIceMode::HostOnly;
     std::chrono::milliseconds timeout {30'000};
 
     static void configureParser(QCommandLineParser &parser);
@@ -28,5 +34,6 @@ struct WebRtcClientOptions
 
 [[nodiscard]] QString mediaRoleName(ClientMediaRole role);
 [[nodiscard]] QString signalingRoleName(SignalingRole role);
+[[nodiscard]] QString iceModeName(ClientIceMode mode);
 
 } // namespace rtmp_monitor::webrtc_client

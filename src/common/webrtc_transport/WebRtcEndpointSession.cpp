@@ -188,12 +188,33 @@ std::vector<std::string> candidateTypes(const rtc::Description &description)
     return result;
 }
 
+EndpointIceState endpointIceState(rtc::PeerConnection::IceState state)
+{
+    switch (state) {
+    case rtc::PeerConnection::IceState::New: return EndpointIceState::New;
+    case rtc::PeerConnection::IceState::Checking:
+        return EndpointIceState::Checking;
+    case rtc::PeerConnection::IceState::Connected:
+        return EndpointIceState::Connected;
+    case rtc::PeerConnection::IceState::Completed:
+        return EndpointIceState::Completed;
+    case rtc::PeerConnection::IceState::Failed:
+        return EndpointIceState::Failed;
+    case rtc::PeerConnection::IceState::Disconnected:
+        return EndpointIceState::Disconnected;
+    case rtc::PeerConnection::IceState::Closed:
+        return EndpointIceState::Closed;
+    }
+    return EndpointIceState::New;
+}
+
 struct SharedState
 {
     std::mutex mutex;
     std::mutex receiveCallbackMutex;
     std::condition_variable changed;
     EndpointState endpointState = EndpointState::New;
+    EndpointIceState iceState = EndpointIceState::New;
     bool closing = false;
     bool gatheringComplete = false;
     bool connected = false;
@@ -327,17 +348,17 @@ public:
     EndpointDescriptionResult createOffer(std::chrono::milliseconds timeout)
     {
         if (configuration_.signalingRole != SignalingRole::Offerer) {
-            return {EndpointError::InvalidRole, {}, {}};
+            return {EndpointError::InvalidRole, {}, {}, EndpointIceState::New};
         }
         const EndpointError initialized = initialize();
         if (initialized != EndpointError::None) {
-            return {initialized, {}, {}};
+            return {initialized, {}, {}, snapshot().iceState};
         }
         try {
             connection()->setLocalDescription(rtc::Description::Type::Offer);
         } catch (...) {
             fail();
-            return {EndpointError::LibraryFailure, {}, {}};
+            return {EndpointError::LibraryFailure, {}, {}, snapshot().iceState};
         }
         return waitForDescription(timeout);
     }
@@ -348,26 +369,26 @@ public:
     )
     {
         if (configuration_.signalingRole != SignalingRole::Answerer) {
-            return {EndpointError::InvalidRole, {}, {}};
+            return {EndpointError::InvalidRole, {}, {}, EndpointIceState::New};
         }
         if (offerSdp.empty()) {
-            return {EndpointError::InvalidState, {}, {}};
+            return {EndpointError::InvalidState, {}, {}, EndpointIceState::New};
         }
         try {
             const rtc::Description offer(offerSdp, "offer");
             if (!compatibleRemoteDescription(
                     offer, configuration_.videoDirection)) {
-                return {EndpointError::IncompatibleMedia, {}, {}};
+                return {EndpointError::IncompatibleMedia, {}, {}, EndpointIceState::New};
             }
             const EndpointError initialized = initialize();
             if (initialized != EndpointError::None) {
-                return {initialized, {}, {}};
+                return {initialized, {}, {}, snapshot().iceState};
             }
             connection()->setRemoteDescription(offer);
             connection()->setLocalDescription(rtc::Description::Type::Answer);
         } catch (...) {
             fail();
-            return {EndpointError::LibraryFailure, {}, {}};
+            return {EndpointError::LibraryFailure, {}, {}, snapshot().iceState};
         }
         return waitForDescription(timeout);
     }
@@ -378,28 +399,30 @@ public:
     )
     {
         if (configuration_.signalingRole != SignalingRole::Offerer) {
-            return {EndpointError::InvalidRole, {}};
+            return {EndpointError::InvalidRole, {}, {}, EndpointIceState::New};
         }
         if (answerSdp.empty() || !connection()) {
-            return {EndpointError::InvalidState, {}};
+            return {EndpointError::InvalidState, {}, {}, EndpointIceState::New};
         }
         try {
             const rtc::Description answer(answerSdp, "answer");
             if (!compatibleRemoteDescription(
                     answer, configuration_.videoDirection)) {
-                return {EndpointError::IncompatibleMedia, {}};
+                return {EndpointError::IncompatibleMedia, {}, {}, snapshot().iceState};
             }
             connection()->setRemoteDescription(answer);
         } catch (...) {
             fail();
-            return {EndpointError::LibraryFailure, {}};
+            return {EndpointError::LibraryFailure, {}, {}, snapshot().iceState};
         }
         return waitConnected(timeout);
     }
 
     EndpointConnectionResult waitConnected(std::chrono::milliseconds timeout)
     {
-        if (!connection()) return {EndpointError::InvalidState, {}, {}};
+        if (!connection()) {
+            return {EndpointError::InvalidState, {}, {}, snapshot().iceState};
+        }
         std::unique_lock lock(state_->mutex);
         const bool signaled = state_->changed.wait_for(
             lock,
@@ -408,11 +431,14 @@ public:
                 return state->connected || state->failed || state->closing;
             }
         );
-        if (!signaled) return {EndpointError::ConnectionTimeout, {}, {}};
-        if (!state_->connected) {
-            return {EndpointError::ConnectionFailed, {}, {}};
-        }
         const auto types = state_->localCandidateTypes;
+        const EndpointIceState iceState = state_->iceState;
+        if (!signaled) {
+            return {EndpointError::ConnectionTimeout, types, {}, iceState};
+        }
+        if (!state_->connected) {
+            return {EndpointError::ConnectionFailed, types, {}, iceState};
+        }
         const auto connectionValue = state_->connection;
         lock.unlock();
         std::optional<EndpointCandidatePair> pair;
@@ -421,7 +447,7 @@ public:
         } catch (...) {
             pair.reset();
         }
-        return {EndpointError::None, types, std::move(pair)};
+        return {EndpointError::None, types, std::move(pair), iceState};
     }
 
     std::optional<H264SubmitPort> createSendPort()
@@ -462,6 +488,7 @@ public:
         const std::lock_guard lock(state_->mutex);
         EndpointSnapshot result;
         result.state = state_->endpointState;
+        result.iceState = state_->iceState;
         result.generation = state_->generation;
         result.queueDepth = state_->queue.size();
         result.acceptedAccessUnits = state_->acceptedAccessUnits;
@@ -546,9 +573,8 @@ private:
             }
         }
 
-        std::shared_ptr<rtc::PeerConnection> connectionValue;
+        rtc::Configuration rtcConfiguration;
         try {
-            rtc::Configuration rtcConfiguration;
             rtcConfiguration.disableAutoNegotiation = true;
             rtcConfiguration.enableIceTcp = false;
             for (const IceServerRuntimeConfig &server : configuration_.ice.servers) {
@@ -559,6 +585,12 @@ private:
                     rtcConfiguration.iceServers.push_back(std::move(iceServer));
                 }
             }
+        } catch (...) {
+            return EndpointError::InvalidIceConfiguration;
+        }
+
+        std::shared_ptr<rtc::PeerConnection> connectionValue;
+        try {
             connectionValue = std::make_shared<rtc::PeerConnection>(rtcConfiguration);
         } catch (...) {
             return EndpointError::LibraryFailure;
@@ -579,6 +611,37 @@ private:
                 state->endpointState = EndpointState::Gathering;
                 state->gatheringComplete =
                     value == rtc::PeerConnection::GatheringState::Complete;
+                state->changed.notify_all();
+            }
+        );
+        connectionValue->onLocalCandidate(
+            [weakState, generation](rtc::Candidate candidate) {
+                const auto state = weakState.lock();
+                if (!state) return;
+                const std::string type = candidateTypeName(candidate.type());
+                const std::lock_guard lock(state->mutex);
+                if (state->closing || state->generation != generation) return;
+                if (std::find(
+                        state->localCandidateTypes.begin(),
+                        state->localCandidateTypes.end(),
+                        type
+                    ) == state->localCandidateTypes.end()) {
+                    state->localCandidateTypes.push_back(type);
+                    std::sort(
+                        state->localCandidateTypes.begin(),
+                        state->localCandidateTypes.end()
+                    );
+                }
+                state->changed.notify_all();
+            }
+        );
+        connectionValue->onIceStateChange(
+            [weakState, generation](rtc::PeerConnection::IceState value) {
+                const auto state = weakState.lock();
+                if (!state) return;
+                const std::lock_guard lock(state->mutex);
+                if (state->closing || state->generation != generation) return;
+                state->iceState = endpointIceState(value);
                 state->changed.notify_all();
             }
         );
@@ -829,9 +892,13 @@ private:
                 return state->gatheringComplete || state->failed || state->closing;
             }
         );
-        if (!signaled) return {EndpointError::GatheringTimeout, {}, {}};
+        const auto types = state_->localCandidateTypes;
+        const EndpointIceState iceState = state_->iceState;
+        if (!signaled) {
+            return {EndpointError::GatheringTimeout, {}, types, iceState};
+        }
         if (!state_->gatheringComplete || !state_->connection) {
-            return {EndpointError::ConnectionFailed, {}, {}};
+            return {EndpointError::ConnectionFailed, {}, types, iceState};
         }
         const auto connectionValue = state_->connection;
         lock.unlock();
@@ -839,16 +906,21 @@ private:
         try {
             const auto description = connectionValue->localDescription();
             if (!description.has_value()) {
-                return {EndpointError::LibraryFailure, {}, {}};
+                return {EndpointError::LibraryFailure, {}, types, iceState};
             }
-            auto types = candidateTypes(*description);
+            auto descriptionTypes = candidateTypes(*description);
             {
                 const std::lock_guard stateLock(state_->mutex);
-                state_->localCandidateTypes = types;
+                state_->localCandidateTypes = descriptionTypes;
             }
-            return {EndpointError::None, description->generateSdp(), std::move(types)};
+            return {
+                EndpointError::None,
+                description->generateSdp(),
+                std::move(descriptionTypes),
+                iceState
+            };
         } catch (...) {
-            return {EndpointError::LibraryFailure, {}, {}};
+            return {EndpointError::LibraryFailure, {}, types, iceState};
         }
     }
 
@@ -946,8 +1018,26 @@ const char *WebRtcEndpointSession::errorName(EndpointError error) noexcept
     case EndpointError::GatheringTimeout: return "gathering_timeout";
     case EndpointError::ConnectionTimeout: return "connection_timeout";
     case EndpointError::ConnectionFailed: return "connection_failed";
+    case EndpointError::InvalidIceConfiguration:
+        return "invalid_ice_config";
     }
     return "unknown";
+}
+
+const char *WebRtcEndpointSession::iceStateName(
+    EndpointIceState state
+) noexcept
+{
+    switch (state) {
+    case EndpointIceState::New: return "new";
+    case EndpointIceState::Checking: return "checking";
+    case EndpointIceState::Connected: return "connected";
+    case EndpointIceState::Completed: return "completed";
+    case EndpointIceState::Failed: return "failed";
+    case EndpointIceState::Disconnected: return "disconnected";
+    case EndpointIceState::Closed: return "closed";
+    }
+    return "new";
 }
 
 const char *WebRtcEndpointSession::stateName(EndpointState state) noexcept

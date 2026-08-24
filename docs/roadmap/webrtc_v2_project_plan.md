@@ -4,7 +4,9 @@
 > MP4 publisher/对称 endpoint、Week 5 测试客户端接收播放闭环，以及 Week 6 脱敏 selected-pair、
 > Release 便携包和双机 runner 已实施。2026-08-24 用户接受最终 ZIP 的本地独立双包 20/20
 > 作为 Week 6 设计验收，`W6-DESIGN-GATE` 与本阶段 `W6-GATE` 通过，Week 7/P2P 解锁；
-> `W2-GATE` 人工复核、Week 5 桌面人工观感和 Week 6 物理双机环境资格仍待执行。
+> Week 7 已实现受限STUN配置、地址无关ICE事实、本地fixture和公网测试包；用户采用本地设计门禁
+> 解锁Week 8，真实公司网络/移动网络资格保持延期。`W2-GATE` 人工复核、Week 5桌面人工观感和
+> Week 6物理双机环境资格仍待执行。
 >
 > 当前稳定产品能力仍是 `0.1.0-alpha.1` RTMP 路径。Week 5/6 只完成默认关闭的测试客户端和资格
 > 测试包；物理双机、Week 7～10 的公网/正式 UI/性能与 ARM 交付仍不能作为已部署能力。
@@ -361,7 +363,7 @@ ZIP 的两个独立包副本均完成；两种拓扑各 10/10，合计 20/20。�
 归入 `W6-PHYSICAL-LAN` 延期环境资格，未来可补测但不阻塞研发。实际代码、图文和测试入口见
 `../versions/webrtc-v2/weeks/week06/`。
 
-### Week 7：公网 Direct 或 Needs Relay
+### Week 7：本地设计门禁通过，真实公网 Direct 或 Needs Relay 延期
 
 | ID | h | 前置 | 单一输出与验收 | 失败/停线 |
 | --- | ---: | --- | --- | --- |
@@ -376,6 +378,11 @@ ZIP 的两个独立包副本均完成；两种拓扑各 10/10，合计 20/20。�
 | W7-SEC-01 | 3 | W7-DIR-01,W7-NRL-01 | 公网输出和会话材料敏感扫描 | 地址、URL、凭据进入结果即停线 |
 | W7-DOC-01 | 2 | W7-FLT-01,W7-SEC-01 | Direct/Needs Relay 范围化报告 | 对任意网络作通用承诺即失败 |
 | W7-GATE | 3 | W7-DOC-01 | 公网阶段门禁 | 无证据时允许 Needs Relay，不允许伪造通过 |
+
+2026-08-24 用户确认替代验收：确定性回环STUN、最终ZIP两个独立副本和两种拓扑各十轮组成
+`W7-DESIGN-GATE`；通过后研发阶段`W7-GATE`通过并解锁Week 8。真实公司网络与移动网络的
+`W7-PUBLIC-NETWORK`延期，当前结果固定`sameMachinePortable=true`、`publicClaimed=false`，
+不能预写Direct或NeedsRelay。实施细节和边界见Week 7 summary/testing guide。
 
 ### Week 8：正式客户端一次性接收集成
 

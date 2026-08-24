@@ -4,6 +4,7 @@
 #include <QtTest>
 
 #include <rtc/rtc.hpp>
+#include <juice/juice.h>
 
 #include <algorithm>
 #include <atomic>
@@ -37,6 +38,49 @@ bool onlyHostCandidates(const std::vector<std::string> &types)
         [](const std::string &type) { return type == "host"; }
     );
 }
+
+bool containsCandidateType(
+    const std::vector<std::string> &types,
+    const std::string &expected
+)
+{
+    return std::find(types.cbegin(), types.cend(), expected) != types.cend();
+}
+
+class LocalStunServer final
+{
+public:
+    LocalStunServer()
+    {
+        juice_server_config_t configuration {};
+        configuration.bind_address = "127.0.0.1";
+        configuration.external_address = "127.0.0.2";
+        configuration.port = 0;
+        server_ = juice_server_create(&configuration);
+    }
+
+    ~LocalStunServer()
+    {
+        if (server_) juice_server_destroy(server_);
+    }
+
+    LocalStunServer(const LocalStunServer &) = delete;
+    LocalStunServer &operator=(const LocalStunServer &) = delete;
+
+    [[nodiscard]] bool ok() const noexcept
+    {
+        return server_ != nullptr && juice_server_get_port(server_) != 0;
+    }
+
+    [[nodiscard]] std::string url() const
+    {
+        return "stun:127.0.0.1:" +
+               std::to_string(juice_server_get_port(server_));
+    }
+
+private:
+    juice_server_t *server_ = nullptr;
+};
 
 void verifySanitizedSelectedPair(const EndpointConnectionResult &result)
 {
@@ -207,6 +251,89 @@ private slots:
             EndpointError::InvalidRole
         );
         sender.close();
+    }
+
+    void invalidIceConfigurationIsDistinguishedFromLibraryFailure()
+    {
+        WebRtcSessionConfig config;
+        config.signalingRole = SignalingRole::Offerer;
+        config.videoDirection = VideoDirection::SendOnly;
+        IceServerRuntimeConfig server;
+        server.urls.push_back("http://127.0.0.1:3478");
+        config.ice.servers.push_back(std::move(server));
+
+        WebRtcEndpointSession session(config);
+        const EndpointDescriptionResult result = session.createOffer();
+        QCOMPARE(result.error, EndpointError::InvalidIceConfiguration);
+        QCOMPARE(result.iceState, EndpointIceState::New);
+        QCOMPARE(
+            std::string(WebRtcEndpointSession::errorName(result.error)),
+            std::string("invalid_ice_config")
+        );
+        session.close();
+    }
+
+    void connectionTimeoutPreservesGatheredIceFacts()
+    {
+        WebRtcSessionConfig config;
+        config.signalingRole = SignalingRole::Offerer;
+        config.videoDirection = VideoDirection::SendOnly;
+        WebRtcEndpointSession session(config);
+        const EndpointDescriptionResult offer = session.createOffer();
+        QVERIFY2(offer.ok(), WebRtcEndpointSession::errorName(offer.error));
+        QVERIFY(onlyHostCandidates(offer.candidateTypes));
+
+        const EndpointConnectionResult timeout =
+            session.waitConnected(std::chrono::milliseconds(25));
+        QCOMPARE(timeout.error, EndpointError::ConnectionTimeout);
+        QVERIFY(onlyHostCandidates(timeout.candidateTypes));
+        QVERIFY(timeout.iceState == EndpointIceState::New ||
+                timeout.iceState == EndpointIceState::Checking);
+        session.close();
+    }
+
+    void localStunFixtureProducesSanitizedSrflxFacts()
+    {
+        LocalStunServer stun;
+        QVERIFY(stun.ok());
+        IceServerRuntimeConfig server;
+        server.urls.push_back(stun.url());
+
+        WebRtcSessionConfig senderConfig;
+        senderConfig.signalingRole = SignalingRole::Offerer;
+        senderConfig.videoDirection = VideoDirection::SendOnly;
+        senderConfig.ice.servers.push_back(server);
+        WebRtcSessionConfig receiverConfig;
+        receiverConfig.signalingRole = SignalingRole::Answerer;
+        receiverConfig.videoDirection = VideoDirection::ReceiveOnly;
+        receiverConfig.ice.servers.push_back(server);
+
+        WebRtcEndpointSession sender(senderConfig);
+        WebRtcEndpointSession receiver(receiverConfig);
+        QCOMPARE(
+            receiver.setReceiveSink([](SessionMediaSample) {
+                return H264SubmitResult::Accepted;
+            }),
+            EndpointError::None
+        );
+        const EndpointDescriptionResult offer = sender.createOffer();
+        QVERIFY2(offer.ok(), WebRtcEndpointSession::errorName(offer.error));
+        QVERIFY(containsCandidateType(offer.candidateTypes, "host"));
+        QVERIFY(containsCandidateType(offer.candidateTypes, "srflx"));
+        const EndpointDescriptionResult answer =
+            receiver.acceptOfferAndCreateAnswer(offer.sdp);
+        QVERIFY2(answer.ok(), WebRtcEndpointSession::errorName(answer.error));
+        QVERIFY(containsCandidateType(answer.candidateTypes, "srflx"));
+        const EndpointConnectionResult senderConnected =
+            sender.acceptAnswerAndWait(answer.sdp);
+        const EndpointConnectionResult receiverConnected =
+            receiver.waitConnected();
+        QVERIFY(senderConnected.ok());
+        QVERIFY(receiverConnected.ok());
+        verifySanitizedSelectedPair(senderConnected);
+        verifySanitizedSelectedPair(receiverConnected);
+        sender.close();
+        receiver.close();
     }
 
     void incompatibleH264DescriptionIsRejected()
@@ -405,6 +532,10 @@ private:
         QVERIFY(onlyHostCandidates(receiverConnected.candidateTypes));
         verifySanitizedSelectedPair(senderConnected);
         verifySanitizedSelectedPair(receiverConnected);
+        QVERIFY(senderConnected.iceState == EndpointIceState::Connected ||
+                senderConnected.iceState == EndpointIceState::Completed);
+        QVERIFY(receiverConnected.iceState == EndpointIceState::Connected ||
+                receiverConnected.iceState == EndpointIceState::Completed);
 
         QTRY_VERIFY_WITH_TIMEOUT(sender.snapshot().trackOpen, 5000);
         auto port = sender.createSendPort();

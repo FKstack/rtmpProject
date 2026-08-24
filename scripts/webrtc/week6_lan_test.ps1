@@ -16,6 +16,7 @@ $ErrorActionPreference = 'Stop'
 $packageRoot = [IO.Path]::GetFullPath($PSScriptRoot)
 Import-Module (Join-Path $packageRoot 'QualificationCommon.psm1') -Force
 Import-Module (Join-Path $packageRoot 'Week6LanCommon.psm1') -Force
+Import-Module (Join-Path $packageRoot 'WebRtcHandoffCommon.psm1') -Force
 $manifestPath = Join-Path $packageRoot 'package-manifest.json'
 $clientPath = Join-Path $packageRoot 'rtmp_monitor_webrtc_client.exe'
 $exchangeRoot = Join-Path $packageRoot 'session-exchange'
@@ -41,44 +42,19 @@ function Assert-PackageReady {
 }
 
 function Clear-RoundFiles {
-    foreach ($root in @($exchangeRoot,$inboxRoot,$outboxRoot)) {
-        New-Item -ItemType Directory -Force -Path $root | Out-Null
-        foreach ($file in @(Get-ChildItem -LiteralPath $root -Filter '*.json' `
-                -File -ErrorAction SilentlyContinue)) {
-            [void](Assert-QualificationPathUnderRoot -Path $file.FullName `
-                -Root $packageRoot -Label 'portable package')
-            Remove-Item -LiteralPath $file.FullName -Force
-        }
-    }
+    Clear-WebRtcHandoffFiles -Roots @(
+        $exchangeRoot,$inboxRoot,$outboxRoot
+    ) -ManagedRoot $packageRoot
 }
 
 function Sync-Handoff {
-    foreach ($file in @(Get-ChildItem -LiteralPath $inboxRoot -Filter '*.json' `
-            -File -ErrorAction SilentlyContinue)) {
-        $destination = Join-Path $exchangeRoot $file.Name
-        if (-not (Test-Path -LiteralPath $destination -PathType Leaf)) {
-            Copy-Item -LiteralPath $file.FullName -Destination $destination
-        }
-    }
-    foreach ($file in @(Get-ChildItem -LiteralPath $exchangeRoot -Filter '*.json' `
-            -File -ErrorAction SilentlyContinue)) {
-        $destination = Join-Path $outboxRoot $file.Name
-        if (-not (Test-Path -LiteralPath $destination -PathType Leaf)) {
-            Copy-Item -LiteralPath $file.FullName -Destination $destination
-            Write-Host "Copy this complete file to the peer inbox: $destination"
-        }
-    }
+    Sync-WebRtcHandoffFiles -ExchangeRoot $exchangeRoot `
+        -InboxRoot $inboxRoot -OutboxRoot $outboxRoot
 }
 
 function Read-Event {
     param([string]$Path, [string]$Name)
-    foreach ($line in @(Get-Content -LiteralPath $Path -ErrorAction SilentlyContinue)) {
-        try {
-            $value = $line | ConvertFrom-Json -ErrorAction Stop
-            if ([string]$value.event -eq $Name) { return $value }
-        } catch { }
-    }
-    return $null
+    return Read-WebRtcJsonEvent -Path $Path -Name $Name
 }
 
 function Get-JsonProperty {

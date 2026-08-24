@@ -2,6 +2,7 @@
 
 #include "publisher/Mp4H264PublisherSource.h"
 #include "webrtc_client/WebRtcClientOptions.h"
+#include "webrtc_client/WebRtcIceRuntimeConfigLoader.h"
 #include "webrtc_client/WebRtcClientRuntimePaths.h"
 #include "webrtc_transport/WebRtcEndpointSession.h"
 
@@ -55,6 +56,9 @@ private:
     );
     void emitEvent(const QString &event, QJsonObject details = {}) const;
     void emitFailure(const QString &error, QJsonObject details = {}) const;
+    void emitIceGathering(
+        const rtmp_monitor::webrtc_transport::EndpointDescriptionResult &result
+    ) const;
 
     WebRtcClientOptions options_;
     WebRtcClientRuntimePathResolution runtimePaths_;

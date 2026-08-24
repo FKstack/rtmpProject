@@ -12,7 +12,7 @@
 | `week04/` | 对称 endpoint、固定 MP4 publisher 与双 Offer 角色 |
 | `week05/` | 同一客户端 viewer 与媒体回环 |
 | `week06/` | 双机 LAN Release 便携包、runner 与资格矩阵 |
-| `week07/` | 获授权的跨公网 Direct/Needs Relay |
+| `week07/` | 受限 STUN、本地设计门禁与延期公网 Direct/Needs Relay runner |
 | `week08/` | 正式客户端一次性接收、状态和安全集成 |
 | `week09/`～`week10/` | 摄像头、多路、故障、性能和 Beta 资格 |
 
@@ -27,7 +27,8 @@
 已有自动结果且人工门禁仍待补；Week 3 已有契约/解码入口结果；Week 4 已有 publisher/session、
 自动测试和资产边界结果；Week 5 已有 viewer 闭环；Week 6 已有便携包实现、自动测试、详细图文和
 双机测试指南；本地两个独立包副本的 20/20 结果已获用户接受为 Week 6 设计门禁，`W6-GATE`
-通过并解锁 Week 7/P2P，真实双机 LAN 保留为延期的环境资格。
+通过并解锁 Week 7/P2P，真实双机 LAN 保留为延期的环境资格。Week 7 已形成受限配置、ICE事实、
+本地STUN fixture、自动/人工指南和公网测试包；本地设计门禁用于解锁Week 8，真实公网仍延期。
 
 ## 禁止提交
 

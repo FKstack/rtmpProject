@@ -26,6 +26,12 @@ void WebRtcClientOptions::configureParser(QCommandLineParser &parser)
         QStringLiteral("source")
     });
     parser.addOption({
+        QStringLiteral("ice-mode"),
+        QStringLiteral("host or stun; stun reads the fixed local config"),
+        QStringLiteral("mode"),
+        QStringLiteral("host")
+    });
+    parser.addOption({
         QStringLiteral("timeout-ms"),
         QStringLiteral("1000..600000"),
         QStringLiteral("milliseconds"),
@@ -43,6 +49,8 @@ std::optional<WebRtcClientOptions> WebRtcClientOptions::fromParser(
         parser.value(QStringLiteral("media-role")).trimmed().toLower();
     const QString signaling =
         parser.value(QStringLiteral("signaling-role")).trimmed().toLower();
+    const QString iceMode =
+        parser.value(QStringLiteral("ice-mode")).trimmed().toLower();
     bool timeoutOk = false;
     const int timeoutMs =
         parser.value(QStringLiteral("timeout-ms")).toInt(&timeoutOk);
@@ -50,7 +58,9 @@ std::optional<WebRtcClientOptions> WebRtcClientOptions::fromParser(
         !QStringList {QStringLiteral("publisher"), QStringLiteral("viewer")}
              .contains(media) ||
         !QStringList {QStringLiteral("offer"), QStringLiteral("answer")}
-             .contains(signaling)) {
+             .contains(signaling) ||
+        !QStringList {QStringLiteral("host"), QStringLiteral("stun")}
+             .contains(iceMode)) {
         return std::nullopt;
     }
 
@@ -70,6 +80,9 @@ std::optional<WebRtcClientOptions> WebRtcClientOptions::fromParser(
     options.signalingRole = signaling == QStringLiteral("offer")
                                 ? SignalingRole::Offerer
                                 : SignalingRole::Answerer;
+    options.iceMode = iceMode == QStringLiteral("stun")
+                          ? ClientIceMode::Stun
+                          : ClientIceMode::HostOnly;
     options.timeout = std::chrono::milliseconds(timeoutMs);
     return options;
 }
@@ -86,6 +99,13 @@ QString signalingRoleName(SignalingRole role)
     return role == SignalingRole::Offerer
                ? QStringLiteral("offer")
                : QStringLiteral("answer");
+}
+
+QString iceModeName(ClientIceMode mode)
+{
+    return mode == ClientIceMode::Stun
+               ? QStringLiteral("stun")
+               : QStringLiteral("host");
 }
 
 } // namespace rtmp_monitor::webrtc_client

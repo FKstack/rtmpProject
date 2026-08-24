@@ -9,8 +9,10 @@
 #include <QJsonArray>
 #include <QThread>
 
+#include <algorithm>
 #include <chrono>
 #include <optional>
+#include <string>
 #include <utility>
 
 namespace rtmp_monitor::webrtc_client {
@@ -105,6 +107,26 @@ QJsonObject candidatePairObject(const EndpointCandidatePair &pair)
     };
 }
 
+QString iceStateValue(EndpointIceState state)
+{
+    return QString::fromLatin1(WebRtcEndpointSession::iceStateName(state));
+}
+
+QJsonObject connectionEvidence(const EndpointConnectionResult &result)
+{
+    QJsonObject details {
+        {QStringLiteral("candidateTypes"), candidateArray(result.candidateTypes)},
+        {QStringLiteral("iceState"), iceStateValue(result.iceState)}
+    };
+    if (result.selectedPair.has_value()) {
+        details.insert(
+            QStringLiteral("selectedCandidatePair"),
+            candidatePairObject(*result.selectedPair)
+        );
+    }
+    return details;
+}
+
 } // namespace
 
 WebRtcClientRuntime::WebRtcClientRuntime(
@@ -177,7 +199,8 @@ int WebRtcClientRuntime::runSession()
         QStringLiteral("runtime_ready"),
         QJsonObject {
             {QStringLiteral("layout"),
-             WebRtcClientRuntimePaths::layoutName(runtimePaths_.layout)}
+             WebRtcClientRuntimePaths::layoutName(runtimePaths_.layout)},
+            {QStringLiteral("iceMode"), iceModeName(options_.iceMode)}
         }
     );
     if (options_.mediaRole == ClientMediaRole::Publisher) {
@@ -193,12 +216,35 @@ int WebRtcClientRuntime::runSession()
         return 3;
     }
 
+    IceRuntimeConfig iceConfiguration;
+    if (options_.iceMode == ClientIceMode::Stun) {
+        IceConfigLoadResult loaded = WebRtcIceRuntimeConfigLoader::load(
+            runtimePaths_.iceConfigPath
+        );
+        if (!loaded.ok()) {
+            emitFailure(QString::fromLatin1(
+                WebRtcIceRuntimeConfigLoader::errorName(loaded.error)
+            ));
+            return 3;
+        }
+        iceConfiguration = std::move(loaded.configuration);
+        emitEvent(
+            QStringLiteral("ice_config_loaded"),
+            QJsonObject {
+                {QStringLiteral("mode"), QStringLiteral("stun")},
+                {QStringLiteral("serverCount"),
+                 static_cast<int>(iceConfiguration.servers.size())}
+            }
+        );
+    }
+
     WebRtcSessionConfig configuration;
     configuration.signalingRole = options_.signalingRole;
     configuration.videoDirection =
         options_.mediaRole == ClientMediaRole::Publisher
             ? VideoDirection::SendOnly
             : VideoDirection::ReceiveOnly;
+    configuration.ice = std::move(iceConfiguration);
     {
         const std::lock_guard lock(resourcesMutex_);
         endpoint_ = std::make_unique<WebRtcEndpointSession>(configuration);
@@ -233,10 +279,19 @@ int WebRtcClientRuntime::runSession()
     if (options_.signalingRole == SignalingRole::Offerer) {
         const EndpointDescriptionResult offer =
             endpoint->createOffer(options_.timeout);
+        emitIceGathering(offer);
         if (!offer.ok()) {
-            emitFailure(QString::fromLatin1(
-                WebRtcEndpointSession::errorName(offer.error)
-            ));
+            emitFailure(
+                QString::fromLatin1(
+                    WebRtcEndpointSession::errorName(offer.error)
+                ),
+                QJsonObject {
+                    {QStringLiteral("candidateTypes"),
+                     candidateArray(offer.candidateTypes)},
+                    {QStringLiteral("iceState"),
+                     iceStateValue(offer.iceState)}
+                }
+            );
             signalingResult = 4;
         } else {
             const SessionPackage package = SessionPackageCodec::create(
@@ -296,10 +351,19 @@ int WebRtcClientRuntime::runSession()
                 endpoint->acceptOfferAndCreateAnswer(
                     offer.package.sdp.toStdString(), options_.timeout
                 );
+            emitIceGathering(answer);
             if (!answer.ok()) {
-                emitFailure(QString::fromLatin1(
-                    WebRtcEndpointSession::errorName(answer.error)
-                ));
+                emitFailure(
+                    QString::fromLatin1(
+                        WebRtcEndpointSession::errorName(answer.error)
+                    ),
+                    QJsonObject {
+                        {QStringLiteral("candidateTypes"),
+                         candidateArray(answer.candidateTypes)},
+                        {QStringLiteral("iceState"),
+                         iceStateValue(answer.iceState)}
+                    }
+                );
                 signalingResult = 4;
             } else {
                 (void)store.remove(remotePackagePath);
@@ -332,27 +396,21 @@ int WebRtcClientRuntime::runSession()
         return signalingResult;
     }
     if (!connected.ok()) {
-        emitFailure(QString::fromLatin1(
-            WebRtcEndpointSession::errorName(connected.error)
-        ));
+        emitFailure(
+            QString::fromLatin1(
+                WebRtcEndpointSession::errorName(connected.error)
+            ),
+            connectionEvidence(connected)
+        );
         endpoint->close();
         const std::lock_guard lock(resourcesMutex_);
         endpoint_.reset();
         return 4;
     }
 
-    QJsonObject connectedDetails;
-    connectedDetails.insert(
-        QStringLiteral("candidateTypes"),
-        candidateArray(connected.candidateTypes)
+    emitEvent(
+        QStringLiteral("connected"), connectionEvidence(connected)
     );
-    if (connected.selectedPair.has_value()) {
-        connectedDetails.insert(
-            QStringLiteral("selectedCandidatePair"),
-            candidatePairObject(*connected.selectedPair)
-        );
-    }
-    emitEvent(QStringLiteral("connected"), std::move(connectedDetails));
 
     const int result = options_.mediaRole == ClientMediaRole::Publisher
                            ? runPublisherMedia(*endpoint)
@@ -402,7 +460,13 @@ int WebRtcClientRuntime::runPublisherMedia(WebRtcEndpointSession &endpoint)
         source->waitForCompletion(options_.timeout);
     const EndpointSnapshot terminalSnapshot = endpoint.snapshot();
     if (terminalSnapshot.state == EndpointState::Failed) {
-        emitEvent(QStringLiteral("connection_lost"));
+        emitEvent(
+            QStringLiteral("connection_lost"),
+            QJsonObject {
+                {QStringLiteral("iceState"),
+                 iceStateValue(terminalSnapshot.iceState)}
+            }
+        );
     }
     endpoint.beginClose();
     source->stop();
@@ -475,7 +539,13 @@ int WebRtcClientRuntime::runViewerMedia(WebRtcEndpointSession &endpoint)
             mediaEventEmitted = true;
         }
         if (snapshot.state == EndpointState::Failed) {
-            emitEvent(QStringLiteral("connection_lost"));
+            emitEvent(
+                QStringLiteral("connection_lost"),
+                QJsonObject {
+                    {QStringLiteral("iceState"),
+                     iceStateValue(snapshot.iceState)}
+                }
+            );
             break;
         }
         if (
@@ -541,6 +611,33 @@ void WebRtcClientRuntime::emitFailure(
 {
     details.insert(QStringLiteral("error"), error);
     emitEvent(QStringLiteral("failed"), std::move(details));
+}
+
+void WebRtcClientRuntime::emitIceGathering(
+    const EndpointDescriptionResult &result
+) const
+{
+    QString observation = QStringLiteral("srflx_not_observed");
+    if (result.error == EndpointError::GatheringTimeout) {
+        observation = QStringLiteral("gathering_timeout");
+    } else if (result.error == EndpointError::InvalidIceConfiguration) {
+        observation = QStringLiteral("invalid_ice_config");
+    } else if (std::find(
+                   result.candidateTypes.begin(),
+                   result.candidateTypes.end(),
+                   std::string("srflx")
+               ) != result.candidateTypes.end()) {
+        observation = QStringLiteral("srflx_observed");
+    }
+    emitEvent(
+        QStringLiteral("ice_gathering_completed"),
+        QJsonObject {
+            {QStringLiteral("candidateTypes"),
+             candidateArray(result.candidateTypes)},
+            {QStringLiteral("iceState"), iceStateValue(result.iceState)},
+            {QStringLiteral("stunObservation"), observation}
+        }
+    );
 }
 
 } // namespace rtmp_monitor::webrtc_client

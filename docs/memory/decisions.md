@@ -717,6 +717,54 @@
 - 相关文件：`docs/versions/webrtc-v2/weeks/week06/`、`docs/roadmap/project_plan.md`、
   `docs/memory/project_snapshot.md`、`docs/project_handoff.md`
 
+## ADR-039 固定本机 ICE 配置与地址无关 ICE 事实
+
+- 日期：2026-08-24
+- 状态：已采用；R2 实施完成，最终资格结果见 Week 7 test results
+- 背景：Week 6 只能使用 host candidate。Week 7 需要测试 STUN 收集和以后公网非 relay 路径，
+  但把 URL/凭据放入 CLI、session package、profile 或日志会扩大历史记录和持久化边界；只返回
+  Connected 又不足以区分收集、检查、selected pair 和媒体呈现。
+- 决策：客户端新增默认 host 的 `--ice-mode host|stun`。stun 只读取 repository/portable 各自
+  固定 `local-config/ice-runtime.json`，由 client-private `WebRtcIceRuntimeConfigLoader` 一次性验证
+  精确 schema v1、4 KiB 上限和无凭据 STUN；不接受任意路径、URL CLI、TURN 或热更新。
+  transport 复用既有 `IceRuntimeConfig`，追加地址无关 `EndpointIceState`，只累计候选类型并返回
+  脱敏 selected pair；timeout/failed 仍保留已观察类型与 state。
+- 原因：配置位置是部署政策，属于客户端；ICE state、候选和 pair 是 transport 事实；跨轮次
+  Direct/NeedsRelay 属于资格脚本。三层分离可保持 transport 不依赖 signaling/media/UI，并从源头
+  阻止地址、candidate 和凭据进入上层 DTO。
+- 替代方案：`--stun-url`、任意 `--ice-config`、把 URL 塞入 Offer/Answer schema、在 PowerShell
+  解析 SDP、默认公共 STUN、在 endpoint 内读取 QFile。它们分别泄露命令历史、扩大文件边界、
+  改变冻结 schema、依赖文本格式、启动默认网络或反转职责。
+- 影响：旧命令默认 host且不读配置；session schema、media接口和产品profile不变；endpoint公共
+  结果只做末尾追加。ICE回调捕获weak state+generation，配置无新线程，断线继续收敛失败且不做
+  ICE restart。
+- 验证证据：配置数据表、路径表、无效IceServer、timeout保留事实、本地libjuice srflx集成、
+  两种endpoint拓扑、迟到回调、OFF边界和便携黑盒由 Week 7 自动资格覆盖。
+- 相关文件：`src/tools/webrtc_client/`、`include/common/webrtc_transport/`、
+  `src/common/webrtc_transport/`、`tests/WebRtcClientIceConfigTest.cpp`、
+  `tests/WebRtcEndpointSessionTest.cpp`、`scripts/webrtc/qualify_week7.ps1`
+
+## ADR-040 Week 7 本地设计门禁通过、真实公网资格延期
+
+- 日期：2026-08-24
+- 状态：已采用；设计验收策略由用户确认
+- 背景：当前只有一台可用电脑，不能在移动网络与获授权公司网络之间取得真实公网证据。项目仍可
+  用确定性回环STUN fixture和最终ZIP两个独立副本验证配置、srflx、角色互换、非relay pair、媒体
+  呈现、清理和分类反例。让外部设备条件持续阻塞Week 8不会增加代码确定性。
+- 决策：`W7-DESIGN-GATE` 以本地fixture、两个全新便携副本和两种拓扑各十轮为完成口径；通过后
+  研发阶段 `W7-GATE` 标记通过并解锁Week 8。`W7-PUBLIC-NETWORK` 延期到当前电脑与公司台式机
+  可用且网络/STUN获授权时执行。所有本地结果固定 `sameMachinePortable=true`、
+  `publicClaimed=false`，不得声明公网Direct或NeedsRelay。
+- 原因：设计门禁与环境资格验证不同风险。前者能确定代码和包是否正确，后者只能由真实设备、NAT
+  和网络策略产生。明确拆分比用同机结果冒充公网或让Week 8无限等待更诚实。
+- 影响：不扩展TURN、WSS、鉴权、TLS、RBAC、ICE restart、摄像头、多路或正式UI。包内runner和
+  VerifyPublic保留以后执行路径；公网报告只有严格Direct或NeedsRelay才通过环境资格。
+- 验证边界：本地fixture使用127/8和临时端口，不经过真实NAT、企业防火墙、运营商或CGNAT；即使
+  srflx与媒体闭环通过，也只证明设计。真实公网状态在实际四份报告产生前始终为延期/未验证。
+- 相关文件：`docs/versions/webrtc-v2/weeks/week07/`、
+  `docs/roadmap/webrtc_v2_project_plan.md`、`docs/memory/project_snapshot.md`、
+  `docs/project_handoff.md`
+
 ## ADR-XXX 标题
 
 - 日期：

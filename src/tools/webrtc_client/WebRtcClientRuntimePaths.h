@@ -15,11 +15,12 @@ struct WebRtcClientRuntimePathResolution
     WebRtcClientRuntimeLayout layout = WebRtcClientRuntimeLayout::Invalid;
     QString exchangeRoot;
     QString samplePath;
+    QString iceConfigPath;
 
     [[nodiscard]] bool ok() const noexcept
     {
         return layout != WebRtcClientRuntimeLayout::Invalid &&
-               !exchangeRoot.isEmpty();
+               !exchangeRoot.isEmpty() && !iceConfigPath.isEmpty();
     }
 };
 

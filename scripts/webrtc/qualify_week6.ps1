@@ -150,15 +150,22 @@ function Invoke-PortableTopology {
     $previous = $env:QT_QPA_PLATFORM
     $env:QT_QPA_PLATFORM = 'offscreen'
     $offerProcess = $null; $answerProcess = $null
+    $records = [System.Collections.Generic.List[object]]::new()
     try {
-        $offerProcess = Start-Process -FilePath (Join-Path $RootA 'rtmp_monitor_webrtc_client.exe') `
-            -ArgumentList $argsOffer -WorkingDirectory $RootA -WindowStyle Hidden `
-            -PassThru -RedirectStandardOutput $offerOut -RedirectStandardError $offerErr
+        $offerProcess = Start-QualificationOwnedProcess `
+            -Name "$Topology-$Round-offer" `
+            -FilePath (Join-Path $RootA 'rtmp_monitor_webrtc_client.exe') `
+            -Arguments $argsOffer -WorkingDirectory $RootA `
+            -LogRoot $logRoot -RuntimeRoot $script:RuntimeRoot `
+            -StatePath $script:StatePath -Records $records
         $offerFile = Wait-File -Root $aExchange -Filter '*.offer.json'
         Copy-Item -LiteralPath $offerFile.FullName -Destination $bExchange
-        $answerProcess = Start-Process -FilePath (Join-Path $RootB 'rtmp_monitor_webrtc_client.exe') `
-            -ArgumentList $argsAnswer -WorkingDirectory $RootB -WindowStyle Hidden `
-            -PassThru -RedirectStandardOutput $answerOut -RedirectStandardError $answerErr
+        $answerProcess = Start-QualificationOwnedProcess `
+            -Name "$Topology-$Round-answer" `
+            -FilePath (Join-Path $RootB 'rtmp_monitor_webrtc_client.exe') `
+            -Arguments $argsAnswer -WorkingDirectory $RootB `
+            -LogRoot $logRoot -RuntimeRoot $script:RuntimeRoot `
+            -StatePath $script:StatePath -Records $records
         $answerFile = Wait-File -Root $bExchange -Filter '*.answer.json'
         Copy-Item -LiteralPath $answerFile.FullName -Destination $aExchange
         foreach ($process in @($offerProcess,$answerProcess)) {
@@ -198,8 +205,9 @@ function Invoke-PortableTopology {
         return [ordered]@{ topology=$Topology; round=$Round; passed=$true;
             localType=[string]$pair.localType; remoteType=[string]$pair.remoteType }
     } finally {
-        foreach ($process in @($offerProcess,$answerProcess)) {
-            if ($process -and -not $process.HasExited) { Stop-Process -Id $process.Id -Force }
+        if (Test-Path -LiteralPath $script:StatePath -PathType Leaf) {
+            Stop-QualificationOwnedProcesses -StatePath $script:StatePath `
+                -RuntimeRoot $script:RuntimeRoot
         }
         if ($null -eq $previous) { Remove-Item Env:QT_QPA_PLATFORM -ErrorAction SilentlyContinue }
         else { $env:QT_QPA_PLATFORM = $previous }

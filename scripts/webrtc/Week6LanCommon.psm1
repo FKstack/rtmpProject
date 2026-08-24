@@ -66,14 +66,22 @@ function Read-Week6Manifest {
 
 function Test-Week6LanReport {
     param([Parameter(Mandatory = $true)]$Report)
+    $rounds = @($Report.rounds)
     if ([int]$Report.schemaVersion -ne 1 -or
         [string]::IsNullOrWhiteSpace([string]$Report.packageId) -or
         [int]$Report.roundsRequested -lt 1 -or
         [int]$Report.roundsPassed -ne [int]$Report.roundsRequested -or
+        $rounds.Count -ne [int]$Report.roundsRequested -or
+        [string]$Report.lifecycle -notin @(
+            'normal','viewer-first','publisher-first') -or
+        ([string]$Report.lifecycle -ne 'normal' -and $rounds.Count -ne 1) -or
         -not [bool]$Report.cleanupPassed) {
         return $false
     }
-    foreach ($round in @($Report.rounds)) {
+    $roundNumbers = @($rounds | ForEach-Object { [int]$_.round } |
+        Select-Object -Unique)
+    if ($roundNumbers.Count -ne $rounds.Count) { return $false }
+    foreach ($round in $rounds) {
         if (-not [bool]$round.passed) { return $false }
         if ([string]$round.localType -ne 'host' -or
             [string]$round.remoteType -ne 'host' -or

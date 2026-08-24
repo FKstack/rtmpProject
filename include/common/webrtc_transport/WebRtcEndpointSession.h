@@ -24,6 +24,17 @@ enum class EndpointError {
     GatheringTimeout,
     ConnectionTimeout,
     ConnectionFailed,
+    InvalidIceConfiguration,
+};
+
+enum class EndpointIceState {
+    New,
+    Checking,
+    Connected,
+    Completed,
+    Failed,
+    Disconnected,
+    Closed,
 };
 
 enum class EndpointState {
@@ -41,6 +52,7 @@ struct EndpointDescriptionResult
     EndpointError error = EndpointError::None;
     std::string sdp;
     std::vector<std::string> candidateTypes;
+    EndpointIceState iceState = EndpointIceState::New;
 
     [[nodiscard]] bool ok() const noexcept
     {
@@ -62,6 +74,7 @@ struct EndpointConnectionResult
     EndpointError error = EndpointError::None;
     std::vector<std::string> candidateTypes;
     std::optional<EndpointCandidatePair> selectedPair;
+    EndpointIceState iceState = EndpointIceState::New;
 
     [[nodiscard]] bool ok() const noexcept
     {
@@ -72,6 +85,7 @@ struct EndpointConnectionResult
 struct EndpointSnapshot
 {
     EndpointState state = EndpointState::New;
+    EndpointIceState iceState = EndpointIceState::New;
     std::uint64_t generation = 0;
     std::size_t queueDepth = 0;
     std::uint64_t acceptedAccessUnits = 0;
@@ -127,6 +141,7 @@ public:
 
     [[nodiscard]] static const char *errorName(EndpointError error) noexcept;
     [[nodiscard]] static const char *stateName(EndpointState state) noexcept;
+    [[nodiscard]] static const char *iceStateName(EndpointIceState state) noexcept;
 
 private:
     class Impl;

@@ -21,7 +21,7 @@
 | 版本目录 | 状态 | 内容入口 |
 | --- | --- | --- |
 | `versions/rtmp-v1/` | 当前稳定基线 `0.1.0-alpha.1` | [RTMP V1 文档](versions/rtmp-v1/README.md) |
-| `versions/webrtc-v2/` | `0.2.0-beta.1`：Week 6 本地双实例设计门禁通过并解锁 P2P；物理双机环境资格延期 | [WebRTC V2 文档](versions/webrtc-v2/README.md) |
+| `versions/webrtc-v2/` | `0.2.0-beta.1`：Week 7 受限 STUN 与本地设计门禁；真实公网资格延期 | [WebRTC V2 文档](versions/webrtc-v2/README.md) |
 
 ## 归档规则
 

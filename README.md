@@ -25,9 +25,10 @@ SRS/WHIP/WHEP 公网服务器模式、自动 WSS 信令和 coturn 中继移到�
 
 V2 当前不是 Alpha 已交付能力。`Beta` 分支已完成默认关闭的 Week 2～5 developer signaling、
 对称 endpoint、固定 H.264 publisher 与单画面 viewer 闭环；Week 6 已完成脱敏 selected-pair、
-Release 便携测试包、同机双包自动化和双机 runner。用户已接受本地两个独立包副本的 20/20 结果
-作为 Week 6 设计验收，`W6-GATE` 通过并解锁 Week 7/P2P；真实双机 LAN 改为延期的环境资格，
-正式产品 UI、公网和 ARM 真机尚未验证；`W2-GATE` 的早期人工复核也保持待执行。请从
+Release 便携测试包、同机双包自动化和双机 runner；Week 7 已增加默认关闭的受限 STUN 模式、
+地址无关 ICE 事实、本地确定性 STUN fixture、两个便携副本设计门禁和延期公网测试 runner。
+用户接受本地设计门禁解锁 Week 8；真实双机 LAN 与公司网络/移动网络公网资格仍延期，不能由
+同机结果冒充，正式产品 UI 和 ARM 真机也尚未验证；`W2-GATE` 的早期人工复核保持待执行。请从
 [双客户端优先总计划](docs/roadmap/webrtc_v2_project_plan.md)、
 [六章 WebRTC 零基础动手教程](docs/versions/webrtc-v2/README.md#六章零基础动手教程)和
 [V2 Week 1～10 结果目录](docs/versions/webrtc-v2/weeks/)进入。完整设计、模块门禁和后续实施进度只在

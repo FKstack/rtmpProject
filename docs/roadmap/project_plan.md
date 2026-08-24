@@ -1416,3 +1416,12 @@ CTest 14/14 通过；ARM64 RASTER 构建 NEEDED 无 Qt6OpenGL*/EGL/GLES，GLES3 
   本地双实例 20/20 作为设计验收，`W6-DESIGN-GATE` 与本阶段 `W6-GATE` 通过，Week 7/P2P
   解锁。真实双机 host/host UDP 和物理双方先关改为延期环境资格；同机结果不得冒充物理 LAN、
   公网或正式产品 UI。
+
+## 23. WebRTC V2 Week 7 受限 STUN 与本地设计门禁（2026-08-24）
+
+- 客户端新增默认host、显式stun的固定本机配置；真实URL不进入CLI、Git、ZIP、manifest或报告。
+- transport追加地址无关ICE state、候选类型和timeout事实，仍不依赖signaling/media/render/UI。
+- 测试配置新增仅回环的libjuice STUN fixture；最终ZIP两个副本运行两种拓扑各十轮，聚合srflx、
+  非relay pair和RTP/AU/submitted/decoded/rendered/presented证据。
+- 用户采用`W7-DESIGN-GATE`通过解锁Week 8；真实公司网络/移动网络`W7-PUBLIC-NETWORK`延期，
+  不声明Direct或NeedsRelay。详见[Week 7总结](../versions/webrtc-v2/weeks/week07/summary.md)。
