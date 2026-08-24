@@ -1,5 +1,12 @@
 # RtmpMonitor 当前项目快照
 
+> WebRTC V2 Week 7（2026-08-24）：受限STUN配置、地址无关ICE事实、测试专用libjuice fixture、
+> Week 7包与公网runner已实现。fresh OFF 39/39、Debug/Release ON 46/46；最终客户端两个便携
+> 副本两种拓扑各10/10，每轮srflx observed、host/host UDP、5045 RTP、180 AU/submitted及
+> decoded/rendered/presented/nonBlack通过。`W7-DESIGN-GATE`与研发`W7-GATE`通过并解锁
+> Week 8；`sameMachinePortable=true`、`publicClaimed=false`。真实公司网络/移动网络
+> `W7-PUBLIC-NETWORK`延期/未验证，不声明Direct或NeedsRelay。Week 4/5/6完整Run回归通过。
+
 > WebRTC V2 Week 6 设计验收决定（2026-08-24）：因当前没有第二台电脑，用户接受最终 ZIP 在
 > 同一主机两个独立展开目录中的两种拓扑各 10/10、合计 20/20 结果，作为 Week 6 的设计与开发
 > 门禁证据。`W6-DESIGN-GATE` 和本阶段 `W6-GATE` 标记为通过，Week 7/P2P 解锁。结果仍保持
