@@ -126,6 +126,8 @@ Release CTest 通过后，脚本调用 `package_week7.ps1`。公共打包模块�
 
 用户当前通过远程控制软件访问显示为 KUNLUN 的公司电脑。公司侧已确认的脱敏事实是：以太网、DHCP、公用网络配置、私网 IPv4 和 1 Gbps 链路；具体 IPv4、IPv6、网关、DNS 与 MAC 不进入文档和报告。远程控制软件的“文件传输”只用于搬运完整 ZIP/Offer/Answer，“进入桌面”用于操作公司 Windows；WebRTC 媒体仍必须通过两端客户端的真实 UDP selected pair建立，不能把远程控制画面当作 WebRTC viewer 证据。
 
+KUNLUN的补充只读预检已经观察到外部STUN UDP响应和跨服务稳定映射，这是适合开始双机实验的有利迹象，不是本项目Direct证据。预检时本机代理来自VPN；正式20轮必须固定VPN on/off并在人工表记录，同一四报告集合不得混合两种VPN状态。原生libdatachannel客户端不使用Chrome PeerConnection，不能用`chrome://webrtc-internals`替代JSONL和报告。Week 7没有TURN或TCP/TLS relay回退，相关建议留给后续生产规划。
+
 第一次执行时不要只读本节摘要，请完整按照独立的 [KUNLUN 双电脑公网手动测试手册](manual_two_computer_public_test.md) 操作。该手册从 ZIP 上传、两端解压、packageId 核对、PowerShell窗口布置、STUN交互配置开始，逐轮说明如何通过 staging 原子搬运 Offer/Answer，并分别给出资格报告模式和可视窗口模式。
 
 ![真实公网两种角色](assets/05_public_role_topologies.svg)

@@ -51,6 +51,34 @@
 
 远程控制软件本身通过网络维持 KUNLUN 会话。关闭 KUNLUN 以太网、禁用网卡、修改网关或重启网络服务，可能让你立即失去远程访问。Week 7 的“连接后网络变化”只在当前电脑一侧做；除非公司现场有人协助，否则不要在 KUNLUN 上做断网注入。
 
+### 3.1 KUNLUN 已完成的只读网络预检如何使用
+
+另一台电脑已经用只读方式完成网络检查，没有修改网络和防火墙。本文只保留以下脱敏基线：
+
+| 预检事实 | 对 Week 7 的意义 | 不能推出什么 |
+|---|---|---|
+| 有线千兆网卡、DHCP、私网 IPv4 | KUNLUN 具备稳定的公司侧 IPv4 接口 | 不能证明路由器 WAN 就是公网地址 |
+| 没有可用的公网 IPv6 默认路由 | 本轮按 IPv4 ICE 路径观察 | 不能据此评价其他网络的 IPv6 能力 |
+| Windows 公用网络、防火墙开启 | 必须保留当前防火墙事实并观察实际结果 | 不能要求关闭防火墙或改网络类别 |
+| 至少两个获准的外部 STUN 检查得到 UDP 响应 | UDP/STUN不是全局阻断，适合开始双端实验 | 不等于本项目客户端已经连接成功 |
+| 同一本地 UDP 端口访问不同 STUN 时映射端口保持稳定 | 映射行为对打洞是有利迹象 | 不是端点无关映射的完整认证，也不证明一定Direct |
+| 至少一层 NAT，是否存在上游NAT仍不确定 | 最终必须使用不同网络的真实peer验证 | 不能仅靠电脑端地址断言是否CGNAT |
+| 检查时存在本机代理/VPN进程 | VPN状态必须成为现场记录的一部分 | 不能假设所有UDP必然绕过VPN |
+
+具体公网映射、局域网地址、网关、DNS、代理监听端口和物理地址不写进本手册。它们对复现实验没有必要，还会扩大隐私暴露面。
+
+### 3.2 正式轮次前固定 VPN/代理状态
+
+用户补充说明，预检中的本地代理来自正在运行的 VPN。VPN可能只代理HTTP，也可能通过TUN/WFP或虚拟网卡接管UDP；不能仅凭“系统代理”页面判断本项目媒体包究竟走哪条路径。因此每一组20轮开始前必须选择并固定一种状态：
+
+1. 如果公司政策允许且远程控制不依赖该VPN，退出VPN，等待网络稳定后记录 `VPN=off`。
+2. 如果公司政策要求VPN保持运行，就保持当前配置，记录 `VPN=on`，不要为测试绕过企业要求。
+3. 同一组拓扑A和拓扑B中不能中途切换VPN。
+4. 如果需要比较开/关VPN，必须作为两组完全独立的20轮实验，分别使用新的报告目录；不能混合四份报告。
+5. VPN切换可能改变candidate、NAT映射和远程控制稳定性。仅靠远程访问时，切换前确认仍有恢复KUNLUN的方法。
+
+`networkClass=company` 是当前报告schema允许的脱敏类别，它不会自动记录VPN状态。因此必须在第16章人工记录表中单独填写VPN on/off和测试时段。`VerifyPublic=Direct`如果在VPN开启时产生，只能表述为“company网络在该VPN状态下Direct”，不能写成裸公司网络一定Direct。
+
 ## 4. 准备两台电脑上的目录
 
 ### 4.1 找到最终 ZIP
@@ -183,6 +211,16 @@ Get-NetConnectionProfile | Select-Object InterfaceAlias,NetworkCategory,IPv4Conn
 ```
 
 根据提供的截图，预期公司以太网为 `Public` 类别并具有 IPv4 连接。不要运行会把完整 IP、DNS、网关、MAC 写入日志的收集脚本。当前电脑切换到移动网络后也可执行同一命令，只记录“mobile/已连接”，不保存具体地址。
+
+再人工记录 KUNLUN 的 VPN 状态，不要记录代理端口或进程参数：
+
+```text
+KUNLUN VPN：on / off
+当前电脑 VPN：on / off
+从拓扑A第1轮到拓扑B第10轮是否保持不变：是 / 否
+```
+
+如果中途变化，当前四报告集合失去单一环境含义，应清理后重新执行。
 
 ## 7. 分别配置获授权的 STUN
 
@@ -643,6 +681,10 @@ Set-Location -LiteralPath '把这里替换为当前电脑仓库根目录'
 
 无论输出什么，只能写成“该 ZIP、该测试时段、company/mobile 这组网络的结果”。不能推导所有公司网络或所有移动运营商都相同。
 
+不要使用 `chrome://webrtc-internals` 作为本项目验收依据。本项目是原生 Qt/libdatachannel客户端，没有浏览器PeerConnection，因此Chrome页面看不到这两个endpoint。原生资格证据来自 `ice_gathering_completed`、`connected.selectedCandidatePair`、viewer媒体事件和四份报告。
+
+当前Week 7只配置STUN，不包含TURN server、TURN凭据或TCP/TLS relay回退。报告若为`NeedsRelay`，含义是“严格前置下需要后续评估relay”，不是当前包已经走relay。生产环境是否部署TURN、是否开放UDP端口或TCP/TLS 443属于后续独立设计，不能为了本轮通过而加入未经评审的配置。
+
 ## 14. 测试结束后的安全清理
 
 先在两台电脑分别检查：
@@ -722,6 +764,7 @@ Get-ChildItem -LiteralPath $Week7Incoming -File
 | SelfTest通过 |  |  |  |
 | STUN已分别授权配置 |  |  | 不记录URL |
 | 网络类别 | mobile | company/Public Ethernet | 不记录地址 |
+| VPN状态全程固定 | on/off | on/off | 不记录代理端口 |
 | 拓扑A roundsPassed | publisher/offer | viewer/answer | /10 |
 | 拓扑B roundsPassed | publisher/answer | viewer/offer | /10 |
 | KUNLUN动态画面A | 不适用 |  |  |

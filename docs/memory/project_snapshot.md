@@ -8,6 +8,12 @@
 > 具体地址、网关、DNS或MAC。Week 7包打包入口同步携带该手册与SVG assets；真实公网测试仍为
 > 待用户执行，本次文档补充不预写Direct或NeedsRelay。
 
+> KUNLUN补充只读网络预检（2026-08-24）：公司侧已观察到外部STUN UDP响应、跨服务稳定映射、
+> IPv4 NAT、公用网络防火墙和运行中的本机VPN/代理。仓库只保存这些脱敏类别，不保存预检给出的
+> 公私网地址、网关、DNS、代理端口或MAC。该证据只说明具备开始双机实验的条件，不替代原生客户端
+> JSONL/四报告；Chrome WebRTC internals不适用于libdatachannel客户端。正式20轮需固定并记录VPN
+> on/off，Week 7仍无TURN/TCP/TLS relay能力。
+
 > WebRTC V2 Week 7（2026-08-24）：受限STUN配置、地址无关ICE事实、测试专用libjuice fixture、
 > Week 7包与公网runner已实现。fresh OFF 39/39、Debug/Release ON 46/46；最终客户端两个便携
 > 副本两种拓扑各10/10，每轮srflx observed、host/host UDP、5045 RTP、180 AU/submitted及
