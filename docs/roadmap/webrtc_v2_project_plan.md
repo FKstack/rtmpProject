@@ -2,11 +2,12 @@
 
 > 文档状态：经确认的 R3 总路线；Week 2 开发者基础、Week 3 H.264/解码边界、Week 4
 > MP4 publisher/对称 endpoint、Week 5 测试客户端接收播放闭环，以及 Week 6 脱敏 selected-pair、
-> Release 便携包和双机 runner 已实施。`W2-GATE` 人工复核、Week 5 桌面人工观感和 Week 6
-> 真实双机门禁仍待执行。
+> Release 便携包和双机 runner 已实施。2026-08-24 用户接受最终 ZIP 的本地独立双包 20/20
+> 作为 Week 6 设计验收，`W6-DESIGN-GATE` 与本阶段 `W6-GATE` 通过，Week 7/P2P 解锁；
+> `W2-GATE` 人工复核、Week 5 桌面人工观感和 Week 6 物理双机环境资格仍待执行。
 >
 > 当前稳定产品能力仍是 `0.1.0-alpha.1` RTMP 路径。Week 5/6 只完成默认关闭的测试客户端和资格
-> 测试包；真实双机、Week 7～10 的公网/正式 UI/性能与 ARM 交付仍不能作为已部署能力。
+> 测试包；物理双机、Week 7～10 的公网/正式 UI/性能与 ARM 交付仍不能作为已部署能力。
 
 ## 1. 决策摘要
 
@@ -353,10 +354,12 @@ Week 3 的先行实施依据上方明确授权单独记录，不反推 W2 人工
 | W6-DOC-01 | 2 | W6-LAN-03,W6-LIF-01,W6-SEC-02 | 可交接 LAN 结果和限制 | 把 LAN 写成公网能力即失败 |
 | W6-GATE | 3 | W6-PKG-02,W6-DOC-01 | 社团测试包资格结论 | 样本/许可/双角色/清理任一缺失即阻塞 |
 
-实施状态（2026-08-23）：`W6-PKG-01/02`、`W6-GDE-01`、本地 `W6-SEC-01/02`、技术文档和同机
-两个独立包副本资格能力已完成；同机结果明确不声明 LAN。`W6-ENV-01`、`W6-LAN-01/02/03`、
-`W6-LIF-01` 以及最终 `W6-GATE` 等待用户在两台获准 Windows 电脑执行四组报告与窗口生命周期。
-实际代码、图文和测试入口见 `../versions/webrtc-v2/weeks/week06/`。
+实施状态（2026-08-24）：`W6-PKG-01/02`、`W6-GDE-01`、本地 `W6-SEC-01/02`、技术文档和最终
+ZIP 的两个独立包副本均完成；两种拓扑各 10/10，合计 20/20。用户接受该结果作为
+`W6-DESIGN-GATE` 与本阶段 `W6-GATE` 的通过依据，因此 Week 7 前置已满足。同机结果仍明确
+`lanClaimed=false`，不声明物理 LAN。`W6-ENV-01`、`W6-LAN-01/02/03`、物理 `W6-LIF-01`
+归入 `W6-PHYSICAL-LAN` 延期环境资格，未来可补测但不阻塞研发。实际代码、图文和测试入口见
+`../versions/webrtc-v2/weeks/week06/`。
 
 ### Week 7：公网 Direct 或 Needs Relay
 

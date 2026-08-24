@@ -1,18 +1,21 @@
 # WebRTC V2 Week 6 独立测试指南：自动脚本版与人工双机版
 
-> 本文可以单独使用。它先说明本周测试的对象和证据层，再给出开发机自动测试、Release 包自检、真实双机两种拓扑、双方退出顺序、报告汇总和排障。所有示例使用环境变量或实际路径，不再提供可被误复制的尖括号占位符。
+> 本文可以单独使用。它先说明本周测试的对象和证据层，再给出开发机自动测试、Release 包自检、
+> 可选的真实双机两种拓扑、双方退出顺序、报告汇总和排障。2026-08-24 用户确认以最终 ZIP 的
+> 本地双实例 20/20 结果作为 Week 6 设计验收，`W6-DESIGN-GATE` 与本阶段 `W6-GATE` 已通过并
+> 解锁 Week 7/P2P；物理双机测试保留为延期的环境资格，不再阻塞开发。
 
 ## 1. 本周主要测试什么
 
 Week 6 测试的不是“能不能创建 WebRTC 对象”，而是一个完整、可搬运的接收播放闭环。publisher 从包内固定 MP4 读取 H.264，PeerConnection 通过文件 Offer/Answer 建连，viewer 收到 RTP，经官方 depacketizer 得到 Annex-B AU，再进入既有 FFmpeg decoder、capacity-1 mailbox 和 CPU canvas。成功必须同时有连接选中 pair、RTP、AU、decoded、presented 和清理证据。
 
-本周还测试运行布局。开发构建必须报告 `repository`，Release 测试包必须报告 `portable`；包在没有 `.git` 的目录也能工作，所有交换文件只写在包内。selected pair 只包含 type 与 transport；真实双机 LAN 只接受 host/host UDP。同机两个包副本可能得到 host/srflx，它只能证明便携流程，不能写成 LAN 通过。
+本周还测试运行布局。开发构建必须报告 `repository`，Release 测试包必须报告 `portable`；包在没有 `.git` 的目录也能工作，所有交换文件只写在包内。selected pair 只包含 type 与 transport；真实双机 LAN 仍只接受 host/host UDP。同机两个包副本可能得到 host/srflx，不能写成物理 LAN 通过，但在当前批准口径下可以作为设计、便携流程和媒体闭环通过的依据。
 
 ![门禁分层](assets/week6-qualification-gates.svg)
 
 ## 2. 你会得到哪些测试入口
 
-开发仓库入口是 `scripts/webrtc/qualify_week6.ps1`。`Check` 检查 Qt、vcpkg、VS/CMake、FFmpeg 和 state；`SelfTest` 检查脚本语法、占位符负向行为、manifest/report 纯规则和文档/SVG；`Run` 执行 fresh 构建、完整 CTest、Release 打包和同机双包；`VerifyLan` 汇总四份真实双机报告；`Status` 查看结果；`Stop` 只停止身份匹配的本轮进程。
+开发仓库入口是 `scripts/webrtc/qualify_week6.ps1`。`Check` 检查 Qt、vcpkg、VS/CMake、FFmpeg 和 state；`SelfTest` 检查脚本语法、占位符负向行为、manifest/report 纯规则和文档/SVG；`Run` 执行 fresh 构建、完整 CTest、Release 打包和同机双包；`VerifyLan` 仍可汇总四份真实双机报告，但现在属于可选物理环境资格，不控制 Week 7 开始；`Status` 查看结果；`Stop` 只停止身份匹配的本轮进程。
 
 打包入口是 `package_week6.ps1`，通常由 Run 调用。它不负责构建，只把已经完成 CTest 的 Release runtime、样本、许可、脚本和指南物化为 stage 与 ZIP。包内入口是 `week6_lan_test.ps1`，两台电脑各运行自己的一侧。包内 runner 的 Check/SelfTest 不需要源码。
 
@@ -200,7 +203,7 @@ publisher 的 sample 自然结束也会关闭，但人工场景应在播放期�
 
 ![关闭顺序](assets/week6-shutdown-lifecycle.svg)
 
-## 13. 汇总真实双机报告
+## 13. 可选：汇总真实双机报告
 
 把四份 normal 主要报告复制到开发机一个本地结果目录。不要放同机自动结果，不要放重复角色，不要放原始 offer/answer。执行：
 
@@ -210,15 +213,16 @@ $resultRoot = Join-Path $env:USERPROFILE 'webrtc-week6-lan-results'
   -ResultRoot $resultRoot
 ```
 
-VerifyLan 要求正好四个角色组合、相同 packageId、每份 roundsPassed 等于 roundsRequested、cleanupPassed、每轮 host/host UDP，viewer 每轮有 RTP/AU/decoded/presented。缺任一项输出 W6-GATE blocked。只有聚合通过且生命周期材料也人工复核后，路线图才能把 W6-GATE 改为通过。
+VerifyLan 要求正好四个角色组合、相同 packageId、每份 roundsPassed 等于 roundsRequested、cleanupPassed、每轮 host/host UDP，viewer 每轮有 RTP/AU/decoded/presented。缺任一项仍输出历史固定文字 `W6-GATE blocked`。在 2026-08-24 的新验收口径下，它表示物理 LAN 资格未完成，不会推翻 `W6-DESIGN-GATE`，也不阻塞 Week 7。
 
-当前没有第二台获准电脑时，不运行伪造报告，不把同机文件复制到结果目录；保持 W6-LAN 与 W6-GATE 等待用户执行就是正确结果。
+当前没有第二台获准电脑时，不运行伪造报告，不把同机文件复制到结果目录。正确记录是：
+`W6-GATE=通过（本地双实例设计验收）`，`W6-PHYSICAL-LAN=延期/未验证`。
 
 ## 14. 测试记录表
 
 每次人工测试建议填写：日期时间、packageId、PC-A/PC-B OS、拓扑、轮次、Offerer、publisher、viewer、动态画面、窗口响应、selected pair、RTP、AU、decoded、presented、退出顺序、收敛秒数、进程残留、交换文件残留、报告文件。IP、用户名、完整路径、SDP 不填写。
 
-推荐判定：单轮只有双方 connected 但 viewer 不出画，失败；viewer 出画但 pair 非 host/host UDP，媒体功能可观察但 LAN 门禁失败；所有轮次过但生命周期残留，W6-LIF 失败；四份报告不齐，W6-GATE 阻塞；自动同机过但没有第二台，技术包通过而 LAN 待执行。
+推荐判定：单轮只有双方 connected 但 viewer 不出画，失败；viewer 出画但 pair 非 host/host UDP，媒体功能可观察但物理 LAN 资格失败；所有轮次过但生命周期残留，物理 W6-LIF 失败；四份报告不齐，`W6-PHYSICAL-LAN` 未验证；自动同机 20/20 且没有第二台时，按当前批准口径判定设计门禁通过、物理 LAN 延期。
 
 ## 15. 排障：出现 Qt 平台插件弹窗
 
@@ -273,14 +277,15 @@ viewer 先关后 publisher 长期运行，说明对端断线或 source stop 收�
 - 开发机 Check/SelfTest 通过。
 - fresh Debug OFF、Debug ON、Release ON 全构建与完整 CTest 通过，实际数量写入结果。
 - Release stage/ZIP 包含必需 DLL、plugin、sample、manifest、runner、指南和许可，无开发产物。
-- 同机 package A/B 两拓扑各十轮通过，结果明确不声称 LAN。
-- PC A/PC B 使用同一 packageId，四个角色组合各十轮。
+- 同机 package A/B 两拓扑各十轮通过，结果明确不声称物理 LAN。
+- `W6-DESIGN-GATE` 与本阶段 `W6-GATE` 标记为通过，Week 7/P2P 解锁。
+- 可选物理资格：PC A/PC B 使用同一 packageId，四个角色组合各十轮。
 - viewer 每轮有 RTP、AU、decoded、presented 和动态非黑画面。
-- 真实双机每轮 selected pair 为 host/host UDP。
-- viewer 先关、publisher 先关均有界收敛，无 owned process/state/交换文件。
-- VerifyLan 聚合四份报告通过后，才更新 W6-GATE。
+- 可选物理资格：真实双机每轮 selected pair 为 host/host UDP。
+- 可选物理资格：viewer 先关、publisher 先关均有界收敛，无 owned process/state/交换文件。
+- VerifyLan 聚合四份报告通过后，更新 `W6-PHYSICAL-LAN`，不再控制设计门禁。
 
-完成自动项但未完成双机项时，最终写法是：“Week 6 技术实现、便携包和同机自动门禁完成；真实双机 LAN/W6-GATE 等待用户执行。”这不是失败，而是对测试环境边界的准确记录。
+完成自动项但未完成双机项时，当前最终写法是：“Week 6 技术实现、便携包和本地双实例设计门禁通过，Week 7/P2P 已解锁；真实双机 LAN 环境资格延期且未验证。”
 
 ## 22. 自动测试内部检查表：OFF 配置
 
@@ -383,11 +388,11 @@ Week 6 完整结果前执行：
 
 所有记录只使用 PC-A/PC-B，不写人名、机器名和 IP。最终把四份 runner JSON与人工记录表放在 Git 忽略、本地受控目录，VerifyLan 读取 JSON，人工审查记录表。
 
-## 34. 为什么真实双机仍需用户执行
+## 34. 为什么真实双机仍有价值但不再阻塞
 
 自动化可以创建两个进程、两个目录甚至两个虚拟接口，但只要它们位于同一获准主机，就不能证明两台 Windows 的防火墙、网卡路由、文件搬运操作和窗口体验。用回环地址或同机 ICE 结果冒充 LAN 会掩盖最有价值的环境差异。当前执行环境没有第二台获准电脑，也不能未经授权连接外部设备。
 
-因此技术交付允许完成，W6-GATE保持阻塞。用户执行双机后，结构化报告让开发者无需接触地址/SDP即可判定。若报告通过，再更新路线图；若失败，Week 7依据真实证据修复。这种分工不是把工作推给用户，而是把只能由真实环境证明的部分留给正确环境。
+因此真实双机仍是有价值的环境资格，但在用户明确接受本地双实例设计证据后，不再作为 Week 7 的前置条件。未来执行双机时，结构化报告仍让开发者无需接触地址/SDP即可判定；通过则更新 `W6-PHYSICAL-LAN`，失败则作为网络环境或后续修复输入，不回写为“Week 6 设计失败”。
 
 ## 35. 命令退出码与事件顺序速查
 
@@ -411,7 +416,7 @@ Week 6 完整结果前执行：
 
 “roundsPassed 不等于 requested”查看第一个 passed=false 的轮次，按 pair或viewer证据定位；不要只把 Rounds 改小重新生成。“cleanup false”说明进程/交换残留，修复关闭后全重跑该角色。“pair 非 host/host UDP”处理局域网环境，不能放宽 VerifyLan。
 
-VerifyLan 通过只代表结构化四份主要报告。仍要人工确认 viewer-first、publisher-first和窗口记录；总路线把 W6-GATE改通过时在 test_results 引用实际命令、日期和材料位置（本地忽略路径即可），不提交原始日志/会话包。
+VerifyLan 通过只代表结构化四份物理环境报告。仍要人工确认 viewer-first、publisher-first和窗口记录；更新 `W6-PHYSICAL-LAN` 时在 test_results 引用实际命令、日期和材料位置（本地忽略路径即可），不提交原始日志/会话包。
 
 ## 38. 最小重跑策略与完整重跑策略
 
@@ -431,7 +436,7 @@ VerifyLan 通过只代表结构化四份主要报告。仍要人工确认 viewer
 
 ## 40. 常见错误操作及其正确替代
 
-错误：把 `<qt-root>` 原样粘贴。正确：设置真实 QTDIR 后传环境变量。错误：用 MinGW Qt 配 MSVC。正确：选择 MSVC x64 kit。错误：只复制 SDP 文本。正确：复制完整原子 JSON 文件并保持名。错误：把同机 host/srflx 写成 LAN。正确：结果标同机，等待两台真实电脑。
+错误：把 `<qt-root>` 原样粘贴。正确：设置真实 QTDIR 后传环境变量。错误：用 MinGW Qt 配 MSVC。正确：选择 MSVC x64 kit。错误：只复制 SDP 文本。正确：复制完整原子 JSON 文件并保持名。错误：把同机 host/srflx 写成物理 LAN。正确：结果保持同机标记，用于已批准的设计验收，并把物理 LAN 单独标为延期。
 
 错误：connected 就判成功。正确：继续检查 selected pair、RTP、AU、decoded、presented、非黑和清理。错误：进程卡住直接任务管理器结束再写通过。正确：Status/Stop并将生命周期判失败。错误：为通过门禁编辑报告或放宽 host规则。正确：修复环境/代码并重跑最终包。
 
@@ -439,12 +444,12 @@ VerifyLan 通过只代表结构化四份主要报告。仍要人工确认 viewer
 
 ## 41. 完成判定示例
 
-示例一：OFF/ON/Release、二十轮同机和包扫描全过，没有第二台电脑。判定：Week 6 技术实现与便携包完成，W6-GATE待用户。示例二：四份报告齐全且 host/host UDP，但 viewer-first留下进程。判定：LAN媒体轮次通过，W6-LIF与总门禁失败，修复关闭。
+示例一：OFF/ON/Release、二十轮同机和包扫描全过，没有第二台电脑。判定：Week 6 设计门禁与本阶段 W6-GATE 通过，物理 LAN 延期，允许进入 Week 7。示例二：四份物理报告齐全且 host/host UDP，但 viewer-first留下进程。判定：物理 LAN 媒体轮次通过、物理 W6-LIF失败；不推翻设计通过，但应记录并修复关闭问题。
 
-示例三：两拓扑画面正常，一侧报告 packageId不同。判定：混包，不可汇总，使用同一ZIP重跑。示例四：同一包、十轮、清理全过，pair为srflx。判定：功能可达但不满足本周纯LAN证据，检查VPN/VLAN。示例五：VerifyLan与人工生命周期均通过。判定：可以把W6-LAN/W6-LIF/W6-GATE更新为实际通过，并记录日期环境和命令。
+示例三：两拓扑画面正常，一侧报告 packageId不同。判定：物理资格混包，不可汇总，使用同一ZIP重跑。示例四：同一包、十轮、清理全过，pair为srflx。判定：功能可达但不满足物理纯LAN证据，检查VPN/VLAN。示例五：VerifyLan与人工生命周期均通过。判定：把 `W6-PHYSICAL-LAN` 更新为通过，并记录日期环境和命令。
 
-测试者应始终选择与证据完全对应的最窄结论。宁可保留待执行，也不要用不匹配的环境填补门禁；这能让后续Week 7/8建立在可复现事实上。
+测试者应始终选择与证据完全对应的最窄结论：设计门禁通过是用户批准的产品验收决定，物理 LAN 仍未验证是环境事实，两者必须同时保留。后续 Week 7/8 可以建立在可复现的本地 20/20 基线上。
 
-最后复核一次：测试命令来自最终提交，Release 包的提交号与 manifest 一致，双方确实使用同一个 ZIP，自动结果明确标注同机，人工结果明确标注两台环境，所有未执行项仍写待执行。只有这些事实相互一致，测试结果才具有交接价值；否则先更正记录再交付。
+最后复核一次：测试命令来自最终提交，Release 包的提交号与 manifest 一致，自动结果明确标注同机；若未来执行物理测试，双方应使用同一个 ZIP 且报告明确标注两台环境。未执行的物理项写“延期/未验证”，不能写成真实 LAN 已通过。
 
 完成后请保存四份脱敏报告与人工记录表，运行一次 Status 确认双方空闲，再关闭终端。若后续反馈问题，请同时注明拓扑、角色、轮次、失败证据层和包编号，这样开发者无需猜测现场步骤即可复现。

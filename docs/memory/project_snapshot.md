@@ -1,5 +1,12 @@
 # RtmpMonitor 当前项目快照
 
+> WebRTC V2 Week 6 设计验收决定（2026-08-24）：因当前没有第二台电脑，用户接受最终 ZIP 在
+> 同一主机两个独立展开目录中的两种拓扑各 10/10、合计 20/20 结果，作为 Week 6 的设计与开发
+> 门禁证据。`W6-DESIGN-GATE` 和本阶段 `W6-GATE` 标记为通过，Week 7/P2P 解锁。结果仍保持
+> `sameMachinePortable=true`、`lanClaimed=false`；真实双机 host/host UDP、两台 Windows 的网卡/
+> 防火墙和物理窗口先关场景统一标记为 `W6-PHYSICAL-LAN` 延期/未验证，不冒充通过，也不再阻塞
+> 研发。该决定只改变验收推进策略，没有修改源码、公共契约、测试脚本或产品能力声明。
+
 > WebRTC V2 Week 6 技术状态（2026-08-24）：在 Week 5 单画面 viewer 闭环之上新增脱敏
 > `EndpointCandidatePair`、Connected 后断线终态、portable marker 运行布局、Release 专用测试包、
 > 固定 H.264 样本、许可/manifest、包内双机 runner 和 LAN 报告聚合。VS2026 fresh Debug OFF、
@@ -8,7 +15,8 @@
 > 各 10 轮，RTP/AU/decoded/presented、selected UDP pair、退出和交换目录清零均通过。Week 4、
 > Week 5 完整 Run 也再次通过。资格测试误载 MinGW `Qt6Test.dll` 的弹窗已通过收敛 MSVC Qt
 > 运行时 PATH 修复，Release 45/45 复验无弹窗。该结果明确标记 `sameMachinePortable=true`、
-> `lanClaimed=false`；真实双机 `host/host + udp`、双方先关和最终 `W6-GATE` 等待用户执行。
+> `lanClaimed=false`；本段末尾的物理双机等待状态已由上方最新验收决定取代：设计门禁通过，
+> 物理双机环境资格延期。
 
 > WebRTC V2 Week 5 技术状态（2026-08-23）：同一 `rtmp_monitor_webrtc_client` 已同时支持
 > publisher/viewer 与 Offerer/Answerer 正交组合。ReceiveOnly Track 使用 libdatachannel 0.24.5

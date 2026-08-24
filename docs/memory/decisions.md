@@ -668,7 +668,7 @@
 ## ADR-037 Week 6 便携信令根与脱敏 selected-pair 证据
 
 - 日期：2026-08-23
-- 状态：已采用；R2 技术实施完成，真实双机资格待用户
+- 状态：已采用；R2 技术实施完成；门禁推进策略后由 ADR-038 更新
 - 背景：Week 5 客户端只能从 Git 仓库定位信令目录，Release ZIP 无法运行；既有
   `candidateTypes` 只说明 description 中出现的候选，不能证明实际选中路径。直接增加任意路径 CLI
   会扩大清理边界，输出 candidate/SDP 再脱敏会把地址带到上层。
@@ -694,6 +694,28 @@
   `scripts/webrtc/Week6LanCommon.psm1`、`scripts/webrtc/package_week6.ps1`、
   `scripts/webrtc/qualify_week6.ps1`、`scripts/webrtc/week6_lan_test.ps1`、
   `docs/versions/webrtc-v2/weeks/week06/`
+
+## ADR-038 本地双实例作为 Week 6 设计门禁，物理双机资格延期
+
+- 日期：2026-08-24
+- 状态：已采用；`W6-DESIGN-GATE` 与本阶段 `W6-GATE` 通过
+- 背景：当前没有第二台电脑。最终 Release ZIP 已从干净提交生成并全新展开，在同一主机的两个
+  独立包副本中完成 publisher/Offerer ↔ viewer/Answerer、viewer/Offerer ↔ publisher/Answerer
+  各十轮，合计 20/20；构建、CTest、selected UDP pair、RTP/AU/decoded/presented、角色反转、
+  退出和零残留证据齐全。继续把物理双机作为研发硬阻塞会让设备条件而非代码风险控制进度。
+- 决策：用户接受上述本地双实例结果作为 Week 6 设计与开发门禁。`W6-DESIGN-GATE` 和本阶段
+  `W6-GATE` 标记通过，Week 7/P2P 解锁。物理 `W6-LAN-01/02/03`、`W6-LIF-01` 归入
+  `W6-PHYSICAL-LAN` 延期环境资格；未来可补测，但不再回溯阻塞 Week 7。
+- 事实边界：同机结果继续标记 `sameMachinePortable=true`、`lanClaimed=false`，不能宣称两台物理
+  Windows、真实网卡/防火墙、跨电脑搬运或 host/host UDP 已验证。设计通过是验收推进决定，不是
+  对未执行环境事实的伪造。
+- 影响：只修改文档状态、门禁命名和路线推进；不修改 C++、CMake、CLI、schema、PowerShell
+  行为、Release 包或模块依赖。既有 VerifyLan 仍可严格校验四份物理报告，其历史错误文字不再
+  代表 Week 7 被阻塞。
+- 验证：最终 ZIP 本地独立双包 20/20、fresh OFF 39/39、Debug ON 45/45、Release ON 45/45、
+  Week 4/5 完整回归和文档 SelfTest 均已有实际通过记录。
+- 相关文件：`docs/versions/webrtc-v2/weeks/week06/`、`docs/roadmap/project_plan.md`、
+  `docs/memory/project_snapshot.md`、`docs/project_handoff.md`
 
 ## ADR-XXX 标题
 

@@ -1,6 +1,6 @@
 # WebRTC V2 Week 6：双机 LAN 测试包、便携信令根与交付说明
 
-> 阅读时间：约 25～35 分钟。本文先完整回顾 Week 5 接收播放基线，再说明 Week 6 怎样在不破坏模块边界的前提下，把同一个测试客户端变成可复制到两台 Windows 电脑上的 LAN 资格测试包。文中的“已完成”只指代码、构建、自动测试和同机双包黑盒；真实双机条目必须以用户后来收集的四份报告为准。
+> 阅读时间：约 25～35 分钟。本文先完整回顾 Week 5 接收播放基线，再说明 Week 6 怎样在不破坏模块边界的前提下，把同一个测试客户端变成可复制到两台 Windows 电脑上的 LAN 资格测试包。2026-08-24 用户批准以最终 ZIP 的本地两个独立副本、两种拓扑各十轮作为 Week 6 设计验收：`W6-DESIGN-GATE` 与本阶段 `W6-GATE` 已通过并解锁 Week 7/P2P；真实双机条目保留为延期的环境资格，不冒充已验证。
 
 ## 1. Week 6 到底做了什么
 
@@ -42,7 +42,7 @@ Week 5 的关键架构收益不是文件数量增加，而是变化原因分离�
 
 endpoint 在 `waitConnected` 观察到 Connected 后，通过 libdatachannel 0.24.5 的 `getSelectedCandidatePair()` 读取本地与远端 `rtc::Candidate`。转换函数只接受类型和 transport 枚举：Host 输出 `host`，ServerReflexive 和 PeerReflexive 对外统一为不含地址语义的 `srflx`，Relayed 输出 `relay`；UDP 输出 `udp`，各种 TCP 模式统一输出 `tcp`。`unknown` 只用于无法分类，资格门禁不接受它。地址、端口、candidate 原文、SDP、ICE 用户名密码和 fingerprint 从未写入 DTO，因此客户端 JSONL 不需要先拿到敏感文本再做字符串脱敏。
 
-同机测试中出现 `host/srflx + udp` 是底层 ICE 检查的合法结果，不能强改为 host/host 来迎合门禁。Week 6 同机黑盒只接受 `host|srflx|relay` 这些安全分类与 UDP，报告明确标记 `sameMachinePortable=true`、`lanClaimed=false`。只有两台真实电脑的四份 runner 报告都给出 `host/host + udp`，`VerifyLan` 才允许 W6-GATE 通过。这种区分让事实比预期更重要。
+同机测试中出现 `host/srflx + udp` 是底层 ICE 检查的合法结果，不能强改为 host/host 来迎合门禁。Week 6 同机黑盒只接受 `host|srflx|relay` 这些安全分类与 UDP，报告明确标记 `sameMachinePortable=true`、`lanClaimed=false`。两台真实电脑的四份 runner 报告仍必须给出 `host/host + udp`，`VerifyLan` 才会通过；但它现在判定的是可选 `W6-PHYSICAL-LAN`，不再控制已经通过的设计门禁。这种区分让事实比预期更重要。
 
 ## 5. Week 6 断线状态：为什么 Connected 后不能回到 Connecting
 
@@ -148,7 +148,7 @@ PC A 运行 publisher/Offerer 与 viewer/Offerer 两组，PC B 运行 viewer/Ans
 
 生命周期还要分别做 viewer 先关和 publisher 先关。runner 的结构化报告记录 lifecycle 名称，用户同时观察窗口响应和对端 `connection_lost`/终态。四份主要角色报告加生命周期材料放到一个本地目录，再由开发仓库执行 `qualify_week6.ps1 -Action VerifyLan -ResultRoot ...`。聚合器只读脱敏字段，不需要原始 SDP 或 IP。
 
-当前执行环境没有第二台获准 Windows 电脑，所以 W6-LAN-01、W6-LAN-02、W6-LAN-03、W6-LIF-01 和最终 W6-GATE 必须写“等待用户双机执行”。同机 host/srflx 或 loopback 不能替代，远程公网主机也不能在未授权时加入测试。
+当前执行环境没有第二台获准 Windows 电脑，所以 `W6-LAN-01/02/03` 与物理 `W6-LIF-01` 写为“延期/未验证”。同机 host/srflx 或 loopback 不能替代真实 LAN 事实，远程公网主机也不能在未授权时加入测试；但用户已接受本地双实例作为设计验收，因此本阶段 `W6-GATE` 通过，Week 7/P2P 不再等待物理设备。
 
 ## 12. 失败语义和排障边界
 
@@ -176,7 +176,7 @@ PC A 运行 publisher/Offerer 与 viewer/Offerer 两组，PC B 运行 viewer/Ans
 
 代码层交付 `EndpointCandidatePair`、additive connection result、post-connected failure state、`connection_lost`、`WebRtcClientRuntimePaths`、runtime_ready portable/repository 证据和测试。工具层交付四个 PowerShell 文件、Release manifest、固定样本规则、许可收集、两个独立包副本黑盒和双机报告聚合。文档层交付本文、独立测试指南、事实结果、六张 SVG、ADR-037 以及项目索引/快照/交接更新。
 
-Week 7 才应根据真实双机结果决定是否需要处理特定网卡、防火墙提示或弱网行为；Week 8 才讨论正式产品 UI。若双机报告暴露真实代码缺陷，应先记录可复现条件和脱敏证据，再在现有 owner 边界内修复。不要以“以后可能公网”作为理由提前加入 TURN、认证或任意信令目录。Week 6 的价值正是把一个复杂闭环压缩成可搬运、可重复、可判真的局域网实验，而不是把未来所有功能一次堆进测试客户端。
+Week 7 可以直接基于本地 20/20 的稳定基线开始 P2P 网络适应；真实双机以后若暴露特定网卡、防火墙提示或弱网问题，应记录为物理环境资格发现，再在现有 owner 边界内修复。Week 8 才讨论正式产品 UI。不要以“以后可能公网”作为理由一次加入 TURN、认证或任意信令目录。Week 6 的价值是把复杂闭环压缩成可搬运、可重复、可判真的实验，而不是把未来所有功能堆进测试客户端。
 
 ## 16. 从一帧视频的角度逐步走完整条链路
 
@@ -248,7 +248,7 @@ viewer 窗口应显示不断变化的 1280×720 `testsrc2` 图案，不是单色
 
 viewer 先关时，先在 viewer 窗口触发关闭或使用 runner 指定生命周期步骤，publisher 应在有界时间出现发送失败或终态并退出，不能留下后台 worker。publisher 先关时，viewer 应停止收到新 RTP，随后 connection_lost/终态，已有呈现证据保留。重复启动同一解压目录前运行 Status；显示 idle 且交换目录空才能开始。人工记录应填写开始时间、结束时间、角色、轮次、画面、退出顺序和报告文件名，不要记录 IP。
 
-双机防火墙提示若出现，应只允许本次明确 executable 在受控专用/家庭网络测试；不要为方便关闭整个防火墙，也不要把公网网络加入范围。若企业策略不允许放行，诚实记录环境阻塞，W6-GATE 保持待执行。当前范围没有 TURN，因此不同 VLAN、客户端隔离 Wi-Fi 或 NAT 两侧失败是预期边界，不应通过新增公网服务绕过本周验收。
+双机防火墙提示若出现，应只允许本次明确 executable 在受控专用/家庭网络测试；不要为方便关闭整个防火墙，也不要把公网网络加入范围。若企业策略不允许放行，诚实记录 `W6-PHYSICAL-LAN` 环境资格未完成，不影响已通过的设计门禁。当前范围没有 TURN，因此不同 VLAN、客户端隔离 Wi-Fi 或 NAT 两侧失败是预期边界，不应通过新增公网服务绕过本周验收。
 
 ## 23. 类与脚本的所有权矩阵补充
 
@@ -262,13 +262,13 @@ PowerShell 中 package script 拥有 stage/ZIP 的创建，qualifier 拥有构�
 
 ## 24. 与后续 Week 7、Week 8 的清晰交界
 
-Week 6 完成后，Week 7 若按路线处理网络适应，应以真实双机报告中的可复现现象为输入，例如特定 Wi-Fi 网卡失联检测过慢、局域网丢包导致恢复频繁、Windows 防火墙部署提示不清楚。它可以调整 transport 策略或资格指标，但仍不应让 media 依赖 candidate。若需要 ICE restart，那是新的公共生命周期和信令轮次，风险至少 R2，不能偷偷塞进当前 `connection_lost` 分支。
+Week 6 设计验收通过后，Week 7 可先用本机双实例和可控网络条件开发 Direct/Needs Relay、候选证据与失败分类；未来真实双机报告中的特定 Wi-Fi、局域网丢包或 Windows 防火墙现象作为补充输入。Week 7 可以调整 transport 策略或资格指标，但仍不应让 media 依赖 candidate。若需要 ICE restart，那是新的公共生命周期和信令轮次，风险至少 R2，不能偷偷塞进当前 `connection_lost` 分支。
 
 Week 8 正式 UI 集成需要决定产品中的入口、窗口/网格复用、用户选择 publisher/viewer 的产品语义、配置持久化和错误展示。Week 5/6 的 `WebRtcViewerController` 是测试组合根，不应直接被主产品 window include。可复用的是协议无关 media handle、mailbox、窄 canvas target 和 endpoint API；产品应用层应创建自己的 use case/controller。这样正式 UI 不会继承文件搬运 runner、package marker 或 JSONL 资格事件。
 
 公网能力、摄像头、多路会话、TURN 与鉴权各自需要独立范围。TURN 会改变 selected pair 允许值和部署成本；摄像头会改变 source 生命周期与时间戳；多路会话会改变资源上限和 UI 布局；鉴权/WSS 会改变信令边界。Week 6 文档把它们明确排除，使当前 LAN 包能够成为以后比较的稳定基线：后续每加一项，都应证明原两种拓扑、接收四层证据、关闭幂等和 OFF 边界仍然通过。
 
-最终判断很简单：如果代码、CTest、Release 包、同机双包和文档门禁通过，可以说“Week 6 技术实现和便携测试能力完成”；如果四份真实双机报告尚未收集，只能说“W6-GATE 等待用户”。这种措辞不是保守修辞，而是把不同环境能证明的事实严格分层，是本项目避免技术债和错误交付声明的重要组成部分。
+最终判断采用两条并列结论：代码、CTest、Release 包、同机双包和文档门禁通过，加上用户批准的替代验收，足以将 `W6-DESIGN-GATE` 与本阶段 `W6-GATE` 标记为通过；四份真实双机报告尚未收集，因此 `W6-PHYSICAL-LAN` 为延期/未验证。前者解锁 Week 7，后者防止把物理网络能力写成已经证明。
 
 ## 25. 协商媒体兼容检查的完整含义
 
@@ -328,7 +328,7 @@ LAN report 是对这些事件的最小投影。每轮只保留 pair 四字段、
 
 第三步看失败和停止。所有异步回调带 generation，sink 在锁外，beginClose 先失效，join 在锁外；Disconnected 不假装重连；脚本 Stop 验证进程身份；删除只在规范化受管根下。CLI/schema 保持，additive DTO 保留旧字段。测试覆盖正确/错误媒体、容量、时间戳、peer close、marker 优先、OFF/ON/Release和两个拓扑。
 
-最后看文档是否诚实：同机写同机，双机待双机；自动 endpoint 生命周期与窗口人工生命周期分开；总数来自实际 CTest；未执行项不写通过。若未来改动需要同时编辑 transport、media、UI 和脚本才能改变一个枚举，就说明边界被破坏；当前 selected pair 只改 transport DTO、客户端 JSON 投影和资格断言，媒体链没有变化，这正是低耦合的具体表现。
+最后看文档是否诚实：同机写同机，设计验收写设计验收，物理双机写延期/未验证；自动 endpoint 生命周期与窗口人工生命周期分开；总数来自实际 CTest。若未来改动需要同时编辑 transport、media、UI 和脚本才能改变一个枚举，就说明边界被破坏；当前 selected pair 只改 transport DTO、客户端 JSON 投影和资格断言，媒体链没有变化，这正是低耦合的具体表现。
 
 ## 32. 交付后的使用者心智模型
 
@@ -338,7 +338,7 @@ LAN report 是对这些事件的最小投影。每轮只保留 pair 四字段、
 
 一份成功报告也不能单独代表拓扑成功，因为它只证明一侧；两份同角色报告不能代表角色反转；同机二十轮不能代表两台电脑；看到动态窗口不能替代结构化计数；结构化计数也不能替代人工窗口响应。Week 6 把这些证据设计成互补关系，使用户能够明确知道“现在证明到哪一层”，而不是面对一个笼统的绿色按钮。
 
-交付结论因此固定为两句话：技术实现、Release 便携包与同机黑盒门禁在实际测试通过后完成；真实双机 LAN 与最终 W6-GATE 在四份报告和人工生命周期场景完成前保持等待用户执行。后续文档、提交信息和项目快照都应沿用这个口径。
+交付结论因此固定为两句话：技术实现、Release 便携包与本地双实例黑盒 20/20 已通过，用户据此批准 Week 6 设计门禁并解锁 Week 7/P2P；真实双机 LAN 仍是延期且未验证的环境资格，不得写成物理 LAN 已通过。后续文档、提交信息和项目快照都应沿用这个口径。
 
 这套心智模型也约束维护者：修复路径问题去运行布局组件，修复 ICE 事实去 transport，修复解码去 media，修复呈现去 canvas，修复测试编排去对应脚本。每次只让真正拥有状态和失败语义的模块变化，并用相邻两层证据验证连接点，才能让后续周次继续建立在清晰基线上。
 

@@ -5,8 +5,9 @@ publisher/viewer，并独立选择 Offerer/Answerer。Week 2 已完成默认关�
 Week 3 已完成协议无关 H.264 契约、外部解码入口和 RTMP 兼容；Week 4 已完成对称 endpoint、固定
 MP4 publisher 和 SendOnly H.264 Track；Week 5 已在同一测试客户端完成 ReceiveOnly depacketize、
 既有 FFmpeg/mailbox/CPU 画布闭环和双信令角色自动技术门禁；Week 6 已增加脱敏 selected-pair、
-便携信令根、Release 测试包、同机双包黑盒和双机 runner。真实双机 LAN/W6-GATE、正式产品 UI、
-跨公网和 ARM 真机仍未验证。RTMP `0.1.0-alpha.1` 仍是稳定路径。
+便携信令根、Release 测试包、同机双包黑盒和双机 runner。用户已接受最终 ZIP 本地双实例
+20/20 作为 Week 6 设计验收，`W6-GATE` 通过并解锁 Week 7/P2P；真实双机 LAN 作为延期环境资格
+仍未验证，正式产品 UI、跨公网和 ARM 真机也尚未验证。RTMP `0.1.0-alpha.1` 仍是稳定路径。
 
 ## 总计划
 

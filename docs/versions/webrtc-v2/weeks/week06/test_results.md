@@ -1,8 +1,9 @@
 # WebRTC V2 Week 6 实际测试结果
 
-> 本页只记录实际执行事实，不把计划目标写成已完成结果。Week 6 的代码、Release 便携包和同机
-> 黑盒门禁已经完成；由于当前没有第二台获准 Windows 电脑，真实双机 `W6-LAN-01/02/03`、
-> `W6-LIF-01` 与最终 `W6-GATE` 仍等待用户执行。
+> 本页只记录实际执行事实，不把本地双实例写成两台物理电脑。2026-08-24 用户确认：最终 ZIP
+> 的两个独立本地副本、两种拓扑各十轮和完整自动门禁可作为 Week 6 的设计验收依据。因此
+> `W6-DESIGN-GATE` 与本阶段 `W6-GATE` 标记为通过，Week 7/P2P 可以开始；真实双机
+> `W6-LAN-01/02/03` 与物理窗口生命周期验证改为延期的环境资格，不再阻塞研发。
 
 ## 1. 环境与被测提交
 
@@ -129,7 +130,23 @@ vcpkg runtime bin 和 Windows 系统目录。Week 5/6 在 CTest 前设置、结�
 - Week 4、Week 5 完整回归均未再次出现弹窗；
 - 最终 ZIP 使用 exe 同级 DLL 与包内 platforms 插件，`--help` 和双拓扑运行通过。
 
-## 6. 双机门禁的实际状态
+## 6. 设计验收通过与物理双机延期
+
+### 6.1 验收策略变更
+
+原 Week 6 计划要求四份物理双机报告才能解除开发门禁。当前没有第二台电脑，而最终 ZIP 已经在
+同一台电脑的两个独立展开目录中完成两种拓扑各十轮，且每轮均具备 selected UDP pair、RTP、AU、
+decoded、presented、退出码和零残留证据。用户据此接受以下替代口径：
+
+- 本地两个独立包副本不是“真实双机 LAN”证据，结果仍保持 `sameMachinePortable=true` 与
+  `lanClaimed=false`；
+- 这组结果足以证明 Week 6 的接口设计、组合关系、便携布局、信令搬运、媒体闭环和自动生命周期，
+  因而 `W6-DESIGN-GATE` 通过；
+- 本阶段 `W6-GATE` 按产品验收决定标记为“通过（本地双实例设计验收）”，允许进入 Week 7/P2P；
+- 真实网卡、防火墙、两台 Windows 主机和现场窗口体验仍未验证，统一放入
+  `W6-PHYSICAL-LAN` 延期项，未来具备设备时可补测，但不回退当前设计通过状态。
+
+### 6.2 可选的物理 LAN 聚合器仍保持严格
 
 空结果目录执行：
 
@@ -138,22 +155,28 @@ vcpkg runtime bin 和 Windows 系统目录。Week 5/6 在 CTest 前设置、结�
   -ResultRoot out/webrtc-week6/empty-lan-results
 ```
 
-实际按预期返回非零，并稳定提示：
+实际按预期返回非零，并稳定提示旧物理 LAN 聚合器的固定错误：
 
 ```text
 W6-GATE is blocked: four valid dual-PC reports were not found.
 ```
 
-| 门禁 | 当前真实状态 | 缺少的证据 |
+这条输出只说明 `VerifyLan` 没有收到四份物理双机报告。它不否定已经通过的本地双实例设计门禁，
+也不再阻塞 Week 7；后续若调整脚本术语，可把它改名为 `W6-PHYSICAL-LAN`，但本次纯文档验收不
+修改既有脚本行为。
+
+| 门禁/资格项 | 当前真实状态 | 依据或缺少的证据 |
 | --- | --- | --- |
-| `W6-LAN-01` | 等待用户 | PC A publisher/Offerer ↔ PC B viewer/Answerer 连续 10 轮 |
-| `W6-LAN-02` | 等待用户 | PC A viewer/Offerer ↔ PC B publisher/Answerer 连续 10 轮 |
-| `W6-LAN-03` | 等待用户 | 两台电脑 package ID 一致、真实 `host/host + udp`、收发播放证据 |
-| `W6-LIF-01` | 等待用户 | viewer 先关、publisher 先关、窗口响应与重复运行 |
-| `W6-GATE` | 阻塞于用户双机执行 | 四份有效脱敏报告与两台电脑环境/生命周期记录 |
+| `W6-LOCAL-01` | 通过 | 最终 ZIP 两个独立副本，两种拓扑各 10/10，合计 20/20 |
+| `W6-DESIGN-GATE` | 通过 | 构建、CTest、包、信令、媒体四层、角色反转、清理和回归证据齐全 |
+| `W6-GATE` | 通过（设计验收口径） | 用户接受本地双实例作为 Week 6 开发门禁，Week 7/P2P 解锁 |
+| `W6-LAN-01/02/03` | 延期，不阻塞 | 缺少两台物理 Windows 电脑；未来可补测两种拓扑与 host/host UDP |
+| `W6-LIF-01` 物理场景 | 延期，不阻塞 | 缺少两台电脑上的 viewer/publisher 先关和现场窗口记录 |
+| `W6-PHYSICAL-LAN` | 未验证 | 四份物理双机脱敏报告尚未收集，不影响设计通过结论 |
 
 ## 7. 未覆盖范围
 
 没有第二台获准 Windows 电脑，因此当前不能证明真实双机网卡、防火墙、跨电脑文件搬运、两端窗口
-观感或实际 `host/host + udp`。没有执行公网、STUN/TURN、WSS、摄像头、多路、正式产品 UI、ARM
-真机、鉴权、TLS 或 RBAC 测试；这些均不属于 Week 6 技术实现与本机自动资格的完成口径。
+观感或实际 `host/host + udp`；这些被明确标记为延期的环境资格，而不是已经通过的事实。没有执行
+公网、STUN/TURN、WSS、摄像头、多路、正式产品 UI、ARM 真机、鉴权、TLS 或 RBAC 测试。Week 6
+设计验收通过只解锁下一阶段开发，不把上述能力写成已验证。

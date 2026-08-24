@@ -1412,5 +1412,7 @@ CTest 14/14 通过；ARM64 RASTER 构建 NEEDED 无 Qt6OpenGL*/EGL/GLES，GLES3 
 - transport、publisher、media、render/UI 保持兄弟模块，具体装配只在测试客户端组合根；OFF 产品
   目标与 schema v1 不变。
 - 实施与测试入口见 [WebRTC V2 总计划](webrtc_v2_project_plan.md) 和
-  [Week 6 详细结果](../versions/webrtc-v2/weeks/week06/summary.md)。真实双机 host/host UDP、双方先关
-  与最终 `W6-GATE` 等待用户执行；同机自动结果不得冒充 LAN、公网或正式产品 UI。
+  [Week 6 详细结果](../versions/webrtc-v2/weeks/week06/summary.md)。2026-08-24 用户接受最终 ZIP
+  本地双实例 20/20 作为设计验收，`W6-DESIGN-GATE` 与本阶段 `W6-GATE` 通过，Week 7/P2P
+  解锁。真实双机 host/host UDP 和物理双方先关改为延期环境资格；同机结果不得冒充物理 LAN、
+  公网或正式产品 UI。
