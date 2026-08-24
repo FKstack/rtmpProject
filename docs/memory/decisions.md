@@ -765,6 +765,40 @@
   `docs/roadmap/webrtc_v2_project_plan.md`、`docs/memory/project_snapshot.md`、
   `docs/project_handoff.md`
 
+## ADR-041 Week 8 采用 ON-only 一次性产品组合层和呈现事实状态
+
+- 日期：2026-08-25
+- 状态：已采用；R2 实施完成，`W8-GATE` 本地研发门禁通过
+- 背景：Week 5 已证明 ReceiveOnly RTP/H.264/FFmpeg/mailbox/画布闭环，Week 6/7 已证明便携
+  文件信令与非 relay ICE 事实，但正式 `rtmp_monitor` 尚无入口。直接把 endpoint 塞进 MainWindow、
+  让 transport 访问 media/UI、或提前把 peer 写进 SavedStreamProfile，会反转既有依赖并混淆
+  设备身份、控制和 RTMP 回退。计划阶段预估 W8-ARC 为 R3；实际复核没有新增依赖方向、持久化
+  schema 或外部公共契约，停线条件未出现，因此按架构门禁实施等级为 R2。
+- 决策：WebRTC=ON 时新增非 UI `webrtc_runtime`，独占一条 ReceiveOnly endpoint、worker 和受管
+  Offer/Answer；新增 `webrtc_product` 组合层，由 `WebRtcProductSessionController` 组装 runtime、
+  弱 `EncodedVideoInputHandle`、mailbox 和普通 `VideoWidget`。一次性 request 只有显示名、信令角色
+  和本次 ICE 值，不含 peer/device/profile/autoConnect/RTMP 字段。产品 `Direct` 必须同时满足非
+  relay selected pair、endpoint Connected、当前代 presentedFrames>0 和呈现年龄≤1,000 ms；
+  NeedsRelay 只接受 ConnectionFailed+ICE Failed+srflx。失败不启动 RTMP、不授权设备控制。
+- 原因：runtime/product 分层让 transport、media、ui 保持兄弟模块，跨层知识只在组合层出现；呈现
+  事实而非 Connected/RTP/decoded 能诚实表达用户当前看到的画面；运行期 request 避免为单次实验
+  提前设计持久身份。激活 render item 与宣布 Direct 分开，避免“未 Direct 不渲染、未渲染无证据”
+  的循环依赖，同时不降低状态标准。
+- 替代方案：修改 MainWindow 持有 PeerConnection；让 media 链接 transport；扩展 profiles schema v2；
+  Connected 即 Direct；失败按同名保存流回 RTMP；把 WebRTC 视频格注册成 MQTT 控制目标。它们分别
+  导致 God Class、反向依赖、超范围持久化、不真实状态或隐式协议/权限切换。
+- 影响：ON 构建增加 runtime/product 静态目标、主程序条件链接和 WebRTC DLL 部署；OFF 构建无菜单、
+  product target/test 或自动网络。controller 一次只允许一条会话；取消顺序为 token 失效、stop/
+  endpoint close、join、input close、remove stream/widget；应用退出最后有界 `rtc::Cleanup()`。
+  schema v1、SavedStreamProfile、autoConnect、RTMP、MQTT 和设备控制公共契约不变。
+- 验证证据：fresh Debug OFF 39/39、Debug ON 47/47、Release ON 47/47；产品测试以两种接收端信令
+  角色完成真实 PeerConnection、H.264 解码/呈现、Direct 与取消；层依赖、OFF feature macro、
+  controlAuthorized=false、rtmpFallbackStarted=false 和 1,000/1,001 ms 边界通过。正式人工观感、
+  真实双机 LAN、公网和 ARM 仍未验证。
+- 相关文件：`include/common/webrtc_runtime/`、`src/common/webrtc_runtime/`、
+  `include/common/webrtc_product/`、`src/common/webrtc_product/`、`tests/WebRtcProductSessionTest.cpp`、
+  `scripts/webrtc/qualify_week8.ps1`、`docs/versions/webrtc-v2/weeks/week08/`
+
 ## ADR-XXX 标题
 
 - 日期：

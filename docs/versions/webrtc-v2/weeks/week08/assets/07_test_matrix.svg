@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <defs><style>.t{font-family:'Microsoft YaHei',sans-serif;fill:#eff6ff}.h{font-size:30px;font-weight:700}.s{font-size:17px}.n{font-size:20px;font-weight:700}.b{fill:#14263e;stroke:#68afff;stroke-width:2}.g{fill:#12372f;stroke:#50d3a8;stroke-width:2}.y{fill:#3b3017;stroke:#f1cb59;stroke-width:2}.a{stroke:#98c5ff;stroke-width:3;fill:none;marker-end:url(#m)}</style><marker id="m" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0 0L0 6L9 3z" fill="#98c5ff"/></marker></defs>
+  <rect width="1280" height="720" fill="#091321"/><text class="t h" x="48" y="55">Week 8 验证矩阵：每一层都回答不同问题</text>
+  <rect class="b" x="60" y="115" width="345" height="165" rx="18"/><text class="t n" x="92" y="155">静态 / SelfTest</text><text class="t s" x="92" y="190">脚本语法、文档长度、SVG/XML</text><text class="t s" x="92" y="222">运行时请求无身份/持久字段</text><text class="t s" x="92" y="252">CMake 目标和层依赖存在</text>
+  <rect class="g" x="468" y="115" width="345" height="165" rx="18"/><text class="t n" x="502" y="155">C++ 产品集成测试</text><text class="t s" x="502" y="190">Answerer / Offerer 两种接收角色</text><text class="t s" x="502" y="222">真实 RTP → H.264 → 解码 → 呈现</text><text class="t s" x="502" y="252">Direct、取消、无控制、无回退</text>
+  <rect class="b" x="875" y="115" width="345" height="165" rx="18"/><text class="t n" x="908" y="155">Fresh 构建矩阵</text><text class="t s" x="908" y="190">Debug OFF：入口和依赖不存在</text><text class="t s" x="908" y="222">Debug ON：47 项全回归</text><text class="t s" x="908" y="252">Release ON：部署和优化构建</text>
+  <path class="a" d="M405 198 H463"/><path class="a" d="M813 198 H870"/>
+  <rect class="y" x="265" y="390" width="750" height="170" rx="20"/><text class="t n" x="514" y="430">人工测试（用户执行）</text><text class="t s" x="322" y="468">正式客户端菜单 → 一次性参数 → 文件交换 → 视频格 Direct</text><text class="t s" x="322" y="502">观察取消、断流、错误、NeedsRelay 分类；确认 RTMP/MQTT 未被联动</text><text class="t s" x="322" y="536">真实 LAN / 公网结果必须另记，不由同机自动测试代替</text>
+  <path class="a" d="M640 280 V385"/>
+  <rect x="250" y="625" width="780" height="55" rx="14" fill="#331e29" stroke="#f2749c" stroke-width="2"/><text class="t n" x="375" y="659">自动通过 ≠ 人工观感通过 ≠ 真实公网通过</text>
+</svg>

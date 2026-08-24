@@ -7,8 +7,10 @@ MP4 publisher 和 SendOnly H.264 Track；Week 5 已在同一测试客户端完�
 既有 FFmpeg/mailbox/CPU 画布闭环和双信令角色自动技术门禁；Week 6 已增加脱敏 selected-pair、
 便携信令根、Release 测试包、同机双包黑盒和双机 runner。用户已接受最终 ZIP 本地双实例
 20/20 作为 Week 6 设计验收；Week 7 已增加默认host/显式stun的固定本机配置、地址无关ICE事实、
-确定性本地fixture、两个便携副本资格和延期公网runner。本地设计门禁用于解锁Week 8；真实双机
-LAN、公司网络/移动网络公网、正式产品UI和ARM真机仍未验证。RTMP `0.1.0-alpha.1` 仍是稳定路径。
+确定性本地fixture、两个便携副本资格和延期公网runner。Week 8 已把一次性 ReceiveOnly 会话接入
+正式客户端，增加 ON-only 菜单、产品状态/事件/诊断、1,000 ms 真实呈现门禁、取消生命周期以及
+无 RTMP 回退/无控制授权的自动证据；fresh OFF 39/39、Debug/Release ON 47/47。正式产品人工观感、
+真实双机 LAN、公司网络/移动网络公网和ARM真机仍未验证。RTMP `0.1.0-alpha.1` 仍是稳定路径。
 
 ## 总计划
 
@@ -102,6 +104,11 @@ Week 7 的深度实现说明见 [summary](weeks/week07/summary.md)，自动、�
 公网步骤见 [testing guide](weeks/week07/testing_guide.md)，实际与延期事实见
 [test results](weeks/week07/test_results.md)。第一次使用 KUNLUN 远程公司电脑执行真实双网络测试时，
 请直接使用 [双电脑公网手把手操作手册](weeks/week07/manual_two_computer_public_test.md)，不要仅根据命令摘要猜测文件搬运顺序。
+
+Week 8 的正式客户端一次性接收、类职责、架构嵌入和 Week 5 媒体链复用见
+[summary](weeks/week08/summary.md)，自动化脚本与手动测试两个版本见
+[testing guide](weeks/week08/testing_guide.md)，实际 fresh OFF/ON/Release 结果和未验证边界见
+[test results](weeks/week08/test_results.md)。
 
 ## 安全提醒
 

@@ -6,6 +6,7 @@
 #include <QSurfaceFormat>
 
 #include <algorithm>
+#include <memory>
 #include <utility>
 
 #include "app/ApplicationBootstrap.h"
@@ -35,6 +36,10 @@
 #include "ui/DeviceControlInputRouter.h"
 #include "ui/EventCenterPanel.h"
 #include "ui/VideoCanvasHost.h"
+
+#if RTMP_MONITOR_HAS_WEBRTC
+#include "webrtc_product/WebRtcProductSessionController.h"
+#endif
 
 #if defined(Q_OS_LINUX)
 #include "linux/LinuxApplicationBootstrap.h"
@@ -390,6 +395,13 @@ int ApplicationBootstrap::run(int argc, char *argv[])
     }
     QObject::connect(&mainWindow, &MainWindow::savedStreamsRequested,
                      &savedStreamController, &SavedStreamController::showDialog);
+
+#if RTMP_MONITOR_HAS_WEBRTC
+    auto webRtcProductController = std::make_unique<
+        rtmp_monitor::webrtc_product::WebRtcProductSessionController>(
+        &mainWindow, &playbackManager, &logManager
+    );
+#endif
 
     auto *deviceControlPanel = new DeviceControlPanel(&mainWindow);
     mainWindow.installDeviceControlPanel(deviceControlPanel);
@@ -829,8 +841,22 @@ int ApplicationBootstrap::run(int argc, char *argv[])
     evidenceService.stopAccepting();
     eventCenterService.stopAccepting();
     mediaServerMonitor.stopMonitoring();
+#if RTMP_MONITOR_HAS_WEBRTC
+    webRtcProductController->cancel();
+#endif
     playbackManager.stopAll();
     metricsReporter.setRenderMetricsProvider({});
+#if RTMP_MONITOR_HAS_WEBRTC
+    if (!rtmp_monitor::webrtc_product::
+            WebRtcProductSessionController::cleanupGlobal()) {
+        logManager.logSystem(
+            LogLevel::Warning,
+            QStringLiteral("webrtc_product"),
+            QStringLiteral("cleanup_timeout"),
+            QStringLiteral("WebRTC global cleanup did not finish in time.")
+        );
+    }
+#endif
     logManager.logSystem(
         LogLevel::Info,
         QStringLiteral("application"),

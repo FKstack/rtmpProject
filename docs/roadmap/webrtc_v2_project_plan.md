@@ -402,6 +402,14 @@ ZIP 的两个独立包副本均完成；两种拓扑各 10/10，合计 20/20。�
 | W8-TST-01 | 4 | W8-EVT-01,W8-DIA-01,W8-SAF-02,W8-CFG-01 | UI/状态/事件/安全/配置/RTMP/MQTT 自动回归 | 任何旧契约变化即失败 |
 | W8-GATE | 3 | W8-TST-01 | 一次性产品接收门禁 | 无隐私、兼容和安全证据不得进入 Week 9 |
 
+2026-08-25 完成记录：W8-ARC/API/UI/APP/STA/EVT/DIA/SAF/CFG/TST 均已实现，fresh
+Debug OFF 39/39、Debug ON 47/47、Release ON 47/47，`W8-GATE` 本地研发门禁通过并允许进入
+Week 9。计划阶段把 W8-ARC 预估为 R3；按实际代码、CMake 与 `$architect-code-changes` 复核，
+本轮没有新增依赖方向、改变持久化 schema/公共外部契约或触发停线条件，最终实施风险为 R2，并在
+ADR-041 记录组合层、运行期数据和关闭顺序。正式主程序人工观感、真实双机 LAN、公司网络/移动网络
+公网和 ARM 资格仍未验证，不由本地门禁代替。完整实现、测试和边界见 Week 8
+summary/testing guide/test results。
+
 ### Week 9：摄像头、四路和故障隔离
 
 | ID | h | 前置 | 单一输出与验收 | 失败/停线 |

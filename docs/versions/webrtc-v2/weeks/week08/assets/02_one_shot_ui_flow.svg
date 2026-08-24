@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <defs><style>.t{font-family:'Microsoft YaHei',sans-serif;fill:#edf5ff}.h{font-size:30px;font-weight:700}.s{font-size:18px}.n{font-size:22px;font-weight:700}.b{fill:#14263e;stroke:#65aaff;stroke-width:2}.g{fill:#12372f;stroke:#50d4aa;stroke-width:2}.d{fill:#342137;stroke:#d58cff;stroke-width:2}.a{stroke:#9fc8ff;stroke-width:3;fill:none;marker-end:url(#m)}</style><marker id="m" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0 0L0 6L9 3z" fill="#9fc8ff"/></marker></defs>
+  <rect width="1280" height="720" fill="#091321"/><text class="t h" x="48" y="55">一次性 UI：用户明确触发，运行期结束即归零</text>
+  <rect class="b" x="65" y="120" width="225" height="110" rx="16"/><text class="t n" x="92" y="160">① WebRTC 菜单</text><text class="t s" x="91" y="194">一次性接收…</text>
+  <rect class="d" x="365" y="105" width="300" height="140" rx="16"/><text class="t n" x="404" y="145">② 模态参数框</text><text class="t s" x="398" y="180">显示名 · Offer/Answer 角色</text><text class="t s" x="398" y="210">Host / 本次明确输入 STUN</text>
+  <rect class="g" x="745" y="105" width="455" height="140" rx="16"/><text class="t n" x="785" y="145">③ 创建一条 ReceiveOnly 会话</text><text class="t s" x="785" y="180">创建视频格并显示连接遮罩</text><text class="t s" x="785" y="210">交换目录由应用管理，不进入最近记录</text>
+  <path class="a" d="M290 175 H360"/><path class="a" d="M665 175 H740"/>
+  <rect class="b" x="85" y="340" width="310" height="145" rx="16"/><text class="t n" x="124" y="382">④ 文件交换</text><text class="t s" x="124" y="418">生成或等待 Offer/Answer</text><text class="t s" x="124" y="449">不展示 SDP 内容</text>
+  <rect class="g" x="485" y="340" width="310" height="145" rx="16"/><text class="t n" x="535" y="382">⑤ Direct 证据</text><text class="t s" x="519" y="418">非 relay selected pair</text><text class="t s" x="519" y="449">且当前画面 ≤ 1,000 ms</text>
+  <rect class="d" x="885" y="340" width="310" height="145" rx="16"/><text class="t n" x="939" y="382">⑥ 用户取消</text><text class="t s" x="919" y="418">停 endpoint → join worker</text><text class="t s" x="919" y="449">关解码入口 → 移除视频格</text>
+  <path class="a" d="M980 245 C980 290 240 280 240 335"/><path class="a" d="M395 412 H480"/><path class="a" d="M795 412 H880"/>
+  <rect x="245" y="585" width="790" height="72" rx="16" fill="#331e24" stroke="#ff7b8d" stroke-width="2"/><text class="t n" x="328" y="616">没有自动连接 · 没有保存会话 · 没有设备身份</text><text class="t s" x="360" y="645">失败保持 WebRTC 事实，不静默启动 RTMP 或控制</text>
+</svg>

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <defs><style>.t{font-family:'Microsoft YaHei',sans-serif;fill:#eff6ff}.h{font-size:30px;font-weight:700}.s{font-size:17px}.n{font-size:20px;font-weight:700}.b{fill:#14263e;stroke:#68afff;stroke-width:2}.g{fill:#12382f;stroke:#50d4aa;stroke-width:2}.a{stroke:#9bc7ff;stroke-width:3;fill:none;marker-end:url(#m)}</style><marker id="m" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0 0L0 6L9 3z" fill="#9bc7ff"/></marker></defs>
+  <rect width="1280" height="720" fill="#091321"/><text class="t h" x="48" y="55">Week 5 媒体闭环如何被 Week 8 嵌入正式客户端</text>
+  <text class="t n" x="65" y="115">WebRTC 侧（Week 4/5/8）</text><text class="t n" x="760" y="115">既有产品媒体/显示框架</text>
+  <rect class="b" x="60" y="150" width="210" height="100" rx="14"/><text class="t n" x="83" y="190">ReceiveOnly Track</text><text class="t s" x="94" y="220">RTP packet</text>
+  <rect class="b" x="330" y="150" width="210" height="100" rx="14"/><text class="t n" x="348" y="190">H264ReceivePipeline</text><text class="t s" x="363" y="220">Annex-B Access Unit</text>
+  <rect class="g" x="600" y="150" width="230" height="100" rx="14"/><text class="t n" x="621" y="190">EncodedVideoInputHandle</text><text class="t s" x="646" y="220">弱所有权提交</text>
+  <rect class="g" x="890" y="150" width="230" height="100" rx="14"/><text class="t n" x="922" y="190">FFmpeg Decode</text><text class="t s" x="925" y="220">不可变 VideoFrame</text>
+  <path class="a" d="M270 200 H325"/><path class="a" d="M540 200 H595"/><path class="a" d="M830 200 H885"/>
+  <rect class="g" x="890" y="360" width="230" height="100" rx="14"/><text class="t n" x="924" y="400">LatestFrameMailbox</text><text class="t s" x="940" y="430">容量 1 / 最新帧</text>
+  <rect class="g" x="600" y="360" width="230" height="100" rx="14"/><text class="t n" x="642" y="400">VideoCanvasHost</text><text class="t s" x="640" y="430">CPU/OpenGL 后端</text>
+  <rect class="b" x="310" y="360" width="230" height="100" rx="14"/><text class="t n" x="370" y="400">VideoWidget</text><text class="t s" x="351" y="430">状态遮罩 + 视频格</text>
+  <rect class="b" x="60" y="360" width="190" height="100" rx="14"/><text class="t n" x="83" y="400">用户实际看到</text><text class="t s" x="80" y="430">surfacePresented</text>
+  <path class="a" d="M1005 250 V355"/><path class="a" d="M890 410 H835"/><path class="a" d="M600 410 H545"/><path class="a" d="M310 410 H255"/>
+  <rect x="100" y="555" width="1080" height="95" rx="18" fill="#31231a" stroke="#ffb55c" stroke-width="2"/><text class="t n" x="235" y="593">Week 8 没有复制解码器、mailbox 或画布，也没有让 transport 认识 QWidget</text><text class="t s" x="226" y="625">它只在组合层把 ReceiveSink 接到 Week 5 已验证的 EncodedVideoInputHandle，再读取呈现事实</text>
+</svg>

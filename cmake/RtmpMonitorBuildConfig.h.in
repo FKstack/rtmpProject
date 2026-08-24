@@ -4,6 +4,9 @@
 // 不在源文件中散布平台或构建模式判断。
 #define RTMP_MONITOR_HAS_OPENGL @RTMP_MONITOR_HAS_OPENGL@
 
+// WebRTC product entry is compiled and installed only in explicit ON builds.
+#define RTMP_MONITOR_HAS_WEBRTC @RTMP_MONITOR_HAS_WEBRTC@
+
 // 对外版本号；CMake project(VERSION) 保留纯数字核心，预发布标识由根 CMake 冻结。
 #define RTMP_MONITOR_VERSION_STRING "@RTMP_MONITOR_VERSION@"
 

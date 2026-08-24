@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <defs><style>.t{font-family:'Microsoft YaHei',sans-serif;fill:#eaf2ff}.h{font-size:30px;font-weight:700}.s{font-size:18px}.b{fill:#14243b;stroke:#5fa8ff;stroke-width:2}.g{fill:#12342e;stroke:#4dd0a7;stroke-width:2}.o{fill:#3b2815;stroke:#ffb45f;stroke-width:2}.x{fill:#331c2a;stroke:#ff709d;stroke-width:2}.a{stroke:#91bfff;stroke-width:3;fill:none;marker-end:url(#m)}</style><marker id="m" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#91bfff"/></marker></defs>
+  <rect width="1280" height="720" fill="#091321"/><text class="t h" x="48" y="55">Week 8：正式客户端一次性接收的依赖方向</text>
+  <rect class="o" x="470" y="90" width="340" height="90" rx="16"/><text class="t h" x="516" y="128">ApplicationBootstrap</text><text class="t s" x="520" y="158">唯一产品组合根 · ON 构建创建</text>
+  <rect class="g" x="410" y="230" width="460" height="120" rx="18"/><text class="t h" x="445" y="274">WebRtcProductSessionController</text><text class="t s" x="454" y="309">组装会话、解码入口、视频格；不授权控制</text><text class="t s" x="505" y="336">不保存档案 · 不触发 RTMP 回退</text>
+  <rect class="b" x="70" y="430" width="330" height="130" rx="18"/><text class="t h" x="109" y="477">webrtc_runtime</text><text class="t s" x="99" y="512">WebRtcReceiveSession</text><text class="t s" x="99" y="540">线程 + endpoint + 受管信令</text>
+  <rect class="b" x="475" y="430" width="330" height="130" rx="18"/><text class="t h" x="567" y="477">media</text><text class="t s" x="509" y="512">EncodedVideoInputHandle</text><text class="t s" x="526" y="540">FFmpeg → mailbox</text>
+  <rect class="b" x="880" y="430" width="330" height="130" rx="18"/><text class="t h" x="1009" y="477">ui</text><text class="t s" x="944" y="512">MainWindow + VideoWidget</text><text class="t s" x="951" y="540">既有画布真实呈现</text>
+  <path class="a" d="M640 180 V225"/><path class="a" d="M510 350 L290 425"/><path class="a" d="M640 350 V425"/><path class="a" d="M770 350 L990 425"/>
+  <rect class="x" x="160" y="620" width="960" height="58" rx="14"/><text class="t s" x="216" y="655">禁止反向依赖：transport ↛ media/ui　media ↛ ui　ui ↛ transport　跨层连接只在产品组合层</text>
+</svg>

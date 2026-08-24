@@ -34,6 +34,10 @@ file(GLOB_RECURSE webrtc_transport_files
     "${PROJECT_SOURCE_DIR}/include/common/webrtc_transport/*.h"
     "${PROJECT_SOURCE_DIR}/src/common/webrtc_transport/*.h"
     "${PROJECT_SOURCE_DIR}/src/common/webrtc_transport/*.cpp")
+file(GLOB_RECURSE webrtc_runtime_files
+    "${PROJECT_SOURCE_DIR}/include/common/webrtc_runtime/*.h"
+    "${PROJECT_SOURCE_DIR}/src/common/webrtc_runtime/*.h"
+    "${PROJECT_SOURCE_DIR}/src/common/webrtc_runtime/*.cpp")
 file(GLOB_RECURSE publisher_files
     "${PROJECT_SOURCE_DIR}/include/common/publisher/*.h"
     "${PROJECT_SOURCE_DIR}/src/common/publisher/*.h"
@@ -141,6 +145,14 @@ foreach(source_file IN LISTS webrtc_transport_files)
     if(source_text MATCHES "#[ \t]*include[ \t]*[<\"](app|device_control|diagnostics|evidence|event_center|logging|media|profiles|publisher|render|server|ui|webrtc_dev)/")
         message(FATAL_ERROR
             "WebRTC transport depends on a source or product layer: ${source_file}")
+    endif()
+endforeach()
+
+foreach(source_file IN LISTS webrtc_runtime_files)
+    file(READ "${source_file}" source_text)
+    if(source_text MATCHES "#[ \t]*include[ \t]*[<\"](app|device_control|diagnostics|evidence|event_center|logging|media|profiles|publisher|render|server|ui|webrtc_product)/")
+        message(FATAL_ERROR
+            "WebRTC runtime depends on a product/media/UI layer: ${source_file}")
     endif()
 endforeach()
 

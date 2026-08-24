@@ -121,6 +121,11 @@ include(ProjectOptions)
 option(RTMP_MONITOR_ENABLE_WEBRTC
     "Build WebRTC developer probes and the staged WebRTC V2 client." OFF)
 
+set(RTMP_MONITOR_HAS_WEBRTC 0)
+if(RTMP_MONITOR_ENABLE_WEBRTC)
+    set(RTMP_MONITOR_HAS_WEBRTC 1)
+endif()
+
 if(RTMP_MONITOR_ENABLE_WEBRTC)
     find_package(LibDataChannel 0.24.5 EXACT CONFIG QUIET)
     if(NOT LibDataChannel_FOUND)
@@ -483,6 +488,25 @@ if(RTMP_MONITOR_ENABLE_WEBRTC)
         COMPILE_PDB_OUTPUT_DIRECTORY
             "${CMAKE_BINARY_DIR}/webrtc/lib/$<CONFIG>")
     rtmp_monitor_apply_project_options(rtmp_monitor_h264_publisher_source)
+
+    qt_add_library(rtmp_monitor_webrtc_runtime STATIC
+        include/common/webrtc_runtime/WebRtcReceiveSession.h
+        src/common/webrtc_runtime/WebRtcReceiveSession.cpp
+    )
+    target_include_directories(rtmp_monitor_webrtc_runtime
+        PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include/common)
+    target_link_libraries(rtmp_monitor_webrtc_runtime
+        PUBLIC
+            Qt6::Core
+            rtmp_monitor_webrtc_transport
+        PRIVATE
+            rtmp_monitor_webrtc_signaling)
+    set_target_properties(rtmp_monitor_webrtc_runtime PROPERTIES
+        ARCHIVE_OUTPUT_DIRECTORY
+            "${CMAKE_BINARY_DIR}/webrtc/lib/$<CONFIG>"
+        COMPILE_PDB_OUTPUT_DIRECTORY
+            "${CMAKE_BINARY_DIR}/webrtc/lib/$<CONFIG>")
+    rtmp_monitor_apply_project_options(rtmp_monitor_webrtc_runtime)
 endif()
 
 # 媒体服务器边界库：只读配置、URL 生成和异步健康观察，
@@ -826,6 +850,29 @@ target_link_libraries(rtmp_monitor_ui
 
 rtmp_monitor_apply_project_options(rtmp_monitor_ui)
 
+if(RTMP_MONITOR_ENABLE_WEBRTC)
+    # Week 8 composition layer. It may assemble transport/media/UI, while the
+    # sibling lower layers remain mutually independent.
+    qt_add_library(rtmp_monitor_webrtc_product STATIC
+        include/common/webrtc_product/WebRtcProductTypes.h
+        src/common/webrtc_product/WebRtcProductTypes.cpp
+        include/common/webrtc_product/WebRtcProductSessionController.h
+        src/common/webrtc_product/WebRtcProductSessionController.cpp
+    )
+    target_include_directories(rtmp_monitor_webrtc_product
+        PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include/common)
+    target_link_libraries(rtmp_monitor_webrtc_product
+        PUBLIC
+            Qt6::Widgets
+        PRIVATE
+            rtmp_monitor_webrtc_runtime
+            rtmp_monitor_media
+            rtmp_monitor_ui
+            rtmp_monitor_logging
+            LibDataChannel::LibDataChannel)
+    rtmp_monitor_apply_project_options(rtmp_monitor_webrtc_product)
+endif()
+
 # Linux 平台策略：bootstrap / policy / factory，只在 Linux 构建中编译。
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     qt_add_library(rtmp_monitor_platform_linux STATIC
@@ -920,6 +967,10 @@ target_link_libraries(rtmp_monitor
         rtmp_monitor_evidence
 )
 
+if(RTMP_MONITOR_ENABLE_WEBRTC)
+    target_link_libraries(rtmp_monitor PRIVATE rtmp_monitor_webrtc_product)
+endif()
+
 target_include_directories(rtmp_monitor
     PRIVATE
         ${CMAKE_BINARY_DIR}/generated
@@ -980,6 +1031,10 @@ function(rtmp_monitor_copy_ffmpeg_runtime target_name)
 endfunction()
 
 rtmp_monitor_copy_ffmpeg_runtime(rtmp_monitor)
+
+if(RTMP_MONITOR_ENABLE_WEBRTC)
+    rtmp_monitor_copy_webrtc_runtime(rtmp_monitor)
+endif()
 
 if(RTMP_MONITOR_ENABLE_WEBRTC)
     if(WIN32)
@@ -1373,6 +1428,29 @@ if(BUILD_TESTING)
                 rtmp_monitor_webrtc_viewer_pipeline_test)
         endif()
 
+        qt_add_executable(rtmp_monitor_webrtc_product_test
+            tests/WebRtcProductSessionTest.cpp)
+        target_link_libraries(rtmp_monitor_webrtc_product_test PRIVATE
+            Qt6::Test
+            rtmp_monitor_webrtc_product
+            rtmp_monitor_webrtc_signaling
+            rtmp_monitor_webrtc_transport
+            LibDataChannel::LibDataChannel)
+        rtmp_monitor_apply_project_options(
+            rtmp_monitor_webrtc_product_test)
+        add_test(NAME rtmp_monitor_webrtc_product_test
+            COMMAND rtmp_monitor_webrtc_product_test)
+        set_tests_properties(rtmp_monitor_webrtc_product_test PROPERTIES
+            RUN_SERIAL TRUE
+            TIMEOUT 180
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+        rtmp_monitor_copy_ffmpeg_runtime(
+            rtmp_monitor_webrtc_product_test)
+        if(WIN32)
+            rtmp_monitor_copy_qt_platform_runtime(
+                rtmp_monitor_webrtc_product_test)
+        endif()
+
         qt_add_executable(rtmp_monitor_h264_publisher_source_test
             tests/Mp4H264PublisherSourceTest.cpp)
         target_link_libraries(rtmp_monitor_h264_publisher_source_test PRIVATE
@@ -1405,6 +1483,7 @@ if(BUILD_TESTING)
             rtmp_monitor_webrtc_endpoint_test
             rtmp_monitor_webrtc_runtime_paths_test
             rtmp_monitor_webrtc_viewer_pipeline_test
+            rtmp_monitor_webrtc_product_test
             rtmp_monitor_h264_publisher_source_test
             rtmp_monitor_webrtc_publisher_peer)
             set_target_properties(${webrtc_test_target} PROPERTIES
@@ -1911,6 +1990,7 @@ message(STATUS "CPU canvas compiled  : ON")
 message(STATUS "OpenGL backend       : ${RTMP_MONITOR_HAS_OPENGL}")
 message(STATUS "OpenGL prototype     : ${RTMP_MONITOR_BUILD_OPENGL_PROTOTYPE}")
 message(STATUS "WebRTC developer path: ${RTMP_MONITOR_ENABLE_WEBRTC}")
+message(STATUS "WebRTC product entry  : ${RTMP_MONITOR_HAS_WEBRTC}")
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     message(STATUS "Target sysroot       : ${CMAKE_SYSROOT}")
     if(RTMP_MONITOR_HAS_OPENGL)

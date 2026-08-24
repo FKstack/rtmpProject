@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <defs><style>.t{font-family:'Microsoft YaHei',sans-serif;fill:#eef5ff}.h{font-size:30px;font-weight:700}.s{font-size:18px}.n{font-size:21px;font-weight:700}.b{fill:#14263e;stroke:#67adff;stroke-width:2}.g{fill:#12352e;stroke:#51d1a8;stroke-width:2}.o{fill:#392817;stroke:#ffb762;stroke-width:2}.a{stroke:#8fbcf4;stroke-width:3;fill:none;marker-end:url(#m)}</style><marker id="m" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0 0L0 6L9 3z" fill="#8fbcf4"/></marker></defs>
+  <rect width="1280" height="720" fill="#091321"/><text class="t h" x="48" y="55">对象所有权与线程边界</text>
+  <rect class="o" x="75" y="105" width="360" height="480" rx="18"/><text class="t h" x="112" y="150">GUI / QObject 线程</text>
+  <rect class="b" x="110" y="185" width="290" height="115" rx="14"/><text class="t n" x="130" y="222">ProductSessionController</text><text class="t s" x="130" y="254">unique_ptr session</text><text class="t s" x="130" y="282">shared input + mailbox</text>
+  <rect class="g" x="110" y="350" width="290" height="90" rx="14"/><text class="t n" x="166" y="386">VideoWidget</text><text class="t s" x="139" y="417">QPointer；由 MainWindow 管理</text>
+  <rect class="g" x="110" y="480" width="290" height="70" rx="14"/><text class="t n" x="142" y="522">100 ms 诊断定时器</text>
+  <rect class="b" x="520" y="105" width="310" height="480" rx="18"/><text class="t h" x="566" y="150">会话 worker</text>
+  <rect class="g" x="555" y="190" width="240" height="105" rx="14"/><text class="t n" x="576" y="228">WebRtcReceiveSession</text><text class="t s" x="580" y="261">停止标志 · join</text>
+  <rect class="g" x="555" y="350" width="240" height="105" rx="14"/><text class="t n" x="578" y="389">EndpointSession</text><text class="t s" x="577" y="422">一个 ReceiveOnly PC</text>
+  <rect class="g" x="555" y="500" width="240" height="55" rx="14"/><text class="t s" x="592" y="534">SessionPackageStore</text>
+  <rect class="o" x="915" y="105" width="290" height="480" rx="18"/><text class="t h" x="963" y="150">媒体 worker 池</text>
+  <rect class="b" x="950" y="215" width="220" height="100" rx="14"/><text class="t n" x="972" y="253">DecodeSession</text><text class="t s" x="974" y="283">H.264 → VideoFrame</text>
+  <rect class="b" x="950" y="390" width="220" height="100" rx="14"/><text class="t n" x="980" y="428">Mailbox</text><text class="t s" x="978" y="459">容量 1 · 代际隔离</text>
+  <path class="a" d="M400 240 H550"/><text class="t s" x="432" y="225">start / cancel</text><path class="a" d="M795 242 H945"/><text class="t s" x="820" y="225">弱句柄 submit</text><path class="a" d="M950 440 H405"/><text class="t s" x="632" y="425">只读帧</text><path class="a" d="M555 527 H405"/><text class="t s" x="430" y="511">值事件 queued</text>
+  <text class="t s" x="80" y="650">关闭顺序固定：token 失效 → requestStop → endpoint close → join → input close → remove stream/widget → rtc::Cleanup</text>
+</svg>

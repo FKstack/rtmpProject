@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <defs><style>.t{font-family:'Microsoft YaHei',sans-serif;fill:#eff6ff}.h{font-size:30px;font-weight:700}.s{font-size:17px}.n{font-size:20px;font-weight:700}.l{stroke:#45617f;stroke-width:2}.a{stroke:#72b8ff;stroke-width:3;fill:none;marker-end:url(#m)}.c{fill:#14283f;stroke:#63adff;stroke-width:2}</style><marker id="m" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0 0L0 6L9 3z" fill="#72b8ff"/></marker></defs>
+  <rect width="1280" height="720" fill="#091321"/><text class="t h" x="48" y="55">取消与应用退出：资源按所有权反向释放</text>
+  <g class="t n"><text x="75" y="115">GUI</text><text x="315" y="115">Controller</text><text x="565" y="115">ReceiveSession</text><text x="825" y="115">Endpoint</text><text x="1055" y="115">Media/UI</text></g>
+  <g class="l"><line x1="105" y1="135" x2="105" y2="650"/><line x1="375" y1="135" x2="375" y2="650"/><line x1="650" y1="135" x2="650" y2="650"/><line x1="875" y1="135" x2="875" y2="650"/><line x1="1115" y1="135" x2="1115" y2="650"/></g>
+  <path class="a" d="M105 180 H370"/><text class="t s" x="175" y="169">取消 / 应用退出</text>
+  <rect class="c" x="295" y="205" width="160" height="52" rx="12"/><text class="t s" x="316" y="238">token 代际失效</text>
+  <path class="a" d="M375 285 H645"/><text class="t s" x="452" y="275">requestStop()</text>
+  <path class="a" d="M650 335 H870"/><text class="t s" x="716" y="325">beginClose()</text>
+  <path class="a" d="M875 385 H655"/><text class="t s" x="713" y="375">close 完成</text>
+  <path class="a" d="M650 435 H380"/><text class="t s" x="470" y="425">join worker</text>
+  <path class="a" d="M375 490 H1110"/><text class="t s" x="633" y="480">close input → remove stream/widget</text>
+  <path class="a" d="M375 545 H110"/><text class="t s" x="180" y="535">Idle / actions reset</text>
+  <rect x="230" y="600" width="820" height="65" rx="15" fill="#12372f" stroke="#4fd1a6" stroke-width="2"/><text class="t n" x="338" y="628">ApplicationBootstrap 最后调用 rtc::Cleanup（有界等待）</text><text class="t s" x="382" y="655">不会让回调访问已删除的 Qt 对象或已关闭媒体句柄</text>
+</svg>
