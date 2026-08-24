@@ -1,5 +1,13 @@
 # RtmpMonitor 当前项目快照
 
+> WebRTC V2 Week 7 双机人工测试文档补充（2026-08-24）：新增面向 KUNLUN 远程公司电脑的
+> 手把手双电脑公网测试手册，明确“资格 runner 强制 offscreen、可视观感必须直接运行客户端”的
+> 真实行为；完整覆盖 ZIP 文件传输、两端展开/packageId 核对、授权 STUN 交互配置、staging 原子
+> Offer/Answer 搬运、两种拓扑各十轮、可视窗口、viewer/publisher 先关、远程失联保护、四报告
+> VerifyPublic 和清理。公司侧网络只记录以太网/DHCP/公用网络/私网地址/1 Gbps等脱敏类别，不保存
+> 具体地址、网关、DNS或MAC。Week 7包打包入口同步携带该手册与SVG assets；真实公网测试仍为
+> 待用户执行，本次文档补充不预写Direct或NeedsRelay。
+
 > WebRTC V2 Week 7（2026-08-24）：受限STUN配置、地址无关ICE事实、测试专用libjuice fixture、
 > Week 7包与公网runner已实现。fresh OFF 39/39、Debug/Release ON 46/46；最终客户端两个便携
 > 副本两种拓扑各10/10，每轮srflx observed、host/host UDP、5045 RTP、180 AU/submitted及

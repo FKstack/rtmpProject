@@ -12,7 +12,7 @@
 | `week04/` | 对称 endpoint、固定 MP4 publisher 与双 Offer 角色 |
 | `week05/` | 同一客户端 viewer 与媒体回环 |
 | `week06/` | 双机 LAN Release 便携包、runner 与资格矩阵 |
-| `week07/` | 受限 STUN、本地设计门禁与延期公网 Direct/Needs Relay runner |
+| `week07/` | 受限 STUN、本地设计门禁、延期公网 runner 与 KUNLUN 双电脑手动测试手册 |
 | `week08/` | 正式客户端一次性接收、状态和安全集成 |
 | `week09/`～`week10/` | 摄像头、多路、故障、性能和 Beta 资格 |
 

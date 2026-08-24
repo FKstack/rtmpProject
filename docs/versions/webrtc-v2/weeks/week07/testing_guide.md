@@ -124,6 +124,10 @@ Release CTest 通过后，脚本调用 `package_week7.ps1`。公共打包模块�
 
 该部分当前未执行。需要当前电脑连接获授权的移动网络，公司台式机连接获授权的公司网络；两端均允许运行该测试包，所用公网 STUN 服务也必须获授权。不要关闭整机防火墙，不要绕过公司网络政策，不要测试客户或现场端点。两端必须使用同一个最终 ZIP，manifest packageId一致。
 
+用户当前通过远程控制软件访问显示为 KUNLUN 的公司电脑。公司侧已确认的脱敏事实是：以太网、DHCP、公用网络配置、私网 IPv4 和 1 Gbps 链路；具体 IPv4、IPv6、网关、DNS 与 MAC 不进入文档和报告。远程控制软件的“文件传输”只用于搬运完整 ZIP/Offer/Answer，“进入桌面”用于操作公司 Windows；WebRTC 媒体仍必须通过两端客户端的真实 UDP selected pair建立，不能把远程控制画面当作 WebRTC viewer 证据。
+
+第一次执行时不要只读本节摘要，请完整按照独立的 [KUNLUN 双电脑公网手动测试手册](manual_two_computer_public_test.md) 操作。该手册从 ZIP 上传、两端解压、packageId 核对、PowerShell窗口布置、STUN交互配置开始，逐轮说明如何通过 staging 原子搬运 Offer/Answer，并分别给出资格报告模式和可视窗口模式。
+
 ![真实公网两种角色](assets/05_public_role_topologies.svg)
 
 每台电脑从全新 ZIP 展开。首次只运行：
@@ -135,6 +139,8 @@ Release CTest 通过后，脚本调用 `package_week7.ps1`。公共打包模块�
 ```
 
 Configure 会要求输入 `AUTHORIZED`，然后交互读取 STUN URL。URL不会作为脚本参数出现在 PowerShell历史。不要在命令行提前定义包含真实 URL的环境变量，不要把 local-config复制到另一台电脑；每台电脑各自交互配置。配置文件和授权记录只在包运行目录，Stop会删除。
+
+`week7_public_test.ps1 -Action Run` 会强制 `QT_QPA_PLATFORM=offscreen`。所以以下十轮资格流程不会显示 viewer窗口，而是从真实canvas计数和非黑 framebuffer生成报告。要在 KUNLUN 远程桌面亲眼观察动态画面，必须在资格十轮之后，按独立手册的“可视窗口模式”直接运行 `rtmp_monitor_webrtc_client.exe`；两种证据不能相互冒充。
 
 ### 5.2 拓扑一
 
@@ -150,17 +156,17 @@ Configure 会要求输入 `AUTHORIZED`，然后交互读取 STUN URL。URL不会
 & .\week7_public_test.ps1 -Action Run -MediaRole viewer -SignalingRole answer -NetworkClass company -Rounds 10
 ```
 
-runner启动后会在 outbox提示完整文件。把 Offerer outbox中的 `.offer.json` 整个复制到 Answerer inbox；Answerer outbox出现 `.answer.json` 后整个复制回 Offerer inbox。不要重命名、打开编辑、合并或只复制 sdp字段。每一轮 runner都会清理旧 session文件，必须复制该轮新文件，不能复用前一轮。
+runner启动后会把完整文件同步到 outbox。使用远程控制软件时，不要直接把正在传输的文件落入 inbox：先传到目标包的 `handoff/incoming-staging`，等待文件传输明确完成，再在目标 PowerShell用 `Move-Item -LiteralPath`移动到 inbox。把 Offerer outbox中的 `.offer.json` 整个复制到 Answerer，Answerer outbox出现 `.answer.json` 后整个复制回 Offerer。不要重命名、打开编辑、合并或只复制 sdp字段。每一轮 runner都会清理旧 session文件，必须复制该轮新文件，不能复用前一轮。
 
-viewer 每轮观察动态画面、窗口响应和退出。两端完成后保留 results中的脱敏 JSON，不保留 logs或handoff文件作为最终材料。日志用于本地排障，可能含时间和错误文本，但资格汇总只接收报告。
+资格 runner 每轮核对 RTP、AU、submitted、decoded、rendered、presented与nonBlack，不进行肉眼窗口观察。窗口动态画面、响应和退出由单独的可视模式完成。两端完成后保留 results中的脱敏 JSON，不保留 logs或handoff文件作为最终材料。日志用于本地排障，可能含时间和错误文本，但资格汇总只接收报告。
 
 ### 5.3 拓扑二
 
-重新 Configure（若前次 Stop已清配置），把媒体角色不变而信令角色翻转：viewer/offer 与 publisher/answer。命令参数仍不包含地址。完整运行十轮并复制新生成的 offer/answer。只完成拓扑一不能通过，因为 viewer作为 Offerer 的 track方向和 answer路径尚未证明。
+重新 Configure（仅当前次 Stop已清配置），把媒体角色不变而信令角色翻转：KUNLUN viewer/offer 与当前电脑 publisher/answer。命令参数仍不包含地址。完整运行十轮并复制新生成的 offer/answer。只完成拓扑一不能通过，因为 viewer作为 Offerer 的 track方向和 answer路径尚未证明。
 
 ### 5.4 生命周期场景
 
-正常二十轮后，每种提前退出场景只跑一轮。viewer-first：画面呈现后停止 viewer，publisher应有界感知 connection_lost或结束，不得无限等待。publisher-first：开始发送后停止 publisher，viewer应有界收敛，不得继续显示旧 generation画面。连接后网络变化：只在已获授权且不会影响他人的条件下切换当前测试网络，记录 ICE state和有界终态；Week 7不做 ICE restart，所以预期是失败收敛而非自动恢复。
+正常二十轮后，每种提前退出场景只跑一轮。viewer-first：画面呈现后停止 viewer，publisher应有界感知 connection_lost或结束，不得无限等待。publisher-first：开始发送后停止 publisher，viewer应有界收敛，不得继续显示旧 generation画面。连接后网络变化只操作当前电脑的获授权移动网络；仅靠远程控制时禁止断开 KUNLUN 公司以太网，否则远程桌面和文件传输也会中断。Week 7不做 ICE restart，所以预期是失败收敛而非自动恢复。
 
 ![关闭收敛](assets/08_failure_shutdown.svg)
 

@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="700" viewBox="0 0 1200 700">
+  <defs>
+    <style>
+      .title { font: 700 28px "Microsoft YaHei", sans-serif; fill: #172033; }
+      .h { font: 700 20px "Microsoft YaHei", sans-serif; fill: #172033; }
+      .t { font: 16px "Microsoft YaHei", sans-serif; fill: #27364f; }
+      .s { font: 14px "Microsoft YaHei", sans-serif; fill: #52627a; }
+      .box { fill: #f7f9fc; stroke: #7083a0; stroke-width: 2; rx: 16; }
+      .local { fill: #eef7ff; stroke: #2878b5; stroke-width: 2; rx: 16; }
+      .remote { fill: #fff2f2; stroke: #b34f55; stroke-width: 2; rx: 16; }
+      .file { fill: #fff8df; stroke: #b88718; stroke-width: 2; rx: 12; }
+      .media { fill: #edf9ef; stroke: #3b8b4d; stroke-width: 3; }
+      .arrow { stroke: #6a7485; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+      .dash { stroke: #b88718; stroke-width: 3; stroke-dasharray: 8 7; fill: none; marker-end: url(#arrowGold); }
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#6a7485"/></marker>
+    <marker id="arrowGold" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#b88718"/></marker>
+  </defs>
+  <rect width="1200" height="700" fill="#ffffff"/>
+  <text x="600" y="48" text-anchor="middle" class="title">KUNLUN 远程主机双机人工测试：控制面与媒体面分离</text>
+
+  <rect x="55" y="95" width="420" height="250" class="local"/>
+  <text x="85" y="132" class="h">当前电脑（mobile）</text>
+  <text x="85" y="168" class="t">① 完整展开同一个 Week 7 ZIP</text>
+  <text x="85" y="199" class="t">② PowerShell 运行 publisher / viewer</text>
+  <text x="85" y="230" class="t">③ 本机 session-exchange 或 handoff</text>
+  <text x="85" y="261" class="t">④ 使用移动网络参与真实 ICE 检查</text>
+  <text x="85" y="304" class="s">不把地址、STUN URL、SDP写入报告</text>
+
+  <rect x="725" y="95" width="420" height="250" class="remote"/>
+  <text x="755" y="132" class="h">KUNLUN（company）</text>
+  <text x="755" y="168" class="t">① “文件传输”上传 ZIP / JSON</text>
+  <text x="755" y="199" class="t">② “进入桌面”打开两个 PowerShell</text>
+  <text x="755" y="230" class="t">③ 公司以太网、公用网络配置、DHCP</text>
+  <text x="755" y="261" class="t">④ viewer 窗口在远程桌面内观察</text>
+  <text x="755" y="304" class="s">不要断开网卡，否则远程控制也会中断</text>
+
+  <rect x="440" y="380" width="320" height="115" class="file"/>
+  <text x="600" y="414" text-anchor="middle" class="h">远程控制软件：只搬文件</text>
+  <text x="600" y="447" text-anchor="middle" class="t">完整 .offer.json ⇄ 完整 .answer.json</text>
+  <text x="600" y="476" text-anchor="middle" class="s">先传到 staging，完成后再原子移动到 inbox</text>
+
+  <path d="M475 250 C560 280 570 340 560 380" class="dash"/>
+  <path d="M725 250 C640 280 630 340 640 380" class="dash"/>
+  <path d="M760 480 C900 550 360 550 440 480" class="dash"/>
+
+  <path d="M475 185 C570 80 630 80 725 185" class="media" marker-end="url(#arrow)"/>
+  <text x="600" y="92" text-anchor="middle" class="h">真实 WebRTC UDP 媒体路径</text>
+  <text x="600" y="118" text-anchor="middle" class="s">不经过远程桌面文件传输；selected pair 与媒体事件提供证据</text>
+
+  <rect x="95" y="570" width="1010" height="85" class="box"/>
+  <text x="600" y="604" text-anchor="middle" class="h">安全操作边界</text>
+  <text x="600" y="634" text-anchor="middle" class="t">不关闭公司防火墙 · 不改网络类别 · 不记录具体 IP / DNS / MAC · 不上传 local-config · 不编辑 SDP</text>
+</svg>

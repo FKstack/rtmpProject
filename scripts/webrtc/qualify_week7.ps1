@@ -243,11 +243,25 @@ function Invoke-DocChecks {
     $week = Join-Path $script:SourceRoot 'docs\versions\webrtc-v2\weeks\week07'
     $summary = Get-Content -LiteralPath (Join-Path $week 'summary.md') -Raw
     $guide = Get-Content -LiteralPath (Join-Path $week 'testing_guide.md') -Raw
+    $manual = Get-Content -LiteralPath `
+        (Join-Path $week 'manual_two_computer_public_test.md') -Raw
     if (([regex]::Matches($summary,'[\u4e00-\u9fff]')).Count -lt 12000) {
         throw 'Week 7 summary has fewer than 12,000 Chinese characters.'
     }
     if (([regex]::Matches($guide,'[\u4e00-\u9fff]')).Count -lt 8000) {
         throw 'Week 7 testing guide has fewer than 8,000 Chinese characters.'
+    }
+    if ($manual.Length -lt 20000 -or
+        ([regex]::Matches($manual,'[\u4e00-\u9fff]')).Count -lt 5000) {
+        throw 'Week 7 two-computer manual is not detailed enough.'
+    }
+    foreach ($required in @(
+            'KUNLUN','文件传输','进入桌面','incoming-staging',
+            '资格报告模式','可视窗口模式','viewer-first','publisher-first',
+            'VerifyPublic','公用网络')) {
+        if ($manual -notmatch [regex]::Escape($required)) {
+            throw "Week 7 two-computer manual is missing: $required"
+        }
     }
     foreach ($name in @(
             'WebRtcEndpointSession','H264ReceivePipeline','WebRtcClientOptions',
@@ -264,7 +278,7 @@ function Invoke-DocChecks {
     $svgs = @(Get-ChildItem -LiteralPath (Join-Path $week 'assets') -Filter '*.svg')
     if ($svgs.Count -lt 9) { throw 'Week 7 requires at least nine SVG diagrams.' }
     foreach ($svg in $svgs) { [xml](Get-Content $svg.FullName -Raw) | Out-Null }
-    foreach ($document in @($summary,$guide)) {
+    foreach ($document in @($summary,$guide,$manual)) {
         if ($document -match '(?i)[A-Z]:\\Users\\' -or
             $document -match '(?i)(stun|turn):[^<\s`]') {
             throw 'Week 7 documentation leaks a path or concrete ICE endpoint.'

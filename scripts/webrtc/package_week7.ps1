@@ -46,6 +46,12 @@ foreach ($file in @(
 Copy-Item -LiteralPath `
     (Join-Path $sourceRoot 'docs\versions\webrtc-v2\weeks\week07\testing_guide.md') `
     -Destination (Join-Path $stage 'TESTING_GUIDE.md')
+Copy-Item -LiteralPath `
+    (Join-Path $sourceRoot 'docs\versions\webrtc-v2\weeks\week07\manual_two_computer_public_test.md') `
+    -Destination (Join-Path $stage 'manual_two_computer_public_test.md')
+Copy-Item -LiteralPath `
+    (Join-Path $sourceRoot 'docs\versions\webrtc-v2\weeks\week07\assets') `
+    -Destination (Join-Path $stage 'assets') -Recurse
 
 $tools = Resolve-QualificationTools
 $stream = Get-WebRtcPackagedSampleStream -StageRoot $stage `

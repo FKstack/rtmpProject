@@ -100,7 +100,8 @@ Week 3，其自动技术门禁已通过，实际结果见 [Week 3 summary](weeks
 
 Week 7 的深度实现说明见 [summary](weeks/week07/summary.md)，自动、本地双实例和以后两台电脑
 公网步骤见 [testing guide](weeks/week07/testing_guide.md)，实际与延期事实见
-[test results](weeks/week07/test_results.md)。
+[test results](weeks/week07/test_results.md)。第一次使用 KUNLUN 远程公司电脑执行真实双网络测试时，
+请直接使用 [双电脑公网手把手操作手册](weeks/week07/manual_two_computer_public_test.md)，不要仅根据命令摘要猜测文件搬运顺序。
 
 ## 安全提醒
 
