@@ -116,9 +116,10 @@ $forbidden = @(Get-ChildItem -LiteralPath $stage -Recurse -File |
     })
 if ($forbidden.Count -ne 0) { throw 'forbidden_package_artifact' }
 $executables = @(Get-ChildItem -LiteralPath $stage -Filter '*.exe' -File |
-    Select-Object -ExpandProperty Name | Sort-Object)
-if ([string]::Join(',', $executables) -ne
-    'rtmp_monitor.exe,rtmp_monitor_webrtc_client.exe') {
+    Select-Object -ExpandProperty Name)
+if ($executables.Count -ne 2 -or
+    $executables -notcontains 'rtmp_monitor.exe' -or
+    $executables -notcontains 'rtmp_monitor_webrtc_client.exe') {
     throw 'unexpected_package_executable_set'
 }
 
