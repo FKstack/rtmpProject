@@ -161,7 +161,11 @@ function Invoke-Matrix(
     }
 }
 
-function Assert-OffBuild([string]$Directory, [string]$Configuration) {
+function Assert-OffBuild(
+    [string]$Directory,
+    [string]$Configuration,
+    [string]$CMakeCommand
+) {
     $ctestFile = Get-Content -LiteralPath (Join-Path $Directory 'CTestTestfile.cmake') -Raw
     if ($ctestFile -match '(?i)webrtc') { throw 'off_ctest_contains_webrtc' }
     $forbidden = @(Get-ChildItem -LiteralPath $Directory -Recurse -File |
@@ -173,8 +177,11 @@ function Assert-OffBuild([string]$Directory, [string]$Configuration) {
     $executable = Join-Path $Directory "$Configuration\rtmp_monitor.exe"
     $exchange = Join-Path $sourceRoot 'out\webrtc-p2p\session-exchange'
     $existed = Test-Path -LiteralPath $exchange
-    $output = (& $executable --version 2>&1 | Out-String).Trim()
-    if ($LASTEXITCODE -ne 0 -or $output -notmatch [regex]::Escape($version)) {
+    & $CMakeCommand "-DEXECUTABLE_PATH=$executable" `
+        "-DEXPECTED_VERSION=$version" `
+        "-DWORKING_DIRECTORY=$(Split-Path -Parent $executable)" `
+        '-P' (Join-Path $sourceRoot 'cmake\VerifyExecutableVersion.cmake')
+    if ($LASTEXITCODE -ne 0) {
         throw 'off_version_mismatch'
     }
     if (-not $existed -and (Test-Path -LiteralPath $exchange)) {
@@ -273,9 +280,9 @@ switch ($Action) {
         $tools = Get-Tools
         $matrices = [Collections.Generic.List[object]]::new()
         [void]$matrices.Add((Invoke-Matrix $tools 'debug-off' 'Debug' $false))
-        Assert-OffBuild (Join-Path $BuildRoot 'debug-off') 'Debug'
+        Assert-OffBuild (Join-Path $BuildRoot 'debug-off') 'Debug' $tools.CMake
         [void]$matrices.Add((Invoke-Matrix $tools 'release-off' 'Release' $false))
-        Assert-OffBuild (Join-Path $BuildRoot 'release-off') 'Release'
+        Assert-OffBuild (Join-Path $BuildRoot 'release-off') 'Release' $tools.CMake
         [void]$matrices.Add((Invoke-Matrix $tools 'debug-on' 'Debug' $true))
         [void]$matrices.Add((Invoke-Matrix $tools 'release-on' 'Release' $true))
         Write-Result ([ordered]@{

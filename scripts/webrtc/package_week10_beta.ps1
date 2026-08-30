@@ -13,6 +13,8 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $sourceRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
+$cmakeCommand = (Get-Command cmake -ErrorAction Stop).Source
+$versionVerifier = Join-Path $sourceRoot 'cmake\VerifyExecutableVersion.cmake'
 $BuildRoot = [IO.Path]::GetFullPath($BuildRoot)
 $OutputRoot = [IO.Path]::GetFullPath($OutputRoot)
 $SamplePath = [IO.Path]::GetFullPath($SamplePath)
@@ -36,7 +38,8 @@ foreach ($target in @($stage,$zip,$audit)) {
 }
 
 & (Join-Path $sourceRoot 'scripts\package_windows.ps1') `
-    -BuildDir $BuildRoot -OutputDir $stage -Version $Version
+    -BuildDir $BuildRoot -OutputDir $stage -Version $Version `
+    -DeferExecutableValidation
 if ($LASTEXITCODE -ne 0) { throw 'base_package_failed' }
 if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip -Force }
 
@@ -167,9 +170,11 @@ function Invoke-CleanPackageTest([int]$Index) {
         $env:QT_PLUGIN_PATH = $null
         $env:QT_QPA_PLATFORM_PLUGIN_PATH = $null
         $env:QTDIR = $null
-        $versionOutput = (& $main --version 2>&1 | Out-String).Trim()
-        if ($LASTEXITCODE -ne 0 -or
-            $versionOutput -notmatch [regex]::Escape($Version)) {
+        & $cmakeCommand "-DEXECUTABLE_PATH=$main" `
+            "-DEXPECTED_VERSION=$Version" `
+            "-DWORKING_DIRECTORY=$root" `
+            '-P' $versionVerifier
+        if ($LASTEXITCODE -ne 0) {
             throw 'package_main_version_failed'
         }
         & $portableClient --help | Out-Null

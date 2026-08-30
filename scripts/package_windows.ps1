@@ -8,7 +8,9 @@ param(
 
     [Parameter(Mandatory = $true)]
     [ValidatePattern('^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$')]
-    [string]$Version
+    [string]$Version,
+
+    [switch]$DeferExecutableValidation
 )
 
 Set-StrictMode -Version Latest
@@ -299,9 +301,14 @@ Copy-PackageFile -Source $pahoDll `
     -SourceLabel "vcpkg $vcpkgTriplet Paho MQTT C 1.3.16" `
     -Manifest $sourceManifest
 
-$reportedVersion = (& $installedExe --version 2>&1 | Out-String).Trim()
-if ($LASTEXITCODE -ne 0 -or $reportedVersion -notmatch [regex]::Escape($Version)) {
-    throw "Installed executable version mismatch: $reportedVersion"
+if (-not $DeferExecutableValidation) {
+    Invoke-Checked -FilePath $cmakeCommand -Arguments @(
+        "-DEXECUTABLE_PATH=$installedExe",
+        "-DEXPECTED_VERSION=$Version",
+        "-DWORKING_DIRECTORY=$resolvedOutputDir",
+        '-P',
+        (Join-Path $repoRoot 'cmake\VerifyExecutableVersion.cmake')
+    )
 }
 
 $qtPlatformSource = Join-Path $qtRoot 'plugins\platforms\qwindows.dll'
