@@ -113,7 +113,7 @@ function Invoke-ConfigureBuildTest {
                 'rtmp_monitor_layer_dependency_test'
             )
         } else {
-            @('rtmp_monitor_webrtc_disabled_test',
+            @('rtmp_monitor_optional_transport_disabled_test',
               'rtmp_monitor_layer_dependency_test')
         }
         foreach ($test in $required) {

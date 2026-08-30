@@ -2,7 +2,8 @@
 
 > 完成日期：2026-08-30
 >
-> 当前门禁：`blocked(camera_environment,resource_smoke_not_run)`。真实摄像头 CAM-09 未获授权；当前资源 runner 只证明四路生命周期，不构成 W9-RES-01 资格。
+> 当前门禁：`blocked(camera_environment)`。真实摄像头 CAM-09 未获授权；Week 10 代表负载 runner 已补齐
+> W9-RES-01 的 1,800 秒资源与恢复资格。
 
 ## 1. 本周实际完成范围
 
@@ -48,7 +49,8 @@ widget，擦除 context。取消全部时先对所有 runtime 发停止，再统
 集成测试创建四组真实 SendOnly/ReceiveOnly PeerConnection，验证四路 RTP→Annex-B→FFmpeg decode→
 mailbox→presented→Direct，第五路零副作用拒绝、远端先关闭一路时另外三路继续呈现、单路停止小于
 1 秒、最低 slot 重建和新 generation。同步 state/diagnostics/Cancelled signal 的取消重入与网格动画
-期间立即取消也有回归。长时版本可在第 10 分钟停止一路、第 12 分钟重建；本次没有等待 1,800 秒。
+期间立即取消也有回归。后续 Week 10 代表性 720p30 runner 已完成预热 60 秒和 1,800 秒四路测量，
+第 600 秒停止一路、第 720 秒重建，约 2 秒恢复 Direct，其余三路持续呈现。
 
 ## 4. 架构影响
 
@@ -68,8 +70,8 @@ CAM-02～08 只有实现与组件/合成证据，不能写成现场通过。同�
 隔离，`physicalFourEndpointClaimed=false`。实现阶段 fresh Debug OFF/Debug ON/Release ON 基线为
 39/39、48/48、48/48；P1 生命周期与 Windows Qt 本地运行时加固后，当前代码又完整重跑 CTest：
 Debug OFF 39/39（122.66 秒）、Debug ON 48/48（201.71 秒）、Release ON 48/48（173.61 秒），并在
-移除 Qt/MinGW PATH 与插件路径变量后直接验证受影响程序无弹窗退出。当前 smoke 使用小型 H.264
-fixture，虽然短时生命周期 self-test 通过，但不是
-720p30 代表负载，也没有全程可归属的逐路资源采样，因此 `smokePassed=false`、
-`lifecycleEndurancePassed=false`、`performanceQualified=false`，总门禁同时记录
-`camera_environment` 与 `resource_smoke_not_run`。
+移除 Qt/MinGW PATH 与插件路径变量后直接验证受影响程序无弹窗退出。Week 9 原 smoke 的小型 fixture
+只提供生命周期证据；Week 10 已用代表性 720p30 负载补齐四路 1,800 秒、全程逐路队列/丢弃/延迟、
+进程工作集和故障恢复：斜率 0.134 MiB/min、首末 60 秒增长 2.802 MiB，队列与 cleanup 通过。
+因此 W9-RES-01 通过、`W9-GATE=blocked(camera_environment)`；全局
+`performanceQualified=false` 仍表示物理 LAN 未资格，不回写为 Week 9 资源失败。

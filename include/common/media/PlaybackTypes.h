@@ -102,7 +102,9 @@ struct StreamMetrics
     double decodeFps = 0.0;
     double displayFps = 0.0;
     qint64 lastFrameAgeMs = -1;
+    qint64 internalLatencyP50Ms = -1;
     qint64 internalLatencyP95Ms = -1;
+    qint64 internalLatencyMaxMs = -1;
     qint64 sourceLatencyP50Ms = -1;
     qint64 sourceLatencyP95Ms = -1;
     qint64 sourceLatencyMaxMs = -1;

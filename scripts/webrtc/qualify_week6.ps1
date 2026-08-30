@@ -83,7 +83,7 @@ function Invoke-Week6ConfigureBuildTest {
             'rtmp_monitor_webrtc_endpoint_test',
             'rtmp_monitor_webrtc_runtime_paths_test',
             'rtmp_monitor_webrtc_viewer_pipeline_test') } else {
-            @('rtmp_monitor_webrtc_disabled_test')
+            @('rtmp_monitor_optional_transport_disabled_test')
         }
         foreach ($test in $required) {
             if ($listing -notmatch [regex]::Escape($test)) {

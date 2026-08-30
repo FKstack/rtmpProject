@@ -3,7 +3,7 @@
 > 日期：2026-08-30
 >
 > 总结：实现阶段 fresh 三矩阵通过；P1 与 Windows Qt 本地运行时加固后，当前代码三矩阵全量 CTest
-> 再次通过。真实摄像头与代表性 30 分钟资源资格未完成。
+> 再次通过。真实摄像头仍未完成；代表性 30 分钟资源资格已由 Week 10 runner 补齐。
 
 ## 1. 已执行证据
 
@@ -35,9 +35,9 @@ fresh 矩阵由 `qualify_week9.ps1 -Action Run` 创建 Week 9 专用 build tree�
 | W9-CAM-09 | blocked(camera_environment) | 未获显式真实摄像头授权 |
 | W9-MUL-01 | targeted passed | 四组真实同机 PeerConnection 独立呈现 |
 | W9-FLT-01 | targeted passed | 远端先关闭一路、另外三路继续增长；单路取消与重建也通过 |
-| W9-RES-01 | partial | C++ 最终 queue 上限与清理通过；缺全程逐路资源峰值和代表性 720p30 负载 |
-| 30 分钟资源 Smoke | not_run | 未等待 1,800 秒；当前 runner 只给 lifecycle 证据，`smokePassed=false` |
-| W9-GATE | blocked(camera_environment,resource_smoke_not_run) | 不用 fixture 替代真实摄像头或资源资格 |
+| W9-RES-01 | passed by Week 10 successor runner | 代表性 720p30 四路 1,800 秒；斜率 0.134 MiB/min、首末增长 2.802 MiB，停止/重建/连续性/队列/cleanup 通过 |
+| 30 分钟资源 Smoke | passed by Week 10 successor runner | 全程 1 Hz 脱敏逐路数据；共享 renderer 与进程总量明确分离 |
+| W9-GATE | blocked(camera_environment) | 资源缺口已关闭；不用固定样本替代真实摄像头 CAM-09 |
 
 固定声明：`physicalFourEndpointClaimed=false`、`performanceQualified=false`、`cameraQualified=false`。
 
@@ -45,8 +45,6 @@ fresh 矩阵由 `qualify_week9.ps1 -Action Run` 创建 Week 9 专用 build tree�
 
 - 真实摄像头 1280×720@30 原生 H.264 或 NV12 capture；
 - 真实设备消失、物理阻塞读取 Flush 收敛与 120 秒持续呈现；
-- 1,800 秒工作集斜率和首末 60 秒增长门禁；
-- 代表性 720p30 四路负载下全程逐路 queue/drop/upload/paint/texture/queueBytes 峰值；
 - 四台物理 endpoint、真实 LAN/公网和 Week 10 性能资格。
 
 这些项目不得从合成 `h264_mf`、同机 PeerConnection 或短时脚本结果外推。

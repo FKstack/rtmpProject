@@ -83,6 +83,7 @@ private slots:
     void ffmpegFrameReferenceOutlivesOriginal();
     void mailboxIsCapacityOneAndRejectsStaleFrames();
     void mailboxRecordsFinalRenderLatency();
+    void mailboxLatencyDefaultsAndSampleBoundAreStable();
     void audioSyncClockFallsBackWhenPresentationIsStale();
     void mailboxHandlesConcurrentProducers();
     void dirtyAndPlacementAreDeterministic();
@@ -157,12 +158,40 @@ void VideoRenderCoreTest::mailboxRecordsFinalRenderLatency()
     QVERIFY(mailbox.lastPresentedFrameAgeMs() >= 0);
     const auto stats = mailbox.stats();
     QCOMPARE(stats.rendered, std::uint64_t(2));
+    QVERIFY(stats.internalLatencyP50Ms >= 0);
     QVERIFY(stats.internalLatencyP95Ms >= 0);
+    QVERIFY(stats.internalLatencyMaxMs >= stats.internalLatencyP95Ms);
     QCOMPARE(stats.sourceLatencySamples, std::uint64_t(1));
     QVERIFY(stats.sourceLatencyP50Ms >= 0);
     QVERIFY(stats.sourceLatencyMaxMs <= 10'000);
     mailbox.clear();
     QCOMPARE(mailbox.lastPresentedFrameAgeMs(), qint64 {-1});
+}
+
+void VideoRenderCoreTest::mailboxLatencyDefaultsAndSampleBoundAreStable()
+{
+    LatestFrameMailbox mailbox;
+    const auto empty = mailbox.stats();
+    QCOMPARE(empty.internalLatencyP50Ms, qint64 {-1});
+    QCOMPARE(empty.internalLatencyP95Ms, qint64 {-1});
+    QCOMPARE(empty.internalLatencyMaxMs, qint64 {-1});
+
+    const qint64 now =
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()
+        ).count();
+    for (std::uint64_t sequence = 1; sequence <= 20'100; ++sequence) {
+        const qint64 latency = static_cast<qint64>(sequence % 101);
+        QVERIFY(mailbox.submit(makeFrame(
+            sequence, 1, 1, 1, false, now - latency
+        )));
+        mailbox.recordRendered();
+    }
+    const auto bounded = mailbox.stats();
+    QVERIFY(bounded.internalLatencyP50Ms >= 0);
+    QVERIFY(bounded.internalLatencyP95Ms >= bounded.internalLatencyP50Ms);
+    QVERIFY(bounded.internalLatencyMaxMs >= bounded.internalLatencyP95Ms);
+    QVERIFY(bounded.internalLatencyMaxMs < 1'000);
 }
 
 void VideoRenderCoreTest::audioSyncClockFallsBackWhenPresentationIsStale()

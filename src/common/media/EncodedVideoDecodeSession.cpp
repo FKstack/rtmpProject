@@ -953,7 +953,9 @@ StreamMetrics EncodedVideoDecodeSession::metricsSnapshot(DeviceStatus state)
     metrics.lastFrameAgeMs = lastFrame >= 0
         ? std::max<qint64>(0, now - lastFrame)
         : -1;
+    metrics.internalLatencyP50Ms = mailboxStats.internalLatencyP50Ms;
     metrics.internalLatencyP95Ms = mailboxStats.internalLatencyP95Ms;
+    metrics.internalLatencyMaxMs = mailboxStats.internalLatencyMaxMs;
     metrics.sourceLatencyP50Ms = mailboxStats.sourceLatencyP50Ms;
     metrics.sourceLatencyP95Ms = mailboxStats.sourceLatencyP95Ms;
     metrics.sourceLatencyMaxMs = mailboxStats.sourceLatencyMaxMs;

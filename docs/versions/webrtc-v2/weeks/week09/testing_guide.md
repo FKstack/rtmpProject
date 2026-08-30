@@ -35,12 +35,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File `
 当前输入是小型 fixture，脚本只采集进程 CPU/工作集，C++ 只在结束时断言 queue；它没有形成代表性
 720p30 负载或全程逐路资源峰值，因此只能产生 `lifecycleEndurancePassed`，不能关闭 W9-RES-01。
 
-当前脚本的 `smokePassed` 始终为 false；`performanceQualified` 也永远为 false。Status 只显示进程角色
+Week 9 原脚本的 `smokePassed` 始终为 false；`performanceQualified` 也永远为 false。Status 只显示进程角色
 和 PID。内部状态保存 PID/启动时间，Stop 再从受管 build root/PowerShell 角色解析预期可执行路径，并在
 每次停止前重新核对 PID、路径和启动时间；先停 product，再停 worker。终态与指标不会被 Stop 覆盖。
 
 开发者可用 `-SmokeDurationSeconds 20` 做脚本短测，但短测只能得到 `self_test_passed`，不能得到
-`smokePassed=true`。
+`smokePassed=true`。W9-RES-01 已由 Week 10 的代表负载 runner 正式补测关闭；复现时使用
+`qualify_week10.ps1 -Action Performance`，不要再把 Week 9 fixture smoke 当成性能资格入口。
 
 ## 3. 真实摄像头资格
 
@@ -60,6 +61,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File `
 
 - 四路同机 PeerConnection 通过：只证明软件隔离，`physicalFourEndpointClaimed=false`。
 - Camera action 未实际完成：CAM-09 与 W9-GATE 必须 blocked。
-- 1,800 秒未实际完成：`lifecycleEndurancePassed=false`；即使完成，当前 runner 仍为 `smokePassed=false`。
+- Week 9 原 runner 的 1,800 秒结果不构成性能资格；当前权威资源结果来自 Week 10 runner。
 - 任何报告都不得把进程 CPU/内存包装成精确逐路 OS 资源；逐路只报告可归属 queue/drop、上传/绘制
   CPU、texture/queue bytes。

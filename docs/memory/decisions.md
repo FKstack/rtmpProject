@@ -878,6 +878,29 @@
 - 相关文件：`docs/roadmap/webrtc_v2_project_plan.md`、`docs/roadmap/project_plan.md`、
   `docs/memory/project_snapshot.md`、`docs/project_handoff.md`
 
+## ADR-045 Week 10 采用测试专用代表负载 runner 并分离本机与现场资格
+
+- 日期：2026-08-31
+- 状态：已采用；摄像头和物理 LAN 资格仍受外部环境阻塞
+- 背景：Week 9 的短时 fixture 集成测试只证明四路生命周期，不能提供 720p30 全程逐路峰值、工作集
+  趋势或 30 分钟故障恢复证据。若为资格负载修改生产 publisher API、加入通用媒体框架，或把同机
+  P95 写成 LAN P95，会扩大产品契约并混淆证据边界。
+- 决策：新增仅在 `BUILD_TESTING && RTMP_MONITOR_ENABLE_WEBRTC` 下构建的资格 runner。它通过既有
+  MP4 publisher 读取一轮有界且从 IDR 开始的代表性 AU，保持码流不可变，只重建 33,333 微秒媒体
+  时间戳；单个 pacing worker 直接向一或四个既有 `H264SubmitPort` 提交，不增加生产队列或 API。
+  media 统计只读追加内部延迟 P50/max。父进程独立采集进程 CPU/工作集，并把
+  `sameMachineSoftwareQualified`、`physicalLanQualified`、`performanceQualified` 分开记录。
+- 原因：测试组合根可以复用真实 PeerConnection、RTP、解码、mailbox 和 UI 呈现链路，同时把负载生成、
+  故障时钟和资格输出留在测试边界；独立资格布尔值防止从同机、交叉构建或短测外推现场能力。
+- 替代方案：修改生产 camera/MP4 source 支持循环；新增通用 MediaSource；外部 ffmpeg 进程；用短时
+  fixture 或同机 P95 直接关闭 W9/W10 门禁。它们会改变生产职责、增加进程/编码矩阵，或形成错误声明。
+- 影响：生产依赖方向、H264 契约、schema v1、MQTT、RTMP、信令和网络默认值不变；runner 是 ON-only
+  test 组合目标。候选包 manifest 只记录版本、Git source commit、相对路径和大小，不增加内容哈希。
+- 验证证据：fresh Debug/Release OFF 39/39、Debug/Release ON 49/49；runner self-test 与短时单/四路
+  编排通过。正式 600/1,800 秒结果、候选包和 ARM 证据以 Week 10 `test_results.md` 最终记录为准。
+- 相关文件：`tests/WebRtcQualificationRunnerMain.cpp`、`scripts/webrtc/qualify_week10.ps1`、
+  `scripts/webrtc/week10_performance_worker.ps1`、`docs/versions/webrtc-v2/weeks/week10/`
+
 ## ADR-XXX 标题
 
 - 日期：

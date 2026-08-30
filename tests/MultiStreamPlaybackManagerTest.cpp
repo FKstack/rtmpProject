@@ -288,7 +288,9 @@ void MultiStreamPlaybackManagerTest::metricsFileIsAtomicAndOmitsUrls()
     QVERIFY(stream.contains(QStringLiteral("markerDecodedFrames")));
     QVERIFY(stream.contains(QStringLiteral("markerDecodeFailures")));
     QVERIFY(stream.contains(QStringLiteral("sourceSequenceGaps")));
+    QVERIFY(stream.contains(QStringLiteral("internalLatencyP50Ms")));
     QVERIFY(stream.contains(QStringLiteral("presentationIntervalP95Ms")));
+    QVERIFY(stream.contains(QStringLiteral("internalLatencyMaxMs")));
     QVERIFY(stream.contains(QStringLiteral("lastPresentedSourceSequence")));
     QVERIFY(document.object().value(QStringLiteral("renderer")).isObject());
     const QJsonObject displayFrameRate = document.object()

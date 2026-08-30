@@ -23,7 +23,9 @@ struct LatestFrameMailboxStats
     std::uint64_t dirtyMerges = 0;
     std::uint64_t scheduleChecks = 0;
     qint64 textureBytes = 0;
+    qint64 internalLatencyP50Ms = -1;
     qint64 internalLatencyP95Ms = -1;
+    qint64 internalLatencyMaxMs = -1;
     qint64 sourceLatencyP50Ms = -1;
     qint64 sourceLatencyP95Ms = -1;
     qint64 sourceLatencyMaxMs = -1;

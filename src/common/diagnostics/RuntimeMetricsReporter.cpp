@@ -53,7 +53,9 @@ QJsonObject streamMetricsToJson(const StreamMetrics &metrics)
     object.insert(QStringLiteral("displayFps"), metrics.displayFps);
     object.insert(QStringLiteral("achievedDisplayFps"), metrics.displayFps);
     object.insert(QStringLiteral("lastFrameAgeMs"), metrics.lastFrameAgeMs);
+    object.insert(QStringLiteral("internalLatencyP50Ms"), metrics.internalLatencyP50Ms);
     object.insert(QStringLiteral("internalLatencyP95Ms"), metrics.internalLatencyP95Ms);
+    object.insert(QStringLiteral("internalLatencyMaxMs"), metrics.internalLatencyMaxMs);
     object.insert(QStringLiteral("sourceLatencyP50Ms"), metrics.sourceLatencyP50Ms);
     object.insert(QStringLiteral("sourceLatencyP95Ms"), metrics.sourceLatencyP95Ms);
     object.insert(QStringLiteral("sourceLatencyMaxMs"), metrics.sourceLatencyMaxMs);

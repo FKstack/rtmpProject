@@ -220,7 +220,14 @@ LatestFrameMailboxStats LatestFrameMailbox::stats() const
 {
     const std::lock_guard<std::mutex> lock(mutex_);
     LatestFrameMailboxStats result = stats_;
+    result.internalLatencyP50Ms = percentile(internalLatencySamples_, 0.50);
     result.internalLatencyP95Ms = percentile(internalLatencySamples_, 0.95);
+    result.internalLatencyMaxMs = internalLatencySamples_.empty()
+                                      ? -1
+                                      : *std::max_element(
+                                            internalLatencySamples_.begin(),
+                                            internalLatencySamples_.end()
+                                        );
     result.sourceLatencyP50Ms = percentile(sourceLatencySamples_, 0.50);
     result.sourceLatencyP95Ms = percentile(sourceLatencySamples_, 0.95);
     result.sourceLatencyMaxMs = sourceLatencySamples_.empty()

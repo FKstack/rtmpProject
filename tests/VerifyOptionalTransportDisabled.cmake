@@ -14,8 +14,8 @@ foreach(forbidden_name IN ITEMS
     rtmp_monitor_webrtc_publisher_peer.exe)
     if(EXISTS "${ARTIFACT_ROOT}/${forbidden_name}")
         message(FATAL_ERROR
-            "The default OFF build contains a forbidden WebRTC runtime artifact: ${forbidden_name}")
+            "The OFF build contains a forbidden optional transport artifact: ${forbidden_name}")
     endif()
 endforeach()
 
-message(STATUS "Default OFF build contains no WebRTC runtime artifacts.")
+message(STATUS "The OFF build contains no optional transport runtime artifacts.")

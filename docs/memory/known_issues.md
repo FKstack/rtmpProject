@@ -162,14 +162,14 @@
 - 临时措施：Windows 产品目标已经改为 30 FPS，但发布说明继续明确“资格待验证”；ARM64 仍保持独立的真实板卡门禁。
 - 2026-08-12 证据：首轮单路 120 秒运行因一次发布背压出现 2 个序号缺口并正确判失败；改用仍然有界的 8 帧节拍队列后，第二轮 120 秒通过，平均采集/发布/解码/显示为 30.000/29.967/30.038/29.963 FPS，零序号缺口、零源端丢帧，源延迟 P95 104 ms。该结果仍不是 600 秒正式资格。
 
-## ISSUE-017 WebRTC V2 Week 9 现场摄像头与资源门禁未完成
+## ISSUE-017 WebRTC V2 Week 9 现场摄像头门禁未完成
 
-- 状态：未解决（验收环境/runner 缺口，非已知生产崩溃）。
-- 影响范围：W9-CAM-01、W9-CAM-09、W9-RES-01 与 W9-GATE；不得宣称真实摄像头或 Week 9 资源资格通过。
-- 已验证现象：Media Foundation 生产路径、原生 H.264 优先、NV12 + 合成 `h264_mf` 回退、停止并发、四组同机 PeerConnection 隔离和故障回归已通过组件/定向测试。物理摄像头未获本次显式授权，未枚举或打开。当前 1,800 秒脚本使用小型 fixture，只采集进程 CPU/工作集且只在 C++ 结束时断言 queue，没有代表性 720p30 四路负载或全程逐路资源峰值。
-- 复现/验证：Camera 资格必须由设备所有者显式给出 index，预热 20 秒并连续呈现 120 秒；资源资格需先补全程逐路 queue/drop/upload/paint/texture/queueBytes 峰值与代表性负载，再执行 1,800 秒、第 10 分钟停止一路、第 12 分钟重建。
-- 临时措施：结果固定 `cameraQualified=false`、`smokePassed=false`、`performanceQualified=false`、`physicalFourEndpointClaimed=false`，总门禁记录 `blocked(camera_environment,resource_smoke_not_run)`；不得用 MP4、fixture 或短测替代。
-- 相关文件：`docs/versions/webrtc-v2/weeks/week09/`、`scripts/webrtc/qualify_week9.ps1`、`scripts/webrtc/week9_smoke_worker.ps1`
+- 状态：未解决（只剩摄像头验收环境，非已知生产崩溃）。
+- 影响范围：W9-CAM-01、W9-CAM-09 与 W9-GATE；不得宣称真实摄像头资格通过。
+- 已验证现象：Media Foundation 生产路径、原生 H.264 优先、NV12 + 合成 `h264_mf` 回退、停止并发、四组同机 PeerConnection 隔离和故障回归已通过组件/定向测试。Week 10 代表性 720p30 runner 已完成四路 1,800 秒、全程逐路可归属指标、工作集、停止/重建和 cleanup，W9-RES-01 通过。物理摄像头仍未获显式授权，未枚举或打开。
+- 复现/验证：Camera 资格必须由设备所有者显式给出 index，预热 20 秒并连续呈现 120 秒；只允许记录 camera-N 别名和脱敏结果。
+- 临时措施：固定 `cameraQualified=false`、`physicalFourEndpointClaimed=false`，W9-GATE 记录 `blocked(camera_environment)`；不得用 MP4、fixture 或短测替代真实摄像头。
+- 相关文件：`docs/versions/webrtc-v2/weeks/week09/`、`docs/versions/webrtc-v2/weeks/week10/`、`scripts/webrtc/qualify_week10.ps1`
 
 ## ISSUE-014 单向音频声学延迟与 ARM 真机门禁待执行
 

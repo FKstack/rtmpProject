@@ -157,7 +157,7 @@ function Invoke-BuildMatrix {
                         throw "Required WebRTC CTest is missing: $required"
                     }
                 }
-            } elseif ($listing -notmatch 'rtmp_monitor_webrtc_disabled_test') {
+            } elseif ($listing -notmatch 'rtmp_monitor_optional_transport_disabled_test') {
                 throw 'WebRTC OFF dependency test is missing.'
             }
         } finally {

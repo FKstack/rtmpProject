@@ -1,14 +1,14 @@
 cmake_minimum_required(VERSION 3.21)
 
 project(RtmpMonitor
-    VERSION 0.1.0
+    VERSION 0.2.0
     DESCRIPTION "Cross-platform multi-stream RTMP monitor"
     LANGUAGES CXX
 )
 
 # CMake 的 project(VERSION) 只接受数字版本；预发布标识在这里集中冻结，
 # 并通过生成头传给应用，避免分支名、文档和 --version 输出各自维护。
-set(RTMP_MONITOR_PRERELEASE "alpha.1")
+set(RTMP_MONITOR_PRERELEASE "beta.1")
 set(RTMP_MONITOR_VERSION
     "${PROJECT_VERSION}-${RTMP_MONITOR_PRERELEASE}"
 )
@@ -1465,6 +1465,31 @@ if(BUILD_TESTING)
         rtmp_monitor_copy_ffmpeg_runtime(
             rtmp_monitor_webrtc_product_test)
 
+        qt_add_executable(rtmp_monitor_webrtc_qualification_runner
+            tests/WebRtcQualificationRunnerMain.cpp)
+        if(WIN32)
+            set_target_properties(
+                rtmp_monitor_webrtc_qualification_runner
+                PROPERTIES WIN32_EXECUTABLE FALSE)
+        endif()
+        target_link_libraries(rtmp_monitor_webrtc_qualification_runner PRIVATE
+            rtmp_monitor_h264_publisher_source
+            rtmp_monitor_webrtc_product
+            rtmp_monitor_webrtc_signaling
+            rtmp_monitor_webrtc_transport
+            LibDataChannel::LibDataChannel)
+        rtmp_monitor_apply_project_options(
+            rtmp_monitor_webrtc_qualification_runner)
+        add_test(NAME rtmp_monitor_webrtc_qualification_runner_self_test
+            COMMAND rtmp_monitor_webrtc_qualification_runner --self-test)
+        set_tests_properties(
+            rtmp_monitor_webrtc_qualification_runner_self_test PROPERTIES
+            RUN_SERIAL TRUE
+            TIMEOUT 30
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+        rtmp_monitor_copy_ffmpeg_runtime(
+            rtmp_monitor_webrtc_qualification_runner)
+
         qt_add_executable(rtmp_monitor_h264_publisher_source_test
             tests/Mp4H264PublisherSourceTest.cpp)
         target_link_libraries(rtmp_monitor_h264_publisher_source_test PRIVATE
@@ -1516,6 +1541,7 @@ if(BUILD_TESTING)
             rtmp_monitor_webrtc_runtime_paths_test
             rtmp_monitor_webrtc_viewer_pipeline_test
             rtmp_monitor_webrtc_product_test
+            rtmp_monitor_webrtc_qualification_runner
             rtmp_monitor_h264_publisher_source_test
             rtmp_monitor_camera_h264_publisher_source_test
             rtmp_monitor_webrtc_publisher_peer)
@@ -1525,10 +1551,10 @@ if(BUILD_TESTING)
             rtmp_monitor_copy_webrtc_runtime(${webrtc_test_target})
         endforeach()
     else()
-        add_test(NAME rtmp_monitor_webrtc_disabled_test
+        add_test(NAME rtmp_monitor_optional_transport_disabled_test
             COMMAND ${CMAKE_COMMAND}
                 -DARTIFACT_ROOT=$<TARGET_FILE_DIR:rtmp_monitor>
-                -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/VerifyWebRtcDisabled.cmake)
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/VerifyOptionalTransportDisabled.cmake)
     endif()
     if(Python3_Interpreter_FOUND)
         add_test(
@@ -2002,6 +2028,7 @@ if(BUILD_TESTING)
             rtmp_monitor_ui_smoke_test
             rtmp_monitor_virtual_joystick_test
             rtmp_monitor_webrtc_product_test
+            rtmp_monitor_webrtc_qualification_runner
             rtmp_monitor_webrtc_viewer_pipeline_test)
         foreach(qapplication_test_target IN LISTS
                 rtmp_monitor_qapplication_test_targets)
