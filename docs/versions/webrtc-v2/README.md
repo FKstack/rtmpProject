@@ -8,9 +8,11 @@ MP4 publisher 和 SendOnly H.264 Track；Week 5 已在同一测试客户端完�
 便携信令根、Release 测试包、同机双包黑盒和双机 runner。用户已接受最终 ZIP 本地双实例
 20/20 作为 Week 6 设计验收；Week 7 已增加默认host/显式stun的固定本机配置、地址无关ICE事实、
 确定性本地fixture、两个便携副本资格和延期公网runner。Week 8 已把一次性 ReceiveOnly 会话接入
-正式客户端，增加 ON-only 菜单、产品状态/事件/诊断、1,000 ms 真实呈现门禁、取消生命周期以及
-无 RTMP 回退/无控制授权的自动证据；fresh OFF 39/39、Debug/Release ON 47/47。正式产品人工观感、
-真实双机 LAN、公司网络/移动网络公网和ARM真机仍未验证。RTMP `0.1.0-alpha.1` 仍是稳定路径。
+正式客户端；Week 9 已加入 MF 摄像头 source 和最多四路独立产品会话；Week 10 已完成
+`0.2.0-beta.1` 的四套 Windows 矩阵、单路 600 秒/四路 1,800 秒同机性能与恢复、53 文件 Windows
+候选包双副本闭环，以及 ARM64 RASTER/GLES3 WebRTC OFF 交叉构建。W9-GATE 目前只受真实摄像头
+环境阻塞，W10-GATE 受真实摄像头和物理 LAN 环境阻塞；没有正式 Beta 标签或推送。RTMP
+`0.1.0-alpha.1` 仍是稳定发布路径。
 
 ## 总计划
 

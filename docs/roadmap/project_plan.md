@@ -1432,10 +1432,10 @@ CTest 14/14 通过；ARM64 RASTER 构建 NEEDED 无 Qt6OpenGL*/EGL/GLES，GLES3 
   并使用已经合成编解码预检的 `h264_mf`；没有增加通用插件层、外部 ffmpeg/x264 或硬件编码器矩阵。
 - 正式产品控制器由单条扩展为最多四条 StreamId 独立 context，最低空闲 slot 对应 session-01～04；
   单路故障/取消/重建不影响另外三路，第五路稳定拒绝。
-- 同机四组真实 PeerConnection 和定向自动门禁通过，但不能声称四台物理 endpoint；当前小型 fixture
-  runner 只证明生命周期，W9-RES-01 仍为 partial，30 分钟代表性资源 Smoke 尚未完成。
+- 同机四组真实 PeerConnection 和定向自动门禁通过，但不能声称四台物理 endpoint。Week 10 后继
+  runner 已完成代表性 720p30 四路 1,800 秒、全程逐路指标、工作集和停止/重建，W9-RES-01 通过。
 - 真实摄像头访问必须由用户显式授权。当前 CAM-01/CAM-09 为 `blocked(camera_environment)`，
-  W9-GATE 为 `blocked(camera_environment,resource_smoke_not_run)`，详见
+  W9-GATE 为 `blocked(camera_environment)`，详见
   [Week 9总结](../versions/webrtc-v2/weeks/week09/summary.md)。
 
 ## 25. WebRTC-first 低延迟远程操作产品化方向（2026-08-30）
@@ -1450,3 +1450,17 @@ CTest 14/14 通过；ARM64 RASTER 构建 NEEDED 无 Qt6OpenGL*/EGL/GLES，GLES3 
 - RTMP 迁移期保留但不得静默 fallback。只有 WSS、TURN、身份绑定、自动重连、真实网络/多设备/长时
   资源和发布包门禁全部通过后，RTMP 才退出产品实时视频主链路。
 - 完整职责分面、阶段顺序和退役门禁见 [WebRTC V2 总计划第 9 节](webrtc_v2_project_plan.md#9-week-10-后-webrtc-first-低延迟远程操作产品化主线)。
+
+## 26. WebRTC V2 Week 10 本地 Beta 资格候选（2026-08-31）
+
+- 源版本集中为 `0.2.0-beta.1`；fresh Debug/Release × WebRTC OFF/ON 四矩阵分别通过 39/39、
+  39/39、49/49、49/49，OFF 目标、菜单、制品和启动副作用审计通过。
+- 测试专用代表性 720p30 runner 完成单路 600 秒与四路 1,800 秒。两场景工作集斜率分别为
+  0.176、0.134 MiB/min；四路停止、最低 slot 重建、旧端口拒绝和其余三路连续呈现通过。
+- Windows 候选包共 53 个文件，两个全新展开副本和两次本地 publisher/viewer 闭环通过；包含实际
+  WebRTC DLL/许可与固定样本，不含调试物、用户状态、真实端点或内容哈希。包源码为 `392d9aa`。
+- ARM64 RASTER/GLES3 WebRTC OFF 交叉构建、AArch64 ELF 和依赖审计通过；不声明 ARM WebRTC 或
+  真机资格。稳定 RTMP `0.1.0-alpha.1` 发布事实保持不变。
+- 当前是完整的本地 WebRTC V2 Beta qualification candidate：`sameMachineSoftwareQualified=true`、
+  `packagePassed=true`、`armCrossBuildPassed=true`。未授权真实摄像头，也未取得物理 LAN，故
+  `W10-GATE=blocked(camera_environment,physical_lan_environment)`；未创建正式 tag、未推送。

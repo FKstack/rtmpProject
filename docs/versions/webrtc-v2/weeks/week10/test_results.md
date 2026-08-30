@@ -2,8 +2,8 @@
 
 > 日期：2026-08-31
 >
-> 当前结论：四套 fresh Windows 矩阵、正式本机长稳与 ARM64 交叉构建已通过；候选包结果以本文件
-> 最终表格为准。
+> 当前结论：四套 fresh Windows 矩阵、正式本机长稳、Windows 候选包与 ARM64 交叉构建已通过；
+> 摄像头和物理 LAN 环境资格保持阻塞。
 
 ## 1. Windows 自动矩阵
 
@@ -47,8 +47,8 @@ W9-RES-01，使 W9-GATE 收敛为 `blocked(camera_environment)`；它不替代�
 
 | 项目 | 状态 | 证据边界 |
 | --- | --- | --- |
-| Windows Beta 候选包 | 待执行 | 不等于正式发布，不创建 tag |
-| 两个干净展开副本 | 待执行 | 必须通过版本、CLI、角色闭环、敏感输出和残留检查 |
+| Windows Beta 候选包 | 通过 | 53 个文件；`sourceCommit=392d9aa`；不等于正式发布，不创建 tag |
+| 两个干净展开副本 | 2/2 通过 | 主程序版本、客户端 help/非法参数、本地角色闭环 2/2、敏感输出和残留检查通过 |
 | ARM64 RASTER/GLES3 | 通过 | AArch64 ELF 与动态依赖已审计；WebRTC OFF |
 | ARM WebRTC/真机 | blocked(environment/dependency) | `armWebRtcQualified=false`、`armDeviceQualified=false` |
 
@@ -58,4 +58,7 @@ W9-RES-01，使 W9-GATE 收敛为 `blocked(camera_environment)`；它不替代�
 - 未取得两台物理 LAN 环境：`physicalLanQualified=false`，同机延迟不写成 LAN P95。
 - 同机四路不等于四台物理 endpoint：`physicalFourEndpointClaimed=false`。
 - `performanceQualified` 表示全局现场性能资格，不能由 `sameMachineSoftwareQualified` 代替。
-- 预期最终 `W10-GATE=blocked(camera_environment,physical_lan_environment)`；自动项可独立通过。
+- 最终 `W10-GATE=blocked(camera_environment,physical_lan_environment)`；自动项已独立通过。
+- `packagePassed=true`、`armCrossBuildPassed=true`；`armWebRtcQualified=false`、
+  `armDeviceQualified=false`、`cameraQualified=false`、`physicalLanQualified=false`、
+  `performanceQualified=false`。未创建正式标签、未推送。

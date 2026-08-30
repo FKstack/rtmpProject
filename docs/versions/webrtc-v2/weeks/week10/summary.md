@@ -44,11 +44,28 @@ ARM64 只重新执行 RASTER/GLES3 的 WebRTC OFF 交叉构建、AArch64 ELF 和
 `armWebRtcQualified=false`、`armDeviceQualified=false`。
 
 本机四路是真实 WebRTC 软件链路，但不是两台物理 LAN 设备、四台物理 endpoint 或公网资格。未获得
-摄像头 index 授权，本轮不枚举或打开物理摄像头。因此即使全部自动项通过，预期最终仍是
+摄像头 index 授权，本轮不枚举或打开物理摄像头。全部自动项通过后，最终状态仍是
 `W10-GATE=blocked(camera_environment,physical_lan_environment)`；只有后续真实通过这两项，才允许
 创建正式 `v0.2.0-beta.1` 标签。
 
-## 4. 架构影响
+## 4. 实际资格结果
+
+fresh Windows 四矩阵全部通过：Debug/Release WebRTC OFF 为 39/39、39/39，Debug/Release ON 为
+49/49、49/49；OFF 目标、菜单、制品和启动副作用审计通过。正式单路 600 秒和四路 1,800 秒测量均
+通过本机门槛：工作集斜率分别为 0.176、0.134 MiB/min，末 60 秒相对首 60 秒分别增长 1.678、
+2.802 MiB。四路停止、最低 slot 重建、旧端口失效、其余三路连续呈现和 10 秒恢复门禁全部通过。
+
+Windows 候选包 `RtmpMonitor-0.2.0-beta.1-windows-x64` 包含 53 个文件；两个全新展开副本均通过
+版本、CLI、本地两角色闭环、敏感输出、调试制品和残留进程审计。包的 `sourceCommit` 为
+`392d9aa`，manifest 只有版本、source commit、相对路径和大小，没有内容哈希。ARM64 RASTER/GLES3
+WebRTC OFF 交叉构建、AArch64 ELF 和动态依赖审计通过；它不代表 ARM WebRTC 或真机资格。
+
+因此 `sameMachineSoftwareQualified=true`、`localPerformanceQualified=true`、
+`armCrossBuildPassed=true`、`packagePassed=true`。W9-RES-01 已关闭，W9-GATE 收敛为
+`blocked(camera_environment)`；物理摄像头和物理 LAN 均未执行，最终
+`W10-GATE=blocked(camera_environment,physical_lan_environment)`。本轮未创建正式标签、未推送。
+
+## 5. 架构影响
 
 - 风险等级：R2。
 - 职责：生产 media 只增加已有统计对象的只读分位值；资格编排位于测试组合根，不进入产品 runtime。

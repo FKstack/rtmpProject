@@ -896,8 +896,10 @@
   fixture 或同机 P95 直接关闭 W9/W10 门禁。它们会改变生产职责、增加进程/编码矩阵，或形成错误声明。
 - 影响：生产依赖方向、H264 契约、schema v1、MQTT、RTMP、信令和网络默认值不变；runner 是 ON-only
   test 组合目标。候选包 manifest 只记录版本、Git source commit、相对路径和大小，不增加内容哈希。
-- 验证证据：fresh Debug/Release OFF 39/39、Debug/Release ON 49/49；runner self-test 与短时单/四路
-  编排通过。正式 600/1,800 秒结果、候选包和 ARM 证据以 Week 10 `test_results.md` 最终记录为准。
+- 验证证据：fresh Debug/Release OFF 39/39、Debug/Release ON 49/49；正式单路 600 秒、四路
+  1,800 秒及停止/重建通过，工作集斜率分别为 0.176、0.134 MiB/min。53 文件 Windows 候选包在
+  两个干净副本完成 2/2 本地角色闭环；ARM64 RASTER/GLES3 WebRTC OFF 交叉构建通过。现场摄像头、
+  物理 LAN、ARM WebRTC 和 ARM 真机仍未验证，详见 Week 10 `test_results.md`。
 - 相关文件：`tests/WebRtcQualificationRunnerMain.cpp`、`scripts/webrtc/qualify_week10.ps1`、
   `scripts/webrtc/week10_performance_worker.ps1`、`docs/versions/webrtc-v2/weeks/week10/`
 

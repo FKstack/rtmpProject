@@ -434,7 +434,7 @@ summary/testing guide/test results。
 | W9-RES-01 | 4 | W9-FLT-01 | 每路 CPU/内存/队列/丢弃与 30 分钟 smoke | 无界增长或归属不清即失败 |
 | W9-GATE | 3 | W9-CAM-09,W9-RES-01 | 摄像头与四路隔离门禁 | 摄像头可阻塞但不得以 MP4 冒充通过 |
 
-2026-08-30 实际状态（以当前代码和测试为准）：
+2026-08-31 实际状态（以当前代码和测试为准）：
 
 | ID | 状态 | 证据边界 |
 | --- | --- | --- |
@@ -443,8 +443,8 @@ summary/testing guide/test results。
 | W9-CAM-09 | blocked(camera_environment) | 未执行真实摄像头 120 秒呈现 |
 | W9-MUL-01 | targeted passed | 四组同机真实 PeerConnection、独立 StreamId/generation/slot |
 | W9-FLT-01 | targeted passed | 远端关闭一路时另外三路继续呈现；取消、重建和 signal 重入通过 |
-| W9-RES-01 | partial / blocked(resource_smoke_not_run) | 短时生命周期与最终 queue 断言通过；缺代表性负载、1,800 秒和全程逐路资源峰值 |
-| W9-GATE | blocked(camera_environment,resource_smoke_not_run) | 不以 fixture 外推摄像头或资源资格 |
+| W9-RES-01 | passed | Week 10 代表性 720p30 四路真实软件链路完成 1,800 秒、逐路指标、工作集和停止/重建门禁 |
+| W9-GATE | blocked(camera_environment) | 资源缺口已关闭；仍不以固定样本外推真实摄像头资格 |
 
 ### Week 10：性能、包、跨平台和 Beta 资格
 
@@ -464,6 +464,21 @@ summary/testing guide/test results。
 | W10-ARM-01 | 4 | W10-WIN-02 | ARM64 RASTER/GLES3 交叉构建与 ELF 依赖 | 交叉构建不得写成真机通过 |
 | W10-DOC-01 | 2 | W10-PKG-03,W10-OFF-01,W10-PER-02,W10-REC-01,W10-ARM-01 | Beta 说明、限制和必要 known issues | 隐藏阻塞或夸大公网/ARM 即失败 |
 | W10-GATE | 3 | W10-DOC-01 | `通过`、`失败`或明确外部条件`阻塞`的最终结论 | 任一硬门禁缺证据不得发布 |
+
+2026-08-31 实际状态（本机开发先行资格）：
+
+| ID | 状态 | 证据边界 |
+| --- | --- | --- |
+| W10-BAS-01 | passed | Week 9 checkpoint `a6aaa40`；候选包源码 `392d9aa`；固定样本和工具链未在测量中变化 |
+| W10-WIN-01～03 | passed | fresh Debug/Release OFF 39/39，Debug/Release ON 49/49 |
+| W10-PKG-01～03 | passed | 53 文件、实际运行 DLL/许可、两个干净副本和两次本地角色闭环；无调试物、敏感输出或残留 |
+| W10-OFF-01 | passed | OFF 构建、CTest、target、DLL、菜单和启动副作用审计通过 |
+| W10-PER-01 | same-machine passed | 单路预热 60 秒 + 600 秒；P50/P95/max 18/33/37 ms；不是 LAN P95 |
+| W10-PER-02 | same-machine passed | 四路预热 60 秒 + 1,800 秒；队列、工作集和逐路连续性通过 |
+| W10-REC-01 | same-machine passed | 第 600 秒停止、第 720 秒重建，约 2 秒恢复 Direct；旧端口拒绝，其余三路连续 |
+| W10-ARM-01 | cross-build passed | RASTER/GLES3 AArch64 WebRTC OFF；`armWebRtcQualified=false`、`armDeviceQualified=false` |
+| W10-DOC-01 | passed | Beta 限制、包、性能、ARM 与外部阻塞已如实记录 |
+| W10-GATE | blocked(camera_environment,physical_lan_environment) | 自动与同机资格通过；未执行真实摄像头或物理 LAN，不允许正式 tag |
 
 ## 7. 测试矩阵与发布门禁
 
