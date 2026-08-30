@@ -131,7 +131,7 @@ $patterns = [ordered]@{
     port = '(?i)"(?:port|localPort|remotePort)"\s*:'
     address = '(?i)\b(?!(?:127\.0\.0\.1|0\.0\.0\.0|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})\b)(?:\d{1,3}\.){3}\d{1,3}\b'
     identifier = '(?i)([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})'
-    absolute_path = '(?i)([a-z]:[\\/])'
+    absolute_path = '(?i)(?:\b[a-z]:\\|(?<![a-z])\b[a-z]:/)'
     camera_identifier = '(?i)(usb#vid_|vid_[0-9a-f]{4}.+pid_[0-9a-f]{4})'
     actual_rtmp = '(?i)rtmps?://(?!<rtmp-host>|localhost|127\.0\.0\.1|10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)'
 }
@@ -210,7 +210,7 @@ function Invoke-CleanPackageTest([int]$Index) {
         }
         foreach ($path in @($viewerOut,$publisherOut,$viewerErr,$publisherErr)) {
             $payload = Get-Content -LiteralPath $path -Raw
-            if ($payload -match '(?i)(candidate:|a=candidate|ice-ufrag|ice-pwd|a=fingerprint:|"(?:port|localPort|remotePort)"\s*:|[A-Z]:[\\/]|(?:\d{1,3}\.){3}\d{1,3}|rtmps?://|usb#vid_|[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})') {
+            if ($payload -match '(?i)(candidate:|a=candidate|ice-ufrag|ice-pwd|a=fingerprint:|"(?:port|localPort|remotePort)"\s*:|(?:\b[a-z]:\\|(?<![a-z])\b[a-z]:/)|(?:\d{1,3}\.){3}\d{1,3}|rtmps?://|usb#vid_|[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})') {
                 throw 'package_runtime_sensitive_output'
             }
         }
