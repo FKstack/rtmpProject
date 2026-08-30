@@ -1,6 +1,7 @@
 #pragma once
 
 #include "publisher/Mp4H264PublisherSource.h"
+#include "publisher/CameraH264PublisherSource.h"
 #include "webrtc_client/WebRtcClientOptions.h"
 #include "webrtc_client/WebRtcIceRuntimeConfigLoader.h"
 #include "webrtc_client/WebRtcClientRuntimePaths.h"
@@ -73,6 +74,8 @@ private:
     std::unique_ptr<rtmp_monitor::webrtc_transport::WebRtcEndpointSession>
         endpoint_;
     std::unique_ptr<rtmp_monitor::publisher::Mp4H264PublisherSource> source_;
+    std::unique_ptr<rtmp_monitor::publisher::CameraH264PublisherSource>
+        cameraSource_;
 };
 
 } // namespace rtmp_monitor::webrtc_client

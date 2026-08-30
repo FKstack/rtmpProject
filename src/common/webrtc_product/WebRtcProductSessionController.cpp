@@ -28,7 +28,10 @@
 
 #include <rtc/rtc.hpp>
 
+#include <algorithm>
 #include <future>
+#include <array>
+#include <optional>
 #include <utility>
 
 namespace rtmp_monitor::webrtc_product {
@@ -166,13 +169,13 @@ WebRtcProductSessionController::WebRtcProductSessionController(
     menu_->setObjectName(QStringLiteral("webrtcMenu"));
     startAction_ = menu_->addAction(tr("一次性接收..."));
     startAction_->setObjectName(QStringLiteral("oneShotWebRtcAction"));
-    cancelAction_ = menu_->addAction(tr("取消当前会话"));
+    cancelAction_ = menu_->addAction(tr("取消全部 WebRTC 会话"));
     cancelAction_->setObjectName(QStringLiteral("cancelOneShotWebRtcAction"));
     cancelAction_->setEnabled(false);
     connect(startAction_, &QAction::triggered,
             this, &WebRtcProductSessionController::showStartDialog);
     connect(cancelAction_, &QAction::triggered,
-            this, &WebRtcProductSessionController::cancel);
+            this, [this] { cancel(); });
 
     diagnosticsTimer_ = new QTimer(this);
     diagnosticsTimer_->setInterval(100);
@@ -185,13 +188,35 @@ WebRtcProductSessionController::~WebRtcProductSessionController()
     cancel();
 }
 
+struct WebRtcProductSessionController::SessionContext
+{
+    int slot = 0;
+    std::uint64_t token = 0;
+    QPointer<VideoWidget> videoWidget;
+    std::shared_ptr<EncodedVideoInputHandle> inputHandle;
+    std::unique_ptr<rtmp_monitor::webrtc_runtime::WebRtcReceiveSession> session;
+    std::shared_ptr<LatestFrameMailbox> mailbox;
+    std::optional<rtmp_monitor::webrtc_transport::EndpointConnectionResult>
+        connectionResult;
+    WebRtcProductState state = WebRtcProductState::Idle;
+    QElapsedTimer connectedTimer;
+    bool directObserved = false;
+};
+
 bool WebRtcProductSessionController::start(
     WebRtcSessionRequest request,
-    QString *error
+    QString *error,
+    StreamId *createdStreamId
 )
 {
-    if (isActive()) {
-        if (error) *error = tr("请先取消当前一次性 WebRTC 会话。");
+    if (createdStreamId) *createdStreamId = kInvalidStreamId;
+    if (closingAll_) {
+        if (error) *error = QStringLiteral("closing_all");
+        return false;
+    }
+    const int slot = lowestFreeSlot();
+    if (slot == 0) {
+        if (error) *error = QStringLiteral("capacity_reached");
         return false;
     }
     if (!WebRtcProductPolicy::validateRequest(request, error)) return false;
@@ -202,34 +227,50 @@ bool WebRtcProductSessionController::start(
         if (error) *error = tr("无法创建接收解码入口；请检查 16 路容量。");
         return false;
     }
-    inputHandle_ = std::make_shared<EncodedVideoInputHandle>(std::move(input));
-    mailbox_ = playbackManager_->frameMailbox(inputHandle_->streamId());
-    videoWidget_ = mainWindow_->addConnectionWidget(request.displayName.trimmed());
-    if (!videoWidget_ || !mailbox_) {
-        releaseSessionObjects(true);
+    auto context = std::make_unique<SessionContext>();
+    context->slot = slot;
+    context->token = ++nextSessionToken_;
+    context->inputHandle =
+        std::make_shared<EncodedVideoInputHandle>(std::move(input));
+    const StreamId streamId = context->inputHandle->streamId();
+    context->mailbox = playbackManager_->frameMailbox(streamId);
+    context->videoWidget =
+        mainWindow_->addConnectionWidget(request.displayName.trimmed());
+    if (!context->videoWidget || !context->mailbox) {
+        if (context->inputHandle) context->inputHandle->close();
+        (void)playbackManager_->removeStream(streamId);
+        if (context->videoWidget) {
+            removeWidgetOrRetry(context->videoWidget);
+        }
         if (error) *error = tr("无法创建 WebRTC 视频显示格。");
         return false;
     }
     mainWindow_->bindVideoStream(
-        videoWidget_, inputHandle_->streamId(), mailbox_
+        context->videoWidget, streamId, context->mailbox
     );
     // Keep the render item active while the status overlay is visible.  Direct
     // is still withheld until the mailbox reports an actually presented frame.
-    videoWidget_->showFrame();
-    videoWidget_->setAudioPlaybackState(AudioPlaybackState::Unavailable, false);
-    videoWidget_->setControlTargetSelected(false);
-    connect(videoWidget_, &VideoWidget::removeRequested,
-            this, [this](VideoWidget *) { cancel(); });
+    context->videoWidget->showFrame();
+    context->videoWidget->setAudioPlaybackState(
+        AudioPlaybackState::Unavailable, false
+    );
+    context->videoWidget->setControlTargetSelected(false);
+    connect(context->videoWidget, &VideoWidget::removeRequested,
+            this, [this, streamId](VideoWidget *) { cancel(streamId); });
 
-    const std::weak_ptr<EncodedVideoInputHandle> weakInput(inputHandle_);
+    const std::weak_ptr<EncodedVideoInputHandle> weakInput(
+        context->inputHandle
+    );
     rtmp_monitor::webrtc_runtime::WebRtcReceiveSessionOptions options;
-    options.exchangeRoot = exchangeRoot();
+    options.exchangeRoot = QDir(exchangeRoot()).filePath(
+        QStringLiteral("session-%1").arg(slot, 2, 10, QLatin1Char('0'))
+    );
     options.signalingRole = request.signalingRole;
     options.ice = std::move(request.ice);
 
-    const std::uint64_t token = ++sessionToken_;
+    const std::uint64_t token = context->token;
     QPointer<WebRtcProductSessionController> target(this);
-    session_ = std::make_unique<
+    context->session = std::make_unique<
         rtmp_monitor::webrtc_runtime::WebRtcReceiveSession>(
         std::move(options),
         [weakInput](SessionMediaSample sample) {
@@ -238,80 +279,191 @@ bool WebRtcProductSessionController::start(
                        ? inputHandle->submit(std::move(sample.accessUnit))
                        : H264SubmitResult::Closed;
         },
-        [target, token](
+        [target, streamId, token](
             rtmp_monitor::webrtc_runtime::ReceiveSessionEvent event
         ) mutable {
             if (!target) return;
             QMetaObject::invokeMethod(
                 target,
-                [target, token, event = std::move(event)]() mutable {
+                [target, streamId, token, event = std::move(event)]() mutable {
                     if (target) {
-                        target->handleSessionEvent(token, std::move(event));
+                        target->handleSessionEvent(
+                            streamId, token, std::move(event)
+                        );
                     }
                 },
                 Qt::QueuedConnection
             );
         }
     );
-    directObserved_ = false;
-    connectionResult_.reset();
-    setState(WebRtcProductState::Connecting,
-             tr("正在准备受管 Offer/Answer 交换..."));
-    startAction_->setEnabled(false);
-    cancelAction_->setEnabled(true);
-    diagnosticsTimer_->start();
-    publishEvent(WebRtcProductEventKind::SessionStarted);
-    logEvent(QStringLiteral("session_started"),
-             QStringLiteral("One-shot WebRTC receive session started."));
-    if (!session_->start()) {
-        releaseSessionObjects(true);
-        setState(WebRtcProductState::Idle, {});
+    if (!context->session->start()) {
+        if (context->inputHandle) context->inputHandle->close();
+        (void)playbackManager_->removeStream(streamId);
+        removeWidgetOrRetry(context->videoWidget);
         if (error) *error = tr("一次性 WebRTC worker 无法启动。");
         return false;
     }
+    sessions_.emplace(streamId, std::move(context));
+    if (createdStreamId) *createdStreamId = streamId;
     if (error) error->clear();
+    updateActionsAndTimer();
+    setState(streamId, WebRtcProductState::Connecting,
+             tr("正在准备受管 Offer/Answer 交换..."));
+    auto current = sessions_.find(streamId);
+    if (current == sessions_.end() || current->second->token != token) {
+        return true;
+    }
+    publishEvent(streamId, WebRtcProductEventKind::SessionStarted);
+    current = sessions_.find(streamId);
+    if (current == sessions_.end() || current->second->token != token) {
+        return true;
+    }
+    logEvent(streamId, QStringLiteral("session_started"),
+             QStringLiteral("One-shot WebRTC receive session started."));
     return true;
 }
 
 void WebRtcProductSessionController::cancel()
 {
-    if (!isActive()) return;
-    ++sessionToken_;
-    if (diagnosticsTimer_) diagnosticsTimer_->stop();
-    if (session_) {
-        session_->requestStop();
-        session_->join();
+    if (closingAll_ || sessions_.empty()) return;
+    closingAll_ = true;
+    std::vector<std::pair<StreamId, std::unique_ptr<SessionContext>>> detached;
+    detached.reserve(sessions_.size());
+    while (!sessions_.empty()) {
+        auto found = sessions_.begin();
+        const StreamId streamId = found->first;
+        auto context = std::move(found->second);
+        sessions_.erase(found);
+        context->token = ++nextSessionToken_;
+        if (context->session) context->session->requestStop();
+        detached.emplace_back(streamId, std::move(context));
     }
-    publishEvent(WebRtcProductEventKind::Cancelled);
-    logEvent(QStringLiteral("session_cancelled"),
+    updateActionsAndTimer();
+    for (auto &[unused, context] : detached) {
+        Q_UNUSED(unused);
+        if (context->session) context->session->join();
+    }
+    for (auto &[streamId, context] : detached) {
+        releaseDetachedSession(streamId, std::move(context), true);
+        publishEvent(streamId, WebRtcProductEventKind::Cancelled);
+        logEvent(streamId, QStringLiteral("session_cancelled"),
+                 QStringLiteral("One-shot WebRTC receive session cancelled."));
+    }
+    closingAll_ = false;
+    updateActionsAndTimer();
+}
+
+void WebRtcProductSessionController::cancel(StreamId streamId)
+{
+    if (closingAll_) return;
+    std::unique_ptr<SessionContext> context = detachSession(streamId);
+    if (!context) return;
+    context->token = ++nextSessionToken_;
+    if (context->session) {
+        context->session->requestStop();
+        context->session->join();
+    }
+    releaseDetachedSession(streamId, std::move(context), true);
+    publishEvent(streamId, WebRtcProductEventKind::Cancelled);
+    logEvent(streamId, QStringLiteral("session_cancelled"),
              QStringLiteral("One-shot WebRTC receive session cancelled."));
-    releaseSessionObjects(true);
-    setState(WebRtcProductState::Idle, {});
+    updateActionsAndTimer();
 }
 
 bool WebRtcProductSessionController::isActive() const noexcept
 {
-    return inputHandle_ != nullptr;
+    return !sessions_.empty();
+}
+
+bool WebRtcProductSessionController::isActive(StreamId streamId) const noexcept
+{
+    return sessions_.find(streamId) != sessions_.end();
+}
+
+std::vector<StreamId>
+WebRtcProductSessionController::activeStreamIds() const
+{
+    std::vector<StreamId> result;
+    result.reserve(sessions_.size());
+    for (const auto &[streamId, unused] : sessions_) {
+        Q_UNUSED(unused);
+        result.push_back(streamId);
+    }
+    return result;
 }
 
 WebRtcProductState WebRtcProductSessionController::state() const noexcept
 {
-    return state_;
+    bool connecting = false;
+    bool direct = false;
+    bool relay = false;
+    for (const auto &[unused, context] : sessions_) {
+        Q_UNUSED(unused);
+        if (context->state == WebRtcProductState::Error) {
+            return WebRtcProductState::Error;
+        }
+        relay = relay || context->state == WebRtcProductState::NeedsRelay;
+        connecting = connecting ||
+            context->state == WebRtcProductState::Connecting;
+        direct = direct || context->state == WebRtcProductState::Direct;
+    }
+    if (relay) return WebRtcProductState::NeedsRelay;
+    if (connecting) return WebRtcProductState::Connecting;
+    if (direct) return WebRtcProductState::Direct;
+    return WebRtcProductState::Idle;
+}
+
+WebRtcProductState WebRtcProductSessionController::state(
+    StreamId streamId
+) const noexcept
+{
+    const auto found = sessions_.find(streamId);
+    return found != sessions_.end() ? found->second->state
+                                    : WebRtcProductState::Idle;
 }
 
 WebRtcProductDiagnostics
 WebRtcProductSessionController::diagnosticsSnapshot() const
 {
-    WebRtcProductDiagnostics result;
-    result.state = state_;
-    if (session_) result.transport = session_->snapshot();
-    if (inputHandle_) {
-        result.media = playbackManager_->streamMetrics(inputHandle_->streamId());
+    if (sessions_.size() == 1U) {
+        return diagnosticsSnapshot(sessions_.begin()->first);
     }
-    result.presentedFrameAgeMs =
-        mailbox_ ? mailbox_->lastPresentedFrameAgeMs() : -1;
-    result.selectedNonRelayPair = connectionResult_.has_value() &&
-        WebRtcProductPolicy::selectedPairIsNonRelay(*connectionResult_);
+    WebRtcProductDiagnostics result;
+    result.state = state();
+    return result;
+}
+
+WebRtcProductDiagnostics WebRtcProductSessionController::diagnosticsSnapshot(
+    StreamId streamId
+) const
+{
+    WebRtcProductDiagnostics result;
+    const auto found = sessions_.find(streamId);
+    if (found == sessions_.end()) return result;
+    const SessionContext &context = *found->second;
+    result.streamId = streamId;
+    result.state = context.state;
+    if (context.session) result.transport = context.session->snapshot();
+    if (context.inputHandle) {
+        result.mediaGeneration = context.inputHandle->generation();
+        result.media = playbackManager_->streamMetrics(streamId);
+    }
+    result.presentedFrameAgeMs = context.mailbox
+        ? context.mailbox->lastPresentedFrameAgeMs() : -1;
+    result.selectedNonRelayPair = context.connectionResult.has_value() &&
+        WebRtcProductPolicy::selectedPairIsNonRelay(*context.connectionResult);
+    return result;
+}
+
+std::vector<WebRtcProductDiagnostics>
+WebRtcProductSessionController::diagnosticsSnapshots() const
+{
+    std::vector<WebRtcProductDiagnostics> result;
+    result.reserve(sessions_.size());
+    for (const auto &[streamId, unused] : sessions_) {
+        Q_UNUSED(unused);
+        result.push_back(diagnosticsSnapshot(streamId));
+    }
     return result;
 }
 
@@ -320,6 +472,17 @@ QString WebRtcProductSessionController::exchangeRoot() const
     return exchangeRootOverride_.isEmpty()
                ? defaultExchangeRoot()
                : QDir::cleanPath(exchangeRootOverride_);
+}
+
+QString WebRtcProductSessionController::exchangeRoot(StreamId streamId) const
+{
+    const auto found = sessions_.find(streamId);
+    if (found == sessions_.end()) return {};
+    return QDir(exchangeRoot()).filePath(
+        QStringLiteral("session-%1").arg(
+            found->second->slot, 2, 10, QLatin1Char('0')
+        )
+    );
 }
 
 bool WebRtcProductSessionController::cleanupGlobal(
@@ -340,8 +503,16 @@ bool WebRtcProductSessionController::cleanupGlobal(
 
 void WebRtcProductSessionController::showStartDialog()
 {
-    if (isActive()) return;
-    WebRtcSessionDialog dialog(exchangeRoot(), mainWindow_);
+    if (sessions_.size() >= 4U) return;
+    const int slot = lowestFreeSlot();
+    WebRtcSessionDialog dialog(
+        QDir(exchangeRoot()).filePath(
+            QStringLiteral("session-%1").arg(
+                slot, 2, 10, QLatin1Char('0')
+            )
+        ),
+        mainWindow_
+    );
     while (dialog.exec() == QDialog::Accepted) {
         QString error;
         if (start(dialog.request(), &error)) return;
@@ -350,38 +521,41 @@ void WebRtcProductSessionController::showStartDialog()
 }
 
 void WebRtcProductSessionController::handleSessionEvent(
+    StreamId streamId,
     std::uint64_t token,
     rtmp_monitor::webrtc_runtime::ReceiveSessionEvent event
 )
 {
-    if (token != sessionToken_ || !isActive()) return;
+    const auto found = sessions_.find(streamId);
+    if (found == sessions_.end() || token != found->second->token) return;
+    SessionContext &context = *found->second;
     using EventKind = rtmp_monitor::webrtc_runtime::ReceiveSessionEventKind;
     switch (event.kind) {
     case EventKind::Started:
-        setState(WebRtcProductState::Connecting,
+        setState(streamId, WebRtcProductState::Connecting,
                  tr("等待受管目录中的 Offer/Answer 会话包..."));
         break;
     case EventKind::DescriptionExported:
-        setState(WebRtcProductState::Connecting,
+        setState(streamId, WebRtcProductState::Connecting,
                  tr("本机会话包已生成，请完成文件交换..."));
-        publishEvent(WebRtcProductEventKind::DescriptionExported);
-        logEvent(QStringLiteral("description_exported"),
+        publishEvent(streamId, WebRtcProductEventKind::DescriptionExported);
+        logEvent(streamId, QStringLiteral("description_exported"),
                  QStringLiteral("A managed WebRTC description was exported."));
         break;
     case EventKind::Connected:
-        connectionResult_ = event.connection;
-        connectedTimer_.restart();
-        setState(WebRtcProductState::Connecting,
+        context.connectionResult = event.connection;
+        context.connectedTimer.restart();
+        setState(streamId, WebRtcProductState::Connecting,
                  tr("WebRTC 已连接，等待当前画面真实呈现..."));
-        logEvent(QStringLiteral("transport_connected"),
+        logEvent(streamId, QStringLiteral("transport_connected"),
                  QStringLiteral("WebRTC transport connected; awaiting presentation."));
         break;
     case EventKind::ConnectionLost:
-        setState(WebRtcProductState::Error,
+        setState(streamId, WebRtcProductState::Error,
                  tr("WebRTC 连接已中断；不会自动回退 RTMP"));
-        publishEvent(WebRtcProductEventKind::Failed,
+        publishEvent(streamId, WebRtcProductEventKind::Failed,
                      QStringLiteral("connection_lost"));
-        logEvent(QStringLiteral("connection_lost"),
+        logEvent(streamId, QStringLiteral("connection_lost"),
                  QStringLiteral("WebRTC connection was lost."),
                  QStringLiteral("connection_lost"));
         break;
@@ -392,14 +566,16 @@ void WebRtcProductSessionController::handleSessionEvent(
                 event.connection.iceState,
                 event.connection.candidateTypes
             );
-        setState(failureState, statusForFailure(failureState));
+        setState(streamId, failureState, statusForFailure(failureState));
         publishEvent(
+            streamId,
             failureState == WebRtcProductState::NeedsRelay
                 ? WebRtcProductEventKind::NeedsRelay
                 : WebRtcProductEventKind::Failed,
             event.reason
         );
         logEvent(
+            streamId,
             failureState == WebRtcProductState::NeedsRelay
                 ? QStringLiteral("needs_relay")
                 : QStringLiteral("session_failed"),
@@ -417,80 +593,131 @@ void WebRtcProductSessionController::handleSessionEvent(
 
 void WebRtcProductSessionController::pollDiagnostics()
 {
-    if (!isActive()) return;
-    const WebRtcProductDiagnostics diagnostics = diagnosticsSnapshot();
-    emit diagnosticsChanged(diagnostics);
-    if (!connectionResult_.has_value()) return;
+    const std::vector<StreamId> ids = activeStreamIds();
+    for (const StreamId streamId : ids) {
+        auto found = sessions_.find(streamId);
+        if (found == sessions_.end()) continue;
+        const std::uint64_t token = found->second->token;
+        const WebRtcProductDiagnostics diagnostics =
+            diagnosticsSnapshot(streamId);
+        emit diagnosticsChanged(diagnostics);
+        found = sessions_.find(streamId);
+        if (found == sessions_.end() || found->second->token != token ||
+            !found->second->connectionResult.has_value()) continue;
 
-    const bool fresh = WebRtcProductPolicy::hasFreshDirectEvidence(
-        *connectionResult_, diagnostics, kPresentationFreshnessMs
-    );
-    if (fresh) {
-        const bool recovering = directObserved_ &&
-            state_ == WebRtcProductState::Error;
-        if (state_ != WebRtcProductState::Direct) {
-            if (videoWidget_) videoWidget_->showFrame();
-            setState(WebRtcProductState::Direct, tr("Direct · 当前画面已呈现"));
-            publishEvent(
-                recovering ? WebRtcProductEventKind::MediaRecovered
-                           : WebRtcProductEventKind::DirectEstablished
-            );
-            logEvent(
-                recovering ? QStringLiteral("media_recovered")
-                           : QStringLiteral("direct_established"),
-                recovering
-                    ? QStringLiteral("Current-generation presentation recovered.")
-                    : QStringLiteral("Non-relay pair and fresh presentation observed.")
-            );
-            directObserved_ = true;
+        const bool fresh = WebRtcProductPolicy::hasFreshDirectEvidence(
+            *found->second->connectionResult,
+            diagnostics,
+            kPresentationFreshnessMs
+        );
+        if (fresh) {
+            const bool recovering = found->second->directObserved &&
+                found->second->state == WebRtcProductState::Error;
+            if (found->second->state != WebRtcProductState::Direct) {
+                found->second->directObserved = true;
+                if (found->second->videoWidget) {
+                    found->second->videoWidget->showFrame();
+                }
+                setState(streamId, WebRtcProductState::Direct,
+                         tr("Direct · 当前画面已呈现"));
+                found = sessions_.find(streamId);
+                if (found == sessions_.end() ||
+                    found->second->token != token) continue;
+                publishEvent(
+                    streamId,
+                    recovering ? WebRtcProductEventKind::MediaRecovered
+                               : WebRtcProductEventKind::DirectEstablished
+                );
+                found = sessions_.find(streamId);
+                if (found == sessions_.end() ||
+                    found->second->token != token) continue;
+                logEvent(
+                    streamId,
+                    recovering ? QStringLiteral("media_recovered")
+                               : QStringLiteral("direct_established"),
+                    recovering
+                        ? QStringLiteral(
+                              "Current-generation presentation recovered."
+                          )
+                        : QStringLiteral(
+                              "Non-relay pair and fresh presentation observed."
+                          )
+                );
+            }
+            continue;
         }
-        return;
-    }
 
-    if (state_ == WebRtcProductState::Direct &&
-        diagnostics.presentedFrameAgeMs > kPresentationFreshnessMs) {
-        setState(WebRtcProductState::Error,
-                 tr("画面已超过 1,000 ms 未呈现；控制仍未授权"));
-        publishEvent(WebRtcProductEventKind::MediaInterrupted,
+        if (found->second->state == WebRtcProductState::Direct &&
+            diagnostics.presentedFrameAgeMs > kPresentationFreshnessMs) {
+            setState(streamId, WebRtcProductState::Error,
+                     tr("画面已超过 1,000 ms 未呈现；控制仍未授权"));
+            found = sessions_.find(streamId);
+            if (found == sessions_.end() ||
+                found->second->token != token) continue;
+            publishEvent(streamId, WebRtcProductEventKind::MediaInterrupted,
+                         QStringLiteral("presentation_stale"));
+            found = sessions_.find(streamId);
+            if (found == sessions_.end() ||
+                found->second->token != token) continue;
+            logEvent(streamId, QStringLiteral("media_interrupted"),
+                     QStringLiteral("Current presentation became stale."),
                      QStringLiteral("presentation_stale"));
-        logEvent(QStringLiteral("media_interrupted"),
-                 QStringLiteral("Current presentation became stale."),
-                 QStringLiteral("presentation_stale"));
-    } else if (state_ == WebRtcProductState::Connecting &&
-               connectedTimer_.isValid() &&
-               connectedTimer_.elapsed() > kInitialMediaTimeoutMs) {
-        setState(WebRtcProductState::Error,
-                 tr("已连接但 10 秒内没有真实呈现画面"));
-        publishEvent(WebRtcProductEventKind::Failed,
-                     QStringLiteral("media_timeout"));
-        logEvent(QStringLiteral("media_timeout"),
-                 QStringLiteral("Transport connected without presentation."),
-                 QStringLiteral("media_timeout"));
+        } else if (found->second->state == WebRtcProductState::Connecting &&
+                   found->second->connectedTimer.isValid() &&
+                   found->second->connectedTimer.elapsed() >
+                       kInitialMediaTimeoutMs) {
+            setState(streamId, WebRtcProductState::Error,
+                     tr("已连接但 10 秒内没有真实呈现画面"));
+            found = sessions_.find(streamId);
+            if (found == sessions_.end() ||
+                found->second->token != token) continue;
+            publishEvent(streamId, WebRtcProductEventKind::Failed,
+                         QStringLiteral("media_timeout"));
+            found = sessions_.find(streamId);
+            if (found == sessions_.end() ||
+                found->second->token != token) continue;
+            logEvent(
+                streamId, QStringLiteral("media_timeout"),
+                QStringLiteral("Transport connected without presentation."),
+                QStringLiteral("media_timeout")
+            );
+        }
     }
 }
 
 void WebRtcProductSessionController::setState(
+    StreamId streamId,
     WebRtcProductState state,
     const QString &statusText
 )
 {
-    if (videoWidget_ && !statusText.isEmpty()) {
-        videoWidget_->setStatusText(statusText);
+    const auto found = sessions_.find(streamId);
+    if (found == sessions_.end()) return;
+    SessionContext &context = *found->second;
+    if (context.videoWidget && !statusText.isEmpty()) {
+        context.videoWidget->setStatusText(statusText);
     }
-    if (state_ == state) return;
-    state_ = state;
-    emit stateChanged(state_);
+    if (context.state == state) return;
+    context.state = state;
+    emit streamStateChanged(streamId, state);
+    const WebRtcProductState aggregate = this->state();
+    if (lastAggregateState_ != aggregate) {
+        lastAggregateState_ = aggregate;
+        emit stateChanged(aggregate);
+    }
 }
 
 void WebRtcProductSessionController::publishEvent(
+    StreamId streamId,
     WebRtcProductEventKind kind,
     const QString &reason
 )
 {
-    emit eventObserved({kind, reason});
+    emit eventObserved({kind, reason, streamId});
 }
 
 void WebRtcProductSessionController::logEvent(
+    StreamId streamId,
     const QString &eventName,
     const QString &message,
     const QString &reason
@@ -499,14 +726,16 @@ void WebRtcProductSessionController::logEvent(
     if (!logManager_) return;
     QJsonObject fields {
         {QStringLiteral("state"),
-         QString::fromLatin1(WebRtcProductPolicy::stateName(state_))},
+         QString::fromLatin1(WebRtcProductPolicy::stateName(state(streamId)))},
+        {QStringLiteral("streamId"), static_cast<double>(streamId)},
         {QStringLiteral("controlAuthorized"), false},
         {QStringLiteral("rtmpFallbackStarted"), false}
     };
     if (!reason.isEmpty()) fields.insert(QStringLiteral("reason"), reason);
-    if (connectionResult_.has_value() &&
-        connectionResult_->selectedPair.has_value()) {
-        const auto &pair = *connectionResult_->selectedPair;
+    const auto found = sessions_.find(streamId);
+    if (found != sessions_.end() && found->second->connectionResult.has_value() &&
+        found->second->connectionResult->selectedPair.has_value()) {
+        const auto &pair = *found->second->connectionResult->selectedPair;
         fields.insert(QStringLiteral("localType"),
                       QString::fromStdString(pair.localType));
         fields.insert(QStringLiteral("remoteType"),
@@ -522,31 +751,122 @@ void WebRtcProductSessionController::logEvent(
     );
 }
 
-void WebRtcProductSessionController::releaseSessionObjects(bool removeWidget)
+void WebRtcProductSessionController::releaseSessionObjects(
+    StreamId streamId,
+    bool removeWidget
+)
 {
-    if (diagnosticsTimer_) diagnosticsTimer_->stop();
-    if (session_) {
-        session_->requestStop();
-        session_->join();
-        session_.reset();
+    std::unique_ptr<SessionContext> context = detachSession(streamId);
+    if (!context) return;
+    context->token = ++nextSessionToken_;
+    releaseDetachedSession(streamId, std::move(context), removeWidget);
+}
+
+std::unique_ptr<WebRtcProductSessionController::SessionContext>
+WebRtcProductSessionController::detachSession(StreamId streamId)
+{
+    const auto found = sessions_.find(streamId);
+    if (found == sessions_.end()) return {};
+    std::unique_ptr<SessionContext> context = std::move(found->second);
+    sessions_.erase(found);
+    return context;
+}
+
+void WebRtcProductSessionController::releaseDetachedSession(
+    StreamId streamId,
+    std::unique_ptr<SessionContext> context,
+    bool removeWidget
+)
+{
+    if (!context) return;
+    if (context->session) {
+        context->session->requestStop();
+        context->session->join();
+        context->session.reset();
     }
-    const StreamId streamId = inputHandle_ ? inputHandle_->streamId()
-                                           : kInvalidStreamId;
-    if (inputHandle_) inputHandle_->close();
-    inputHandle_.reset();
-    mailbox_.reset();
-    if (streamId != kInvalidStreamId) {
-        (void)playbackManager_->removeStream(streamId);
+    if (context->inputHandle) context->inputHandle->close();
+    context->inputHandle.reset();
+    context->mailbox.reset();
+    (void)playbackManager_->removeStream(streamId);
+    if (removeWidget && context->videoWidget) {
+        removeWidgetOrRetry(context->videoWidget);
     }
-    if (removeWidget && videoWidget_) {
-        (void)mainWindow_->removeConnectionWidget(videoWidget_);
+    const WebRtcProductState aggregate = state();
+    if (lastAggregateState_ != aggregate) {
+        lastAggregateState_ = aggregate;
+        emit stateChanged(aggregate);
     }
-    videoWidget_.clear();
-    connectionResult_.reset();
-    directObserved_ = false;
-    connectedTimer_.invalidate();
-    if (startAction_) startAction_->setEnabled(true);
-    if (cancelAction_) cancelAction_->setEnabled(false);
+    updateActionsAndTimer();
+}
+
+void WebRtcProductSessionController::removeWidgetOrRetry(
+    QPointer<VideoWidget> widget
+)
+{
+    if (!widget || mainWindow_->removeConnectionWidget(widget)) return;
+    const auto pending = std::find(
+        pendingWidgetRemovals_.begin(), pendingWidgetRemovals_.end(), widget
+    );
+    if (pending == pendingWidgetRemovals_.end()) {
+        if (pendingWidgetRemovals_.size() < 4U) {
+            pendingWidgetRemovals_.push_back(widget);
+        } else {
+            QTimer::singleShot(50, this, [this, widget] {
+                removeWidgetOrRetry(widget);
+            });
+            return;
+        }
+    }
+    if (!widgetRemovalRetryScheduled_) {
+        widgetRemovalRetryScheduled_ = true;
+        QTimer::singleShot(50, this, [this] {
+            retryPendingWidgetRemovals();
+        });
+    }
+}
+
+void WebRtcProductSessionController::retryPendingWidgetRemovals()
+{
+    widgetRemovalRetryScheduled_ = false;
+    std::vector<QPointer<VideoWidget>> remaining;
+    remaining.reserve(pendingWidgetRemovals_.size());
+    for (const QPointer<VideoWidget> &widget : pendingWidgetRemovals_) {
+        if (widget && !mainWindow_->removeConnectionWidget(widget)) {
+            remaining.push_back(widget);
+        }
+    }
+    pendingWidgetRemovals_ = std::move(remaining);
+    if (!pendingWidgetRemovals_.empty()) {
+        widgetRemovalRetryScheduled_ = true;
+        QTimer::singleShot(50, this, [this] {
+            retryPendingWidgetRemovals();
+        });
+    }
+}
+
+void WebRtcProductSessionController::updateActionsAndTimer()
+{
+    if (startAction_) startAction_->setEnabled(sessions_.size() < 4U);
+    if (cancelAction_) cancelAction_->setEnabled(!sessions_.empty());
+    if (diagnosticsTimer_) {
+        if (sessions_.empty()) diagnosticsTimer_->stop();
+        else if (!diagnosticsTimer_->isActive()) diagnosticsTimer_->start();
+    }
+}
+
+int WebRtcProductSessionController::lowestFreeSlot() const noexcept
+{
+    std::array<bool, 4> used {false, false, false, false};
+    for (const auto &[unused, context] : sessions_) {
+        Q_UNUSED(unused);
+        if (context->slot >= 1 && context->slot <= 4) {
+            used[static_cast<std::size_t>(context->slot - 1)] = true;
+        }
+    }
+    for (std::size_t index = 0; index < used.size(); ++index) {
+        if (!used[index]) return static_cast<int>(index + 1);
+    }
+    return 0;
 }
 
 QString WebRtcProductSessionController::defaultExchangeRoot() const

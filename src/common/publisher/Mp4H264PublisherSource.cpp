@@ -103,7 +103,7 @@ public:
                 return PublisherSourceError::Timeout;
             }
         }
-        if (worker_.joinable()) worker_.join();
+        joinWorker();
         const std::lock_guard lock(mutex_);
         return snapshot_.error;
     }
@@ -121,10 +121,16 @@ public:
             stopRequested_ = true;
             changed_.notify_all();
         }
-        if (worker_.joinable()) worker_.join();
+        joinWorker();
     }
 
 private:
+    void joinWorker() noexcept
+    {
+        const std::lock_guard lock(joinMutex_);
+        if (worker_.joinable()) worker_.join();
+    }
+
     bool stopRequested() const
     {
         const std::lock_guard lock(mutex_);
@@ -332,6 +338,7 @@ private:
     }
 
     mutable std::mutex mutex_;
+    std::mutex joinMutex_;
     std::condition_variable changed_;
     PublisherSourceSnapshot snapshot_;
     bool started_ = false;
@@ -388,6 +395,13 @@ const char *Mp4H264PublisherSource::errorName(
     case PublisherSourceError::SubmitFailure: return "submit_failure";
     case PublisherSourceError::Stopped: return "stopped";
     case PublisherSourceError::Timeout: return "timeout";
+    case PublisherSourceError::PlatformUnsupported: return "platform_unsupported";
+    case PublisherSourceError::CameraNotFound: return "camera_not_found";
+    case PublisherSourceError::CompatiblePathUnavailable:
+        return "compatible_path_unavailable";
+    case PublisherSourceError::DeviceLost: return "device_lost";
+    case PublisherSourceError::EncoderValidationFailed:
+        return "encoder_validation_failed";
     }
     return "unknown";
 }

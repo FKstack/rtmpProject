@@ -65,6 +65,31 @@ private slots:
         }).has_value());
     }
 
+    void cameraArgumentsArePublisherOnlyAndBounded()
+    {
+        const auto camera = parseOptions({
+            QStringLiteral("client"),
+            QStringLiteral("--media-role=publisher"),
+            QStringLiteral("--signaling-role=offer"),
+            QStringLiteral("--source=camera"),
+            QStringLiteral("--camera-index=2")
+        });
+        QVERIFY(camera.has_value());
+        QCOMPARE(camera->publisherSource, ClientPublisherSource::Camera);
+        QCOMPARE(camera->cameraIndex, std::uint32_t(2));
+        QVERIFY(!parseOptions({
+            QStringLiteral("client"),
+            QStringLiteral("--media-role=viewer"),
+            QStringLiteral("--signaling-role=answer"),
+            QStringLiteral("--camera-index=0")
+        }).has_value());
+        const auto list = parseOptions({
+            QStringLiteral("client"), QStringLiteral("--list-cameras")
+        });
+        QVERIFY(list.has_value());
+        QVERIFY(list->listCameras);
+    }
+
     void validFixedSchemaProducesOneStunServer()
     {
         QTemporaryDir temporary;

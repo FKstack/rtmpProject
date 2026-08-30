@@ -50,6 +50,7 @@ struct WebRtcProductEvent
 {
     WebRtcProductEventKind kind = WebRtcProductEventKind::SessionStarted;
     QString reason;
+    StreamId streamId = kInvalidStreamId;
 };
 
 /** Read-only copies; reading diagnostics never retains protocol resources. */
@@ -62,6 +63,8 @@ struct WebRtcProductDiagnostics
     bool selectedNonRelayPair = false;
     bool controlAuthorized = false;
     bool rtmpFallbackStarted = false;
+    StreamId streamId = kInvalidStreamId;
+    std::uint64_t mediaGeneration = 0;
 };
 
 class WebRtcProductPolicy final

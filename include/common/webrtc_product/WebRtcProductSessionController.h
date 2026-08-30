@@ -8,7 +8,8 @@
 
 #include <chrono>
 #include <memory>
-#include <optional>
+#include <map>
+#include <vector>
 
 class QAction;
 class EncodedVideoInputHandle;
@@ -28,7 +29,7 @@ struct ReceiveSessionEvent;
 namespace rtmp_monitor::webrtc_product {
 
 /**
- * Application-layer owner for the single Week 8 receive session.
+ * Application-layer owner for up to four isolated runtime receive sessions.
  *
  * This controller is the only object allowed to assemble transport, the
  * external media ingress and a product video widget. It is constructed only
@@ -57,13 +58,24 @@ public:
 
     [[nodiscard]] bool start(
         WebRtcSessionRequest request,
-        QString *error = nullptr
+        QString *error = nullptr,
+        StreamId *createdStreamId = nullptr
     );
     void cancel();
+    void cancel(StreamId streamId);
     [[nodiscard]] bool isActive() const noexcept;
+    [[nodiscard]] bool isActive(StreamId streamId) const noexcept;
+    [[nodiscard]] std::vector<StreamId> activeStreamIds() const;
     [[nodiscard]] WebRtcProductState state() const noexcept;
+    [[nodiscard]] WebRtcProductState state(StreamId streamId) const noexcept;
     [[nodiscard]] WebRtcProductDiagnostics diagnosticsSnapshot() const;
+    [[nodiscard]] WebRtcProductDiagnostics diagnosticsSnapshot(
+        StreamId streamId
+    ) const;
+    [[nodiscard]] std::vector<WebRtcProductDiagnostics>
+        diagnosticsSnapshots() const;
     [[nodiscard]] QString exchangeRoot() const;
+    [[nodiscard]] QString exchangeRoot(StreamId streamId) const;
 
     /** Must run after all product sessions have been stopped. */
     [[nodiscard]] static bool cleanupGlobal(
@@ -72,6 +84,10 @@ public:
 
 signals:
     void stateChanged(rtmp_monitor::webrtc_product::WebRtcProductState state);
+    void streamStateChanged(
+        StreamId streamId,
+        rtmp_monitor::webrtc_product::WebRtcProductState state
+    );
     void eventObserved(
         const rtmp_monitor::webrtc_product::WebRtcProductEvent &event
     );
@@ -80,20 +96,43 @@ signals:
     );
 
 private:
+    struct SessionContext;
     void showStartDialog();
     void handleSessionEvent(
+        StreamId streamId,
         std::uint64_t token,
         rtmp_monitor::webrtc_runtime::ReceiveSessionEvent event
     );
     void pollDiagnostics();
-    void setState(WebRtcProductState state, const QString &statusText);
-    void publishEvent(WebRtcProductEventKind kind, const QString &reason = {});
+    void setState(
+        StreamId streamId,
+        WebRtcProductState state,
+        const QString &statusText
+    );
+    void publishEvent(
+        StreamId streamId,
+        WebRtcProductEventKind kind,
+        const QString &reason = {}
+    );
     void logEvent(
+        StreamId streamId,
         const QString &eventName,
         const QString &message,
         const QString &reason = {}
     );
-    void releaseSessionObjects(bool removeWidget);
+    void releaseSessionObjects(StreamId streamId, bool removeWidget);
+    void releaseDetachedSession(
+        StreamId streamId,
+        std::unique_ptr<SessionContext> context,
+        bool removeWidget
+    );
+    [[nodiscard]] std::unique_ptr<SessionContext> detachSession(
+        StreamId streamId
+    );
+    void removeWidgetOrRetry(QPointer<VideoWidget> widget);
+    void retryPendingWidgetRemovals();
+    void updateActionsAndTimer();
+    [[nodiscard]] int lowestFreeSlot() const noexcept;
     [[nodiscard]] QString defaultExchangeRoot() const;
 
     MainWindow *mainWindow_ = nullptr;
@@ -104,17 +143,12 @@ private:
     QAction *startAction_ = nullptr;
     QAction *cancelAction_ = nullptr;
     QTimer *diagnosticsTimer_ = nullptr;
-    QPointer<VideoWidget> videoWidget_;
-    std::shared_ptr<EncodedVideoInputHandle> inputHandle_;
-    std::unique_ptr<rtmp_monitor::webrtc_runtime::WebRtcReceiveSession>
-        session_;
-    std::shared_ptr<LatestFrameMailbox> mailbox_;
-    std::optional<rtmp_monitor::webrtc_transport::EndpointConnectionResult>
-        connectionResult_;
-    WebRtcProductState state_ = WebRtcProductState::Idle;
-    QElapsedTimer connectedTimer_;
-    std::uint64_t sessionToken_ = 0;
-    bool directObserved_ = false;
+    std::map<StreamId, std::unique_ptr<SessionContext>> sessions_;
+    std::vector<QPointer<VideoWidget>> pendingWidgetRemovals_;
+    std::uint64_t nextSessionToken_ = 0;
+    WebRtcProductState lastAggregateState_ = WebRtcProductState::Idle;
+    bool closingAll_ = false;
+    bool widgetRemovalRetryScheduled_ = false;
 };
 
 } // namespace rtmp_monitor::webrtc_product

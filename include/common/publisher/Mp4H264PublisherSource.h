@@ -23,6 +23,11 @@ enum class PublisherSourceError {
     SubmitFailure,
     Stopped,
     Timeout,
+    PlatformUnsupported,
+    CameraNotFound,
+    CompatiblePathUnavailable,
+    DeviceLost,
+    EncoderValidationFailed,
 };
 
 struct PublisherSourceSnapshot

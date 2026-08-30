@@ -1,5 +1,36 @@
 # RtmpMonitor 当前项目快照
 
+> WebRTC-first 产品方向确认（2026-08-30）：Week 1～10 的既有交付仍是可测试 P2P Beta，当前门禁状态
+> 不因路线确认而改变。Beta 之后面向低延迟远程操作：每一路设备视频使用独立 WebRTC 会话，Direct
+> 优先并以 TURN Relay 覆盖受限网络；MQTT 继续承载设备命令、回执、状态和遥测，WSS 只承载自动信令、
+> trickle ICE 与短期授权。应用组合根显式绑定已授权设备、操作员、WebRTC StreamId/tile 和 MQTT
+> 控制目标，视频建连不等于控制授权，切换 tile 不得静默切换控制对象。RTMP 只在迁移期保留，不做
+> WebRTC 失败时的静默 fallback，满足独立产品门禁后才退出实时视频主链路。本次仅更新规划与 ADR，
+> 未修改代码、schema、依赖、线程或默认网络行为。
+
+> WebRTC V2 Week 9 摄像头发布与四路产品会话（2026-08-30）：架构风险 R2。publisher 内新增
+> Windows Media Foundation `CameraH264PublisherSource`，固定 1280×720@30，先用实际 AU 预检
+> baseline/level≤3.1、SPS/PPS、无 B slice 和 IDR≤30 帧后原生 Annex-B 直通；不合规则关闭并重新
+> 打开同一设备，只有合成 NV12 的 `h264_mf` 实际编码和 FFmpeg 解码预检通过才回退。非 Windows
+> 稳定 platform_unsupported，不增加外部 ffmpeg/x264 或硬件编码器矩阵。产品 controller 改为最多
+> 四个以 StreamId 为键的独立 SessionContext，使用 session-01～04、最低空闲 slot；第五路稳定
+> capacity_reached，单路停止不影响其余三路，cancel() 仍取消全部。schema v1、设备控制、RTMP
+> fallback、默认网络关闭和 media/render/ui 依赖均未改。
+
+> Week 9 当前验证（2026-08-30）：实现阶段 fresh Debug OFF、Debug ON、Release ON CTest 为 39/39、
+> 48/48、48/48；P1 生命周期/重入与 Windows Qt 本地运行时加固后，当前代码全量 CTest 又分别以
+> 39/39（122.66 秒）、48/48（201.71 秒）、48/48（173.61 秒）通过。短时
+> Smoke/Status/Stop 为 self_test_passed，状态投影脱敏、敏感扫描和 PID+预期路径+启动时间复核通过，
+> Stop 保留终态/指标并无 product 残留。真实摄像头未授权；当前小型 fixture runner 也不产生全程逐路
+> 资源峰值或代表性 720p30 负载。故 CAM-01/CAM-09 为 blocked(camera_environment)，W9-RES-01 为
+> partial，W9-GATE 为 blocked(camera_environment,resource_smoke_not_run)，固定
+> physicalFourEndpointClaimed=false、smokePassed=false、performanceQualified=false。
+
+> Week 9 Windows 测试运行时加固（2026-08-30）：所有使用 `QApplication` 的测试 target 现在从
+> 已配置的 MSVC Qt 安装按 Debug/Release 复制 Qt runtime 与 `qwindows`/`qoffscreen` 插件到自身
+> 输出目录；该 CMake helper 不依赖 WebRTC 开关。外部 Qt 路径清空、PATH 只保留系统目录时，
+> Debug/Release ON 的受影响 panel 测试与 Debug OFF panel 测试均可用 offscreen 正常退出。
+
 > WebRTC V2 Week 8 正式客户端一次性接收（2026-08-25）：本地 `Beta` 功能提交
 > `749a229` 已完成默认 OFF、显式 ON 的产品入口。新增 product 组合层和 runtime 会话层；组合层唯一
 > 装配 ReceiveOnly transport、既有外部 H.264 media ingress、capacity-1 mailbox 与 `VideoWidget`，

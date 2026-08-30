@@ -162,6 +162,7 @@ void WebRtcClientRuntime::requestStop() noexcept
     const std::lock_guard lock(resourcesMutex_);
     if (endpoint_) endpoint_->beginClose();
     if (source_) source_->stop();
+    if (cameraSource_) cameraSource_->stop();
 }
 
 void WebRtcClientRuntime::join() noexcept
@@ -203,7 +204,8 @@ int WebRtcClientRuntime::runSession()
             {QStringLiteral("iceMode"), iceModeName(options_.iceMode)}
         }
     );
-    if (options_.mediaRole == ClientMediaRole::Publisher) {
+    if (options_.mediaRole == ClientMediaRole::Publisher &&
+        options_.publisherSource == ClientPublisherSource::Sample) {
         if (!QFileInfo(runtimePaths_.samplePath).isFile()) {
             emitFailure(QStringLiteral("file_not_found"));
             return 4;
@@ -425,40 +427,61 @@ int WebRtcClientRuntime::runSession()
 
 int WebRtcClientRuntime::runPublisherMedia(WebRtcEndpointSession &endpoint)
 {
-    const QString samplePath = runtimePaths_.samplePath;
-    if (!QFileInfo(samplePath).isFile()) {
-        emitFailure(QStringLiteral("file_not_found"));
-        return 4;
-    }
     auto submitPort = endpoint.createSendPort();
     if (!submitPort.has_value()) {
         emitFailure(QStringLiteral("invalid_state"));
         return 4;
     }
 
-    {
-        const std::lock_guard lock(resourcesMutex_);
-        source_ = std::make_unique<Mp4H264PublisherSource>();
-    }
     Mp4H264PublisherSource *source = nullptr;
-    {
-        const std::lock_guard lock(resourcesMutex_);
-        source = source_.get();
+    CameraH264PublisherSource *cameraSource = nullptr;
+    PublisherSourceError startError = PublisherSourceError::InvalidState;
+    if (options_.publisherSource == ClientPublisherSource::Camera) {
+        {
+            const std::lock_guard lock(resourcesMutex_);
+            cameraSource_ = std::make_unique<CameraH264PublisherSource>();
+            cameraSource = cameraSource_.get();
+        }
+        startError = cameraSource->start(
+            options_.cameraIndex, std::move(*submitPort)
+        );
+    } else {
+        const QString samplePath = runtimePaths_.samplePath;
+        if (!QFileInfo(samplePath).isFile()) {
+            emitFailure(QStringLiteral("file_not_found"));
+            return 4;
+        }
+        {
+            const std::lock_guard lock(resourcesMutex_);
+            source_ = std::make_unique<Mp4H264PublisherSource>();
+            source = source_.get();
+        }
+        startError = source->start(
+            QFileInfo(samplePath).absoluteFilePath().toStdString(),
+            std::move(*submitPort)
+        );
     }
-    const PublisherSourceError startError = source->start(
-        QFileInfo(samplePath).absoluteFilePath().toStdString(),
-        std::move(*submitPort)
-    );
     if (startError != PublisherSourceError::None) {
         emitFailure(QString::fromLatin1(
-            Mp4H264PublisherSource::errorName(startError)
+            CameraH264PublisherSource::errorName(startError)
         ));
         return 4;
     }
     emitEvent(QStringLiteral("publishing"));
     const PublisherSourceError sourceError =
-        source->waitForCompletion(options_.timeout);
+        source ? source->waitForCompletion(options_.timeout)
+               : cameraSource->waitForCompletion(options_.timeout);
+    const PublisherSourceSnapshot boundedSnapshot = source
+        ? source->snapshot() : cameraSource->snapshot();
     const EndpointSnapshot terminalSnapshot = endpoint.snapshot();
+    const bool boundedCameraPublish = cameraSource &&
+        sourceError == PublisherSourceError::Timeout &&
+        boundedSnapshot.emittedAccessUnits > 0 &&
+        boundedSnapshot.emittedKeyframes > 0 &&
+        terminalSnapshot.sendFailures == 0;
+    const bool externallyStopped =
+        sourceError == PublisherSourceError::Stopped &&
+        stopRequested_.load(std::memory_order_acquire);
     if (terminalSnapshot.state == EndpointState::Failed) {
         emitEvent(
             QStringLiteral("connection_lost"),
@@ -469,15 +492,19 @@ int WebRtcClientRuntime::runPublisherMedia(WebRtcEndpointSession &endpoint)
         );
     }
     endpoint.beginClose();
-    source->stop();
+    if (source) source->stop();
+    if (cameraSource) cameraSource->stop();
     endpoint.close();
-    const PublisherSourceSnapshot sourceSnapshot = source->snapshot();
+    const PublisherSourceSnapshot sourceSnapshot = source
+        ? source->snapshot() : cameraSource->snapshot();
     const EndpointSnapshot endpointSnapshot = endpoint.snapshot();
     {
         const std::lock_guard lock(resourcesMutex_);
         source_.reset();
+        cameraSource_.reset();
     }
-    if (sourceError != PublisherSourceError::None) {
+    if (sourceError != PublisherSourceError::None &&
+        !boundedCameraPublish && !externallyStopped) {
         emitFailure(QString::fromLatin1(
             Mp4H264PublisherSource::errorName(sourceError)
         ));
@@ -509,6 +536,8 @@ int WebRtcClientRuntime::runPublisherMedia(WebRtcEndpointSession &endpoint)
         QStringLiteral("sendFailures"),
         static_cast<double>(endpointSnapshot.sendFailures)
     );
+    details.insert(QStringLiteral("boundedPublish"), boundedCameraPublish);
+    details.insert(QStringLiteral("stoppedByRequest"), externallyStopped);
     emitEvent(QStringLiteral("completed"), std::move(details));
     return endpointSnapshot.sendFailures == 0 ? 0 : 4;
 }

@@ -5,6 +5,7 @@
 #include <QCommandLineParser>
 
 #include <chrono>
+#include <cstdint>
 #include <optional>
 
 namespace rtmp_monitor::webrtc_client {
@@ -19,11 +20,19 @@ enum class ClientIceMode {
     Stun,
 };
 
+enum class ClientPublisherSource {
+    Sample,
+    Camera,
+};
+
 struct WebRtcClientOptions
 {
     ClientMediaRole mediaRole = ClientMediaRole::Publisher;
     SignalingRole signalingRole = SignalingRole::Offerer;
     ClientIceMode iceMode = ClientIceMode::HostOnly;
+    ClientPublisherSource publisherSource = ClientPublisherSource::Sample;
+    std::uint32_t cameraIndex = 0;
+    bool listCameras = false;
     std::chrono::milliseconds timeout {30'000};
 
     static void configureParser(QCommandLineParser &parser);

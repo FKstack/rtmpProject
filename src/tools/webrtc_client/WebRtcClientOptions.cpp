@@ -22,8 +22,17 @@ void WebRtcClientOptions::configureParser(QCommandLineParser &parser)
     });
     parser.addOption({
         QStringLiteral("source"),
-        QStringLiteral("publisher source; only sample is supported"),
+        QStringLiteral("publisher source: sample or camera"),
         QStringLiteral("source")
+    });
+    parser.addOption({
+        QStringLiteral("camera-index"),
+        QStringLiteral("zero-based camera index for --source=camera"),
+        QStringLiteral("index")
+    });
+    parser.addOption({
+        QStringLiteral("list-cameras"),
+        QStringLiteral("list runtime camera aliases without opening devices")
     });
     parser.addOption({
         QStringLiteral("ice-mode"),
@@ -45,6 +54,7 @@ std::optional<WebRtcClientOptions> WebRtcClientOptions::fromParser(
 {
     if (!parser.positionalArguments().isEmpty()) return std::nullopt;
 
+    const bool listCameras = parser.isSet(QStringLiteral("list-cameras"));
     const QString media =
         parser.value(QStringLiteral("media-role")).trimmed().toLower();
     const QString signaling =
@@ -54,6 +64,17 @@ std::optional<WebRtcClientOptions> WebRtcClientOptions::fromParser(
     bool timeoutOk = false;
     const int timeoutMs =
         parser.value(QStringLiteral("timeout-ms")).toInt(&timeoutOk);
+    if (listCameras) {
+        if (parser.isSet(QStringLiteral("source")) ||
+            parser.isSet(QStringLiteral("camera-index")) ||
+            parser.isSet(QStringLiteral("media-role")) ||
+            parser.isSet(QStringLiteral("signaling-role"))) {
+            return std::nullopt;
+        }
+        WebRtcClientOptions options;
+        options.listCameras = true;
+        return options;
+    }
     if (!timeoutOk || timeoutMs < 1'000 || timeoutMs > 600'000 ||
         !QStringList {QStringLiteral("publisher"), QStringLiteral("viewer")}
              .contains(media) ||
@@ -68,8 +89,22 @@ std::optional<WebRtcClientOptions> WebRtcClientOptions::fromParser(
     const QString source =
         parser.value(QStringLiteral("source")).trimmed().toLower();
     if ((media == QStringLiteral("publisher") &&
-         (!sourceSet || source != QStringLiteral("sample"))) ||
-        (media == QStringLiteral("viewer") && sourceSet)) {
+         (!sourceSet ||
+          !QStringList {QStringLiteral("sample"), QStringLiteral("camera")}
+               .contains(source))) ||
+        (media == QStringLiteral("viewer") &&
+         (sourceSet || parser.isSet(QStringLiteral("camera-index"))))) {
+        return std::nullopt;
+    }
+    bool cameraOk = false;
+    const int cameraIndex = parser.value(QStringLiteral("camera-index"))
+        .toInt(&cameraOk);
+    if (source == QStringLiteral("camera")) {
+        if (!parser.isSet(QStringLiteral("camera-index")) || !cameraOk ||
+            cameraIndex < 0 || cameraIndex > 255) {
+            return std::nullopt;
+        }
+    } else if (parser.isSet(QStringLiteral("camera-index"))) {
         return std::nullopt;
     }
 
@@ -84,6 +119,12 @@ std::optional<WebRtcClientOptions> WebRtcClientOptions::fromParser(
                           ? ClientIceMode::Stun
                           : ClientIceMode::HostOnly;
     options.timeout = std::chrono::milliseconds(timeoutMs);
+    options.publisherSource = source == QStringLiteral("camera")
+        ? ClientPublisherSource::Camera
+        : ClientPublisherSource::Sample;
+    options.cameraIndex = static_cast<std::uint32_t>(
+        source == QStringLiteral("camera") ? cameraIndex : 0
+    );
     return options;
 }
 

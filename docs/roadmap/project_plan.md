@@ -1425,3 +1425,28 @@ CTest 14/14 通过；ARM64 RASTER 构建 NEEDED 无 Qt6OpenGL*/EGL/GLES，GLES3 
   非relay pair和RTP/AU/submitted/decoded/rendered/presented证据。
 - 用户采用`W7-DESIGN-GATE`通过解锁Week 8；真实公司网络/移动网络`W7-PUBLIC-NETWORK`延期，
   不声明Direct或NeedsRelay。详见[Week 7总结](../versions/webrtc-v2/weeks/week07/summary.md)。
+
+## 24. WebRTC V2 Week 9 摄像头发布与四路会话（2026-08-30）
+
+- publisher 内新增窄职责 MF 摄像头 source：固定 720p30，合规原生 H.264 直通，不合规才重开 NV12
+  并使用已经合成编解码预检的 `h264_mf`；没有增加通用插件层、外部 ffmpeg/x264 或硬件编码器矩阵。
+- 正式产品控制器由单条扩展为最多四条 StreamId 独立 context，最低空闲 slot 对应 session-01～04；
+  单路故障/取消/重建不影响另外三路，第五路稳定拒绝。
+- 同机四组真实 PeerConnection 和定向自动门禁通过，但不能声称四台物理 endpoint；当前小型 fixture
+  runner 只证明生命周期，W9-RES-01 仍为 partial，30 分钟代表性资源 Smoke 尚未完成。
+- 真实摄像头访问必须由用户显式授权。当前 CAM-01/CAM-09 为 `blocked(camera_environment)`，
+  W9-GATE 为 `blocked(camera_environment,resource_smoke_not_run)`，详见
+  [Week 9总结](../versions/webrtc-v2/weeks/week09/summary.md)。
+
+## 25. WebRTC-first 低延迟远程操作产品化方向（2026-08-30）
+
+- Week 1～10 的交付口径保持为 WebRTC V2 P2P Beta；完成 Week 10 不自动等于生产级替代 RTMP。
+- Beta 之后的产品主线是每一路设备视频对应一条独立 WebRTC 会话，独占 PeerConnection、StreamId、
+  generation、队列和 UI tile；Direct 优先，复杂 NAT/防火墙场景使用 TURN Relay。
+- MQTT 继续作为硬件与软件之间的命令、回执、状态和遥测基础设施；WSS 只负责自动信令、trickle ICE
+  和短期会话授权。WebRTC DataChannel 不在本阶段替换 MQTT。
+- 产品组合根必须显式绑定已授权设备身份、操作员、WebRTC 视频会话和 MQTT 控制目标；视频建连、MQTT
+  在线或 tile 切换都不能隐式授予或切换控制权限。
+- RTMP 迁移期保留但不得静默 fallback。只有 WSS、TURN、身份绑定、自动重连、真实网络/多设备/长时
+  资源和发布包门禁全部通过后，RTMP 才退出产品实时视频主链路。
+- 完整职责分面、阶段顺序和退役门禁见 [WebRTC V2 总计划第 9 节](webrtc_v2_project_plan.md#9-week-10-后-webrtc-first-低延迟远程操作产品化主线)。

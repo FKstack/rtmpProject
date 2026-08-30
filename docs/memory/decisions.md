@@ -799,6 +799,85 @@
   `include/common/webrtc_product/`、`src/common/webrtc_product/`、`tests/WebRtcProductSessionTest.cpp`、
   `scripts/webrtc/qualify_week8.ps1`、`docs/versions/webrtc-v2/weeks/week08/`
 
+## ADR-042 摄像头发布采用 publisher 内窄 MF source 与单一 h264_mf 回退
+
+- 日期：2026-08-30
+- 状态：已采用；真实摄像头环境资格待授权
+- 背景：Week 4 的 publisher 只有固定 MP4 样本。摄像头输入需要设备采集、编码能力选择、时间戳和
+  阻塞读取停止，但若为此创建通用媒体插件层、保存设备档案或增加多硬件编码器矩阵，会扩大 Week 9
+  范围并破坏 publisher 的明确边界。
+- 决策：在既有 publisher target 增加具体 `CameraH264PublisherSource`。Windows 条件使用 Media
+  Foundation，固定 1280×720@30；实际 AU 证明 baseline、level≤3.1、SPS/PPS、无 B slice 和 IDR
+  间隔≤30 帧才原生 Annex-B 直通。不合规时 Shutdown 并重新打开同一设备为 NV12，只使用实际合成
+  NV12 编码并由 FFmpeg 解码验证通过的 `h264_mf`；否则稳定阻塞。非 Windows 返回
+  platform_unsupported。设备只公开 camera-N 别名，不持久化或哈希标识。
+- 原因：publisher 仍只输出既有 `H264SubmitPort` 契约；单一路径矩阵减少驱动组合和停止生命周期风险，
+  同时保留原生低开销路径。真实设备事实必须由授权环境产生，不能由 MP4/fixture 推断。
+- 替代方案：通用 MediaSource/插件框架；libavdevice；外部 ffmpeg/x264；NVENC/AMF/QSV fallback；
+  保存 symbolic link 或设备指纹。它们会引入新依赖、进程、身份持久化或未经资格的组合爆炸。
+- 影响：Windows publisher 增加 mf/mfplat/mfreadwrite/mfuuid/ole32 条件链接；source 独占一个 worker，
+  无用户态帧队列，停止为 closing/Flush/独立 join 门禁/同指针 reader 清理/MF+FFmpeg 释放。schema、产品 profile 和 OFF 行为
+  不变，层门禁明确禁止 publisher 依赖 runtime/product。
+- 验证证据：约束位、首个非空 AU、提交时戳、encoder drain、失败后 stop 与 waiter/stop 并发组件
+  CTest 在 Debug/Release 通过；真实摄像头 CAM-01/CAM-09 保持 blocked(camera_environment)。
+- 相关文件：`include/common/publisher/CameraH264PublisherSource.h`、
+  `src/common/publisher/CameraH264PublisherSource.cpp`、`src/common/publisher/CameraH264Policy.cpp`、
+  `tests/CameraH264PublisherSourceTest.cpp`
+
+## ADR-043 产品多会话采用 StreamId SessionContext map 并保持三类 generation 分离
+
+- 日期：2026-08-30
+- 状态：已采用；四台物理 endpoint 与长时资源资格待验证
+- 背景：Week 8 controller 直接拥有单套 slot/runtime/widget/input 和全局 token。扩展到四路若复用
+  全局 generation 或在单路故障时停止共享 timer/pool，会让旧回调污染新会话并放大故障范围。
+- 决策：controller 私有持有最多四项 StreamId→SessionContext map，每项独占最低空闲 slot、product
+  token、widget、input、receive runtime、mailbox、connection、state 和 freshness。endpoint
+  generation、product token、media generation 不合并。start 在 worker 成功后才发 signal；逐路取消先
+  detach route，取消全部先 detach 并停止全部 runtime 再统一 join，closingAll 阻止 signal 重入。
+  无参 API 保留兼容聚合语义。
+- 原因：StreamId 已是 media/UI 的运行期关联键；context map 把状态和生命周期放在唯一组合 owner，
+  无需让 runtime、media 或 UI 反向认识产品多会话。三个 generation 分属 transport、组合回调和解码
+  handle 的不同失效边界，合并会造成跨层全局状态。
+- 替代方案：四个固定成员；全局 generation；每路独立诊断 timer/decode pool；把会话 map 放进
+  MainWindow 或 playback manager。它们会重复逻辑、混淆所有权或反转依赖。
+- 影响：最多四路使用 session-01～04，第五路 capacity_reached；逐路诊断不伪造 OS 资源，无参多路
+  快照只给无效 StreamId 的聚合状态。rtc::Cleanup 仍在所有会话结束后的进程退出执行一次。
+- 验证证据：四组真实同机 SendOnly/ReceiveOnly PeerConnection 完成 RTP→decode→mailbox→presented→
+  Direct，覆盖第五路零副作用拒绝、远端先关闭一路而其余增长、单路小于 1 秒停止、slot/generation
+  重建、同步 signal 取消重入和动画期 widget 延迟移除。
+- 相关文件：`include/common/webrtc_product/`、`src/common/webrtc_product/`、
+  `tests/WebRtcProductSessionTest.cpp`
+
+## ADR-044 低延迟远程操作采用 WebRTC-first 视频与 MQTT 控制分面
+
+- 日期：2026-08-30
+- 状态：产品方向已确认；实施须在 W9/W10 门禁通过后分阶段进行
+- 背景：当前 WebRTC V2 的 Week 1～10 目标是可交付测试的 P2P Beta，稳定 RTMP 产品链路仍然存在。
+  后续产品目标已经明确为低延迟远程操作：每台设备的视频需要独立、可隔离、可恢复的 WebRTC 会话，
+  而设备与软件之间已有 MQTT 控制和状态基础设施。若把视频建连、设备身份和控制授权隐式合并，或用
+  DataChannel 顺手替换 MQTT，会扩大故障域并破坏现有硬件边界。
+- 决策：产品实时视频采用 WebRTC-first，每一路视频对应独立 PeerConnection、StreamId、代次、队列
+  和 UI tile；Direct 优先，受限网络使用 TURN Relay，二者都是 WebRTC 链路。MQTT 继续承载命令、
+  回执、状态和遥测；WSS 只承载自动信令、trickle ICE 与短期会话授权；ICE/STUN/TURN 只负责可达性。
+  应用组合根负责把已授权的设备身份、操作员、WebRTC StreamId/tile 和 MQTT 控制目标绑定为一条
+  运行期设备会话。视频建连不得自动授权控制，MQTT 在线也不得自动选择设备，切换 tile 不得静默切换
+  控制目标。RTMP 迁移期保留，但不得作为 WebRTC 失败时的静默 fallback；产品门禁全部通过后退出
+  实时视频主链路。
+- 原因：WebRTC 提供低延迟媒体、拥塞适应和 Direct/Relay 恢复路径；MQTT 保留成熟的硬件中间层职责；
+  四个平面由组合根显式关联，能隔离视频故障、控制权限和连接状态，也能让多设备按单会话故障域扩展。
+- 替代方案：继续以 RTMP 作为远程操作主链路；只支持纯 Direct 而不部署 TURN；用 WebRTC DataChannel
+  替换 MQTT；让多台设备共享一条全局 PeerConnection 或全局 generation。它们分别无法满足产品低延迟
+  与公网可达性、重复建设控制协议，或放大跨设备故障和旧回调污染风险。
+- 影响：本次只更新路线和架构约束，不修改现有代码、公共接口、schema v1、线程模型、依赖或默认网络
+  行为。后续 WSS、TURN、身份授权和运行期 DeviceSession 必须逐项通过独立设计与资格门禁；持久设备
+  身份或 schema 变化仍需单独评审。初期产品聚焦一个操作员控制一台设备、最多四路独立视频；多观看者、
+  SFU、WHIP/WHEP 和双向音频不是这项决定的隐含范围。
+- 验证证据：本次为规划确认，不产生运行时测试证据。W9-GATE 仍为
+  `blocked(camera_environment,resource_smoke_not_run)`，Week 10 尚未完成；产品化阶段、失败条件和
+  RTMP 退役门禁已写入 WebRTC V2 总计划第 9 节。
+- 相关文件：`docs/roadmap/webrtc_v2_project_plan.md`、`docs/roadmap/project_plan.md`、
+  `docs/memory/project_snapshot.md`、`docs/project_handoff.md`
+
 ## ADR-XXX 标题
 
 - 日期：

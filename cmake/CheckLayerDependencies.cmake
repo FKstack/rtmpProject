@@ -158,7 +158,7 @@ endforeach()
 
 foreach(source_file IN LISTS publisher_files)
     file(READ "${source_file}" source_text)
-    if(source_text MATCHES "#[ \t]*include[ \t]*[<\"](app|device_control|diagnostics|evidence|event_center|logging|media|profiles|render|server|ui|webrtc_contracts|webrtc_dev|webrtc_transport)/")
+    if(source_text MATCHES "#[ \t]*include[ \t]*[<\"](app|device_control|diagnostics|evidence|event_center|logging|media|profiles|render|server|ui|webrtc_contracts|webrtc_dev|webrtc_transport|webrtc_runtime|webrtc_product)/")
         message(FATAL_ERROR
             "publisher source depends on transport or a product layer: ${source_file}")
     endif()

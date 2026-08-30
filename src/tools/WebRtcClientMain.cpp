@@ -1,6 +1,7 @@
 #include "webrtc_client/WebRtcClientOptions.h"
 #include "webrtc_client/WebRtcClientRuntime.h"
 #include "webrtc_client/WebRtcViewerController.h"
+#include "publisher/CameraH264PublisherSource.h"
 
 #include <QApplication>
 #include <QCommandLineParser>
@@ -83,6 +84,34 @@ int main(int argc, char *argv[])
                "\"event\":\"invalid_arguments\"}"
             << Qt::endl;
         return 2;
+    }
+    if (options->listCameras) {
+        std::vector<rtmp_monitor::publisher::CameraDeviceInfo> devices;
+        const auto error =
+            rtmp_monitor::publisher::CameraH264PublisherSource::listCameras(
+                &devices
+            );
+        if (error != rtmp_monitor::publisher::PublisherSourceError::None) {
+            QTextStream(stdout)
+                << "{\"error\":\""
+                << rtmp_monitor::publisher::CameraH264PublisherSource::errorName(
+                       error
+                   )
+                << "\",\"event\":\"camera_list_failed\"}" << Qt::endl;
+            return 4;
+        }
+        for (const auto &device : devices) {
+            QJsonObject item {
+                {QStringLiteral("event"), QStringLiteral("camera")},
+                {QStringLiteral("index"), static_cast<int>(device.index)},
+                {QStringLiteral("alias"),
+                 QString::fromStdString(device.alias)}
+            };
+            QTextStream(stdout)
+                << QJsonDocument(item).toJson(QJsonDocument::Compact)
+                << Qt::endl;
+        }
+        return 0;
     }
 
     const auto outputMutex = std::make_shared<std::mutex>();

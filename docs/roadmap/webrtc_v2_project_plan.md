@@ -10,6 +10,12 @@
 >
 > 当前稳定产品能力仍是 `0.1.0-alpha.1` RTMP 路径。Week 5/6 只完成默认关闭的测试客户端和资格
 > 测试包；物理双机、Week 7～10 的公网/正式 UI/性能与 ARM 交付仍不能作为已部署能力。
+>
+> 2026-08-30 产品方向补充：用户确认目标产品是低延迟远程操作。Week 1～10 仍按既定范围完成
+> WebRTC P2P Beta，不回写或放宽历史门禁；Beta 之后进入 WebRTC-first 产品化阶段，每一路视频对应
+> 一条独立 WebRTC 会话，MQTT 继续作为硬件与软件之间的控制/状态基础设施。WSS 只负责自动信令与
+> 短期授权，ICE/STUN/TURN 只负责连接可达性。RTMP 仅在迁移期保留，满足第 9 节退役门禁后退出产品
+> 实时视频主链路；该方向确认不等于 W9/W10 已完成。
 
 ## 1. 决策摘要
 
@@ -428,6 +434,18 @@ summary/testing guide/test results。
 | W9-RES-01 | 4 | W9-FLT-01 | 每路 CPU/内存/队列/丢弃与 30 分钟 smoke | 无界增长或归属不清即失败 |
 | W9-GATE | 3 | W9-CAM-09,W9-RES-01 | 摄像头与四路隔离门禁 | 摄像头可阻塞但不得以 MP4 冒充通过 |
 
+2026-08-30 实际状态（以当前代码和测试为准）：
+
+| ID | 状态 | 证据边界 |
+| --- | --- | --- |
+| W9-CAM-01 | blocked(camera_environment) | 未授权枚举真实设备，无物理格式能力表 |
+| W9-CAM-02～08 | implemented / component evidence | MF 生产路径、native/NV12 选择、时间戳、恢复、停止与合成 `h264_mf` 已验证；未替代物理设备验收 |
+| W9-CAM-09 | blocked(camera_environment) | 未执行真实摄像头 120 秒呈现 |
+| W9-MUL-01 | targeted passed | 四组同机真实 PeerConnection、独立 StreamId/generation/slot |
+| W9-FLT-01 | targeted passed | 远端关闭一路时另外三路继续呈现；取消、重建和 signal 重入通过 |
+| W9-RES-01 | partial / blocked(resource_smoke_not_run) | 短时生命周期与最终 queue 断言通过；缺代表性负载、1,800 秒和全程逐路资源峰值 |
+| W9-GATE | blocked(camera_environment,resource_smoke_not_run) | 不以 fixture 外推摄像头或资源资格 |
+
 ### Week 10：性能、包、跨平台和 Beta 资格
 
 | ID | h | 前置 | 单一输出与验收 | 失败/停线 |
@@ -489,18 +507,98 @@ RTMP/AAC/MQTT/控制安全回归、无界队列、退出残留、旧 session 帧
 任一项失败，都必须停止当前阶段。不得用替代实现绕过，也不得把配置存在、编译成功或 ICE Connected
 冒充真实媒体和产品资格。
 
-## 9. 后续阶段
+## 9. Week 10 后 WebRTC-first 低延迟远程操作产品化主线
 
-获得可信设备身份、自动信令、服务器基础设施和产品档案需求后另立计划：
+### 9.1 产品定位与迁移原则
 
-1. 定义设备/摄像头资源与媒体会话的认证绑定。
-2. 部署 WSS 信令与短期 Token，再评审是否需要长期 P2P profile/schema v2。
-3. 部署 coturn，验证 forced relay、凭据轮换、带宽和成本。
-4. 评估 SRS WHIP/WHEP、服务器分发、多观看端和集中证据链。
-5. 按安防业务优先级独立实施 WebRTC/Opus 半双工对讲，不复用视频 DataChannel 控车。
+Week 10 全部门禁通过时，只能声明“可交付测试的 WebRTC V2 P2P Beta 完成”。最终产品目标不是继续
+扩展 RTMP 低延迟能力，而是让每一路实时视频都成为独立 WebRTC 会话；RTMP 在迁移期用于保护现有
+稳定产品和回归证据，但不作为 WebRTC 失败后的静默 fallback。只有 9.5 节的退役门禁全部满足后，
+产品实时视频入口才切换为 WebRTC-only，并移除 RTMP 菜单、自动接入、配置和发布依赖。
 
-只有出现真实第二种持久媒体来源后，才评审 `MediaSource` variant；只有出现真实同时收发用例后，
-才扩展 `VideoDirection::SendReceive`。
+目标业务是一台机器人/边缘设备主要对应一个操作员观看会话。四路画面表示四条并行的一对一 WebRTC
+会话，而不是一个 PeerConnection 共享四台设备的可变状态：
+
+```text
+robot-1 camera ─ WebRTC session-1 ─ tile-1
+robot-2 camera ─ WebRTC session-2 ─ tile-2
+robot-3 camera ─ WebRTC session-3 ─ tile-3
+robot-4 camera ─ WebRTC session-4 ─ tile-4
+
+operator control ─ MQTT broker ─ selected robot controller/telemetry
+```
+
+多观看端、SFU、WHIP/WHEP 或服务器分发不属于这条一对一远程操作主线，出现真实需求后单独立项，
+不得为假设场景扩大当前 SessionContext、transport 或 media 契约。
+
+### 9.2 媒体、控制、信令和连接面
+
+| 平面 | 唯一职责 | 明确禁止 |
+| --- | --- | --- |
+| WebRTC 媒体面 | 每路 H.264、PeerConnection/Track、Direct/Relay、丢包/延迟、generation 和恢复 | 发送 MQTT 命令、持有设备权限、静默回退 RTMP |
+| MQTT 控制面 | 硬件命令、设备状态、执行回执和遥测；继续作为硬件与软件的中间基础设施 | 承载视频、创建 PeerConnection、以视频建连代替控制授权 |
+| WSS 信令面 | 在线设备会话协调、Offer/Answer、trickle ICE candidate、短期 Token 和撤销 | 转发媒体帧、承载设备动作命令、保存长期 ICE 凭据 |
+| ICE/STUN/TURN 连接面 | Direct 优先、受阻网络使用 Relay、凭据轮换、可达性与连接类型事实 | 解释业务身份、授予控制权、配置默认真实公网端点 |
+| 应用组合层 | 以授权设备会话绑定 WebRTC StreamId、UI tile 与 MQTT 控制目标 | 让 media/transport/MQTT 反向依赖 UI 或彼此直接调用 |
+
+“WebRTC-first”不等于“永远纯 Direct P2P”。同一 WebRTC 会话应优先选择 Direct；CGNAT、企业防火墙
+或 UDP 受限时允许选择 TURN Relay。Direct 和 Relay 都属于 WebRTC 产品链路，不能因走 Relay 而降级
+到 RTMP，也不能把没有 TURN 的 `NeedsRelay` 当作产品级公网成功。
+
+### 9.3 每设备产品会话与控制绑定
+
+产品组合根后续拥有一个明确的运行期 `DeviceSession` 概念；名称只表达所有权边界，不要求立即新增
+通用框架或持久化 schema：
+
+```text
+DeviceSession
+├─ authorized device identity / operator authorization
+├─ WebRTC product token + endpoint/media generations
+├─ StreamId + WebRtcReceiveSession + VideoWidget
+├─ MQTT control target + telemetry subscriptions
+└─ video / control / device 三组独立可见状态
+```
+
+固定不变量：
+
+- 一路设备视频只拥有一个独立 PeerConnection、Track、StreamId、队列和 tile；单路重建只更新本路
+  generation，不停止其他路的诊断 timer、decode pool 或 MQTT 订阅。
+- WebRTC Connected/Direct 只证明当前视频连接和呈现事实，绝不自动授予 MQTT 控制权；MQTT Broker
+  Connected 也不等于用户已选择并获权控制某台设备。
+- 只有设备身份、操作员权限和显式选择的控制目标一致时，应用组合层才启用该设备的 MQTT 控制入口。
+  切换或关闭视频 tile 不得静默切换到另一台设备的控制目标。
+- UI 分别显示视频连接、MQTT 控制通道和设备在线/回执状态，不能用一个“在线”状态掩盖另外两面。
+- 当前 schema v1、SavedStreamProfile 和既有 MQTT 公共契约在产品化设计门禁前保持不变。若需要长期
+  设备档案，必须单独评审身份来源、迁移、授权、撤销和 schema；不得把 peer/ICE/Token 塞进保存流。
+
+### 9.4 产品化阶段与单一输出
+
+| ID | 前置 | 单一输出与验收 | 失败/停线 |
+| --- | --- | --- | --- |
+| P2P-PROD-01 | W9-GATE、W10-GATE 通过 | 冻结 WebRTC-first、MQTT-control、WSS-signaling、TURN-connectivity 四面职责和威胁边界 | 仍依赖手工身份猜测或模块反向依赖即停止 |
+| P2P-PROD-02 | P2P-PROD-01 | WSS 自动信令、trickle ICE、短期会话 Token、撤销和过期回调隔离 | SDP/candidate/Token 持久化或进入普通日志即失败 |
+| P2P-PROD-03 | P2P-PROD-02 | 设备、操作员、WebRTC StreamId 与 MQTT 控制目标的显式授权绑定 | 视频建连自动授权控制或 tile 切换误控即失败 |
+| P2P-PROD-04 | P2P-PROD-02 | coturn、短期凭据、Direct/Relay 自动选择、forced-relay 与凭据轮换资格 | 复杂 NAT 只能 NeedsRelay 或保存长期 TURN 凭据即失败 |
+| P2P-PROD-05 | P2P-PROD-03,P2P-PROD-04 | 每设备自动创建、重连、ICE restart、generation 恢复和独立状态 UI | 依赖人工搬运文件、旧 session 复活或故障传播即失败 |
+| P2P-PROD-06 | P2P-PROD-05 | 两机 LAN、企业/移动公网、四设备长稳、控制目标一致性、便携包和隐私资格 | 用同机 fixture、单路或短测替代现场矩阵即失败 |
+| P2P-PROD-07 | P2P-PROD-06 | WebRTC 成为默认且唯一产品实时视频入口，RTMP 产品入口和依赖按审计清单退役 | 任一受支持场景仍必须依赖 RTMP 才能使用即阻塞切换 |
+
+### 9.5 RTMP 实时链路退役门禁
+
+以下条件全部具备前，不删除稳定 RTMP 代码，也不宣称已经被 WebRTC 产品替代：
+
+1. 获授权设备无需人工搬运 Offer/Answer 文件即可自动建立 WSS 信令会话。
+2. LAN、企业网络和移动网络均完成 Direct 或 TURN Relay 的可复现资格，失败有明确状态和恢复路径。
+3. 视频 StreamId 与 MQTT 控制目标通过可信设备身份和操作员授权绑定，误控、越权和隐式切换测试通过。
+4. 单路与四路的延迟、资源、队列、断网、单端退出、ICE restart、generation 和长期稳定性通过。
+5. 干净 Windows 包不依赖开发机 PATH；OFF/隐私/许可证/残留进程门禁通过；目标 ARM 真机另有诚实结论。
+6. 移除 RTMP 产品入口后，WebRTC 视频故障不会自动启动 RTMP，MQTT 控制与设备状态仍保持独立可诊断。
+
+达到这些条件后，RTMP 可以退出低延迟远程操作的产品实时链路。若未来仍需要录像接入、一对多观看或
+服务器分发，应作为独立服务能力评审，不能重新耦合进每设备 P2P 会话。
+
+WebRTC/Opus 半双工对讲继续按业务优先级独立实施，不复用视频 DataChannel 控车；只有出现真实同时
+收发视频用例后才扩展 `VideoDirection::SendReceive`，只有出现真实多观看端需求后才评审 SFU。
 
 ## 10. 结果管理
 

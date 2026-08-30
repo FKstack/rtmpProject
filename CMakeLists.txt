@@ -476,12 +476,21 @@ if(RTMP_MONITOR_ENABLE_WEBRTC)
     add_library(rtmp_monitor_h264_publisher_source STATIC
         include/common/publisher/Mp4H264PublisherSource.h
         src/common/publisher/Mp4H264PublisherSource.cpp
+        include/common/publisher/CameraH264PublisherSource.h
+        src/common/publisher/CameraH264PublisherSource.cpp
+        src/common/publisher/CameraH264Policy.h
+        src/common/publisher/CameraH264Policy.cpp
     )
     target_include_directories(rtmp_monitor_h264_publisher_source
-        PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include/common)
+        PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include/common
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/common)
     target_link_libraries(rtmp_monitor_h264_publisher_source
         PUBLIC rtmp_monitor_h264_contracts
         PRIVATE rtmp_monitor_ffmpeg)
+    if(WIN32)
+        target_link_libraries(rtmp_monitor_h264_publisher_source PRIVATE
+            mf mfplat mfreadwrite mfuuid ole32)
+    endif()
     set_target_properties(rtmp_monitor_h264_publisher_source PROPERTIES
         ARCHIVE_OUTPUT_DIRECTORY
             "${CMAKE_BINARY_DIR}/webrtc/lib/$<CONFIG>"
@@ -1036,25 +1045,30 @@ if(RTMP_MONITOR_ENABLE_WEBRTC)
     rtmp_monitor_copy_webrtc_runtime(rtmp_monitor)
 endif()
 
+if(WIN32)
+    get_filename_component(RTMP_MONITOR_QT_INSTALL_PREFIX
+        "${Qt6_DIR}/../../.." ABSOLUTE)
+    set(rtmp_monitor_qt_platform_dir
+        "${RTMP_MONITOR_QT_INSTALL_PREFIX}/plugins/platforms")
+    function(rtmp_monitor_copy_qt_platform_runtime target_name)
+        add_custom_command(TARGET ${target_name} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_RUNTIME_DLLS:${target_name}>
+                $<TARGET_FILE_DIR:${target_name}>
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+                "$<TARGET_FILE_DIR:${target_name}>/platforms"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<IF:$<CONFIG:Debug>,${rtmp_monitor_qt_platform_dir}/qwindowsd.dll,${rtmp_monitor_qt_platform_dir}/qwindows.dll>"
+                "$<TARGET_FILE_DIR:${target_name}>/platforms/$<IF:$<CONFIG:Debug>,qwindowsd.dll,qwindows.dll>"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<IF:$<CONFIG:Debug>,${rtmp_monitor_qt_platform_dir}/qoffscreend.dll,${rtmp_monitor_qt_platform_dir}/qoffscreen.dll>"
+                "$<TARGET_FILE_DIR:${target_name}>/platforms/$<IF:$<CONFIG:Debug>,qoffscreend.dll,qoffscreen.dll>"
+            COMMAND_EXPAND_LISTS
+            VERBATIM)
+    endfunction()
+endif()
+
 if(RTMP_MONITOR_ENABLE_WEBRTC)
-    if(WIN32)
-        get_filename_component(RTMP_MONITOR_QT_INSTALL_PREFIX
-            "${Qt6_DIR}/../../.." ABSOLUTE)
-        set(rtmp_monitor_qt_platform_dir
-            "${RTMP_MONITOR_QT_INSTALL_PREFIX}/plugins/platforms")
-        function(rtmp_monitor_copy_qt_platform_runtime target_name)
-            add_custom_command(TARGET ${target_name} POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E make_directory
-                    "$<TARGET_FILE_DIR:${target_name}>/platforms"
-                COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                    "$<IF:$<CONFIG:Debug>,${rtmp_monitor_qt_platform_dir}/qwindowsd.dll,${rtmp_monitor_qt_platform_dir}/qwindows.dll>"
-                    "$<TARGET_FILE_DIR:${target_name}>/platforms/$<IF:$<CONFIG:Debug>,qwindowsd.dll,qwindows.dll>"
-                COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                    "$<IF:$<CONFIG:Debug>,${rtmp_monitor_qt_platform_dir}/qoffscreend.dll,${rtmp_monitor_qt_platform_dir}/qoffscreen.dll>"
-                    "$<TARGET_FILE_DIR:${target_name}>/platforms/$<IF:$<CONFIG:Debug>,qoffscreend.dll,qoffscreen.dll>"
-                VERBATIM)
-        endfunction()
-    endif()
 
     qt_add_executable(rtmp_monitor_webrtc_client
         src/tools/WebRtcClientMain.cpp
@@ -1402,6 +1416,14 @@ if(BUILD_TESTING)
             ${CMAKE_CURRENT_SOURCE_DIR}/src/tools)
         rtmp_monitor_apply_project_options(
             rtmp_monitor_webrtc_client_ice_config_test)
+        if(WIN32)
+            add_custom_command(
+                TARGET rtmp_monitor_webrtc_client_ice_config_test POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "$<TARGET_FILE:Qt6::Test>"
+                    "$<TARGET_FILE_DIR:rtmp_monitor_webrtc_client_ice_config_test>"
+                VERBATIM)
+        endif()
         add_test(NAME rtmp_monitor_webrtc_client_ice_config_test
             COMMAND rtmp_monitor_webrtc_client_ice_config_test)
 
@@ -1423,10 +1445,6 @@ if(BUILD_TESTING)
             ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
         rtmp_monitor_copy_ffmpeg_runtime(
             rtmp_monitor_webrtc_viewer_pipeline_test)
-        if(WIN32)
-            rtmp_monitor_copy_qt_platform_runtime(
-                rtmp_monitor_webrtc_viewer_pipeline_test)
-        endif()
 
         qt_add_executable(rtmp_monitor_webrtc_product_test
             tests/WebRtcProductSessionTest.cpp)
@@ -1446,10 +1464,6 @@ if(BUILD_TESTING)
             ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
         rtmp_monitor_copy_ffmpeg_runtime(
             rtmp_monitor_webrtc_product_test)
-        if(WIN32)
-            rtmp_monitor_copy_qt_platform_runtime(
-                rtmp_monitor_webrtc_product_test)
-        endif()
 
         qt_add_executable(rtmp_monitor_h264_publisher_source_test
             tests/Mp4H264PublisherSourceTest.cpp)
@@ -1465,6 +1479,24 @@ if(BUILD_TESTING)
             TIMEOUT 120)
         rtmp_monitor_copy_ffmpeg_runtime(
             rtmp_monitor_h264_publisher_source_test)
+
+        qt_add_executable(rtmp_monitor_camera_h264_publisher_source_test
+            tests/CameraH264PublisherSourceTest.cpp)
+        target_include_directories(
+            rtmp_monitor_camera_h264_publisher_source_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/common)
+        target_link_libraries(
+            rtmp_monitor_camera_h264_publisher_source_test PRIVATE
+            Qt6::Test rtmp_monitor_h264_publisher_source)
+        rtmp_monitor_apply_project_options(
+            rtmp_monitor_camera_h264_publisher_source_test)
+        add_test(NAME rtmp_monitor_camera_h264_publisher_source_test
+            COMMAND rtmp_monitor_camera_h264_publisher_source_test)
+        set_tests_properties(
+            rtmp_monitor_camera_h264_publisher_source_test PROPERTIES
+            RUN_SERIAL TRUE TIMEOUT 120)
+        rtmp_monitor_copy_ffmpeg_runtime(
+            rtmp_monitor_camera_h264_publisher_source_test)
 
         qt_add_executable(rtmp_monitor_webrtc_publisher_peer
             tests/WebRtcPublisherPeerMain.cpp)
@@ -1485,6 +1517,7 @@ if(BUILD_TESTING)
             rtmp_monitor_webrtc_viewer_pipeline_test
             rtmp_monitor_webrtc_product_test
             rtmp_monitor_h264_publisher_source_test
+            rtmp_monitor_camera_h264_publisher_source_test
             rtmp_monitor_webrtc_publisher_peer)
             set_target_properties(${webrtc_test_target} PROPERTIES
                 RUNTIME_OUTPUT_DIRECTORY
@@ -1947,6 +1980,37 @@ if(BUILD_TESTING)
             "RtmpMonitor ${RTMP_MONITOR_VERSION_TEST_REGEX}"
         TIMEOUT 5
     )
+
+    if(WIN32)
+        # QTEST_MAIN and the two manual QApplication smoke tests require a
+        # platform plugin. Deploy matching MSVC Debug/Release plugins beside
+        # every such test so execution never depends on a global Qt PATH.
+        set(rtmp_monitor_qapplication_test_targets
+            rtmp_monitor_device_control_contract_test
+            rtmp_monitor_device_control_controller_test
+            rtmp_monitor_device_control_input_test
+            rtmp_monitor_device_control_panel_test
+            rtmp_monitor_event_center_panel_test
+            rtmp_monitor_live_ui_shutdown_test
+            rtmp_monitor_log_panel_test
+            rtmp_monitor_mqtt_device_client_test
+            rtmp_monitor_opengl_grid_renderer_smoke
+            rtmp_monitor_qt_opengl_smoke
+            rtmp_monitor_saved_stream_repository_test
+            rtmp_monitor_connection_controller_test
+            rtmp_monitor_dynamic_grid_test
+            rtmp_monitor_ui_smoke_test
+            rtmp_monitor_virtual_joystick_test
+            rtmp_monitor_webrtc_product_test
+            rtmp_monitor_webrtc_viewer_pipeline_test)
+        foreach(qapplication_test_target IN LISTS
+                rtmp_monitor_qapplication_test_targets)
+            if(TARGET ${qapplication_test_target})
+                rtmp_monitor_copy_qt_platform_runtime(
+                    ${qapplication_test_target})
+            endif()
+        endforeach()
+    endif()
 endif()
 
 include(GNUInstallDirs)
