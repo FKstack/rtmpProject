@@ -48,6 +48,10 @@ ARM64 只重新执行 RASTER/GLES3 的 WebRTC OFF 交叉构建、AArch64 ELF 和
 `W10-GATE=blocked(camera_environment,physical_lan_environment)`；只有后续真实通过这两项，才允许
 创建正式 `v0.2.0-beta.1` 标签。
 
+面向“当前电脑发送、公司电脑接收”的首次人工操作，使用
+[从零双电脑 P2P 视频测试手册](manual_two_computer_p2p_video_test.md)。手册先用包内已验证 sample
+隔离网络与信令，再说明如何只在发送端替换自定义 H.264 MP4；不会把物理双电脑结果预写为通过。
+
 ## 4. 实际资格结果
 
 fresh Windows 四矩阵全部通过：Debug/Release WebRTC OFF 为 39/39、39/39，Debug/Release ON 为

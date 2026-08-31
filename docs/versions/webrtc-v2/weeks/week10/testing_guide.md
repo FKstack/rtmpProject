@@ -72,3 +72,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File `
 `Arm` 只证明 WebRTC OFF 的 ARM64 RASTER/GLES3 交叉构建与 ELF 依赖。`Finalize` 分别合并四矩阵、本机
 性能、候选包和 ARM 结果，再保留摄像头与物理 LAN 外部阻塞；不会因同机 P95 或交叉构建而伪造现场
 资格，也不会创建 tag 或推送远端。
+
+## 6. 当前电脑发送、公司电脑接收的人工 P2P 测试
+
+需要把本机 MP4 投到另一台 Windows 电脑时，按
+[Week 10 从零双电脑 P2P 视频测试](manual_two_computer_p2p_video_test.md)执行。该手册覆盖完整 ZIP
+展开、同包核对、host/STUN 选择、Offer/Answer 安全搬运、接收端可视证据、自定义 MP4 替换、清理和
+故障定位。跨网络测试必须使用获授权 STUN；当前版本没有 TURN，不能把需要 Relay 的环境冒充通过。

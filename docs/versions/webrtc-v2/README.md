@@ -17,6 +17,7 @@ MP4 publisher 和 SendOnly H.264 Track；Week 5 已在同一测试客户端完�
 ## 总计划
 
 - [WebRTC V2 双客户端优先十周研发总计划](../../roadmap/webrtc_v2_project_plan.md)
+- [Week 10 当前电脑发送、公司电脑接收的从零 P2P 视频手册](weeks/week10/manual_two_computer_p2p_video_test.md)
 
 所有 Week 1～10 任务、架构边界、接口目标、网络风险和退出门禁只在总计划维护，不再拆成重复的
 周任务文件。SRS/WHIP/WHEP、自动 WSS 信令和 TURN Relay 在获得公网基础设施后另立计划。

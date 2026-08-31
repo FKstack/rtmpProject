@@ -15,7 +15,7 @@
 | `week07/` | 受限 STUN、本地设计门禁、延期公网 runner 与 KUNLUN 双电脑手动测试手册 |
 | `week08/` | 正式客户端一次性接收、状态和安全集成 |
 | `week09/` | 摄像头发布、四路产品会话和故障隔离 |
-| `week10/` | 性能、Windows 候选包、ARM 交叉构建和 Beta 资格 |
+| `week10/` | 性能、Windows 候选包、ARM 交叉构建、Beta 资格和双电脑 P2P 使用手册 |
 
 ## 完成后允许的文件
 
@@ -34,7 +34,8 @@ Week 8 已形成正式客户端 ON-only 一次性接收、运行期 session、�
 取消生命周期、自动脚本和两篇图文文档；fresh Debug OFF 39/39、Debug ON 47/47、Release ON
 47/47，`W8-GATE` 本地研发门禁通过。正式主程序人工观感、物理双机 LAN、公网和 ARM 仍是独立
 未验证资格。Week 9 已实现 MF 摄像头 source 与四路 SessionContext，同机软件隔离通过，真实摄像头
-仍受授权环境阻塞；Week 10 已进入 `0.2.0-beta.1` 本机性能、候选包和 ARM 资格收尾，最终状态以
+仍受授权环境阻塞；Week 10 已完成 `0.2.0-beta.1` 本机性能、候选包和 ARM 交叉资格，并新增当前
+电脑 publisher/offer、公司电脑 viewer/answer 的从零人工手册。最终门禁状态以
 `week10/test_results.md` 为准。
 
 ## 禁止提交

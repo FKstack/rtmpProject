@@ -1,5 +1,11 @@
 # RtmpMonitor 当前项目快照
 
+> Week 10 双电脑 P2P 使用手册（2026-08-31）：新增从当前电脑 publisher/offer 向公司电脑
+> viewer/answer 投放 MP4 的从零人工教程，覆盖完整候选包、manifest 版本核对、host/STUN 选择、
+> Offer/Answer staging 搬运、可视/JSONL 通过条件、自定义 H.264 MP4 替换和精确目录清理。教程明确
+> 当前 CLI 固定读取 `webrtc-assets/sample.mp4`、跨网需要获授权 STUN、当前没有 TURN，并把物理双机
+> 与用户视频标记为待现场执行；只改文档，不改变代码、schema、依赖或资格结论。
+
 > WebRTC V2 Week 10 本地 Beta 资格候选（2026-08-31）：架构风险 R2。版本集中为
 > `0.2.0-beta.1`；测试专用代表性 720p30 runner 复用一轮不可变 AU 和既有 H264SubmitPort，生产
 > media 统计只读追加内部延迟 P50/max，依赖方向、schema v1、MQTT、RTMP 和默认网络行为不变。
