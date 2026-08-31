@@ -322,6 +322,15 @@ New-Item -ItemType Directory -Force -Path $ConfigRoot | Out-Null
 
 配置只应留在各自电脑的 `local-config`。不要把它随 Offer/Answer 一起传输，也不要提交 Git。
 
+2026-08-31 当前发送端已在用户明确授权后完成中国大陆测试 STUN 预检：连续 5 轮均读取配置并获得
+`host,srflx`，候选收集耗时为 747、486、569、476、459 ms，P50 486 ms、均值 547.4 ms、
+P95/最大值 747 ms。实际服务地址只保存在本机忽略目录，不写入本文。这个结果仅证明当前发送端网络
+能够使用该 STUN；公司电脑仍需执行同样配置和正式双端连接。
+
+当前发送端的 `local-config/ice-runtime.json` 已在上述预检后保留，无需再次运行配置命令。公司电脑
+截图中尚未看到 `local-config`，因此必须先在截图所示包根打开 PowerShell，执行本节配置命令，并从
+受控沟通渠道输入与发送端相同的已授权 STUN URL；不要把真实 URL 补进本文或普通日志。
+
 ## 7. 准备会话目录和四个 PowerShell 窗口
 
 每台电脑准备两个窗口：
@@ -329,13 +338,18 @@ New-Item -ItemType Directory -Force -Path $ConfigRoot | Out-Null
 - 运行窗口：保持客户端运行并观察 JSONL；
 - 文件窗口：查看和搬运 Offer/Answer。
 
-确认旧客户端已经退出后，在当前电脑发送端的“文件窗口”执行。如果这是新窗口，先按上一步显示的
-结果填写发送端包根：
+确认旧客户端已经退出后，在当前电脑发送端的“文件窗口”直接执行。发送端包根已由用户确认：
 
 ```powershell
-$SenderRoot = Read-Host '请输入发送端包根完整路径'
+$SenderRoot = 'E:\rtmpProject\out\packages\webrtc-week10\RtmpMonitor-0.2.0-beta.1-windows-x64'
+if (-not (Test-Path -LiteralPath (
+    Join-Path $SenderRoot 'package-manifest.json') -PathType Leaf)) {
+  throw '发送端包根无效。'
+}
 $SenderExchange = Join-Path $SenderRoot 'session-exchange'
 $SenderIncoming = Join-Path $SenderRoot 'incoming-staging'
+Write-Host "发送端 exchange：$SenderExchange"
+Write-Host "发送端接收目录：$SenderIncoming"
 New-Item -ItemType Directory -Force -Path `
   $SenderExchange,$SenderIncoming | Out-Null
 Get-ChildItem -LiteralPath $SenderExchange -File -Filter '*.json' `
@@ -344,12 +358,20 @@ Get-ChildItem -LiteralPath $SenderIncoming -File -Filter '*.json' `
   -ErrorAction SilentlyContinue | Remove-Item -Force
 ```
 
-在公司电脑接收端的“文件窗口”执行：
+公司电脑截图已经显示资源管理器当前位于候选包根，且能看到 `package-manifest.json`、客户端 EXE、
+DLL 和 `webrtc-assets`。由于截图没有显示盘符及父目录，不猜测绝对路径。请在截图所示资源管理器的
+地址栏输入 `powershell` 并回车；新窗口会自动从当前目录启动。然后执行：
 
 ```powershell
-$ReceiverRoot = Read-Host '请输入接收端包根完整路径'
+$ReceiverRoot = (Get-Location).Path
+if (-not (Test-Path -LiteralPath (
+    Join-Path $ReceiverRoot 'package-manifest.json') -PathType Leaf)) {
+  throw '当前 PowerShell 不在公司电脑候选包根。'
+}
 $ReceiverExchange = Join-Path $ReceiverRoot 'session-exchange'
 $ReceiverIncoming = Join-Path $ReceiverRoot 'incoming-staging'
+Write-Host "公司电脑 exchange：$ReceiverExchange"
+Write-Host "公司电脑接收目录：$ReceiverIncoming"
 New-Item -ItemType Directory -Force -Path `
   $ReceiverExchange,$ReceiverIncoming | Out-Null
 Get-ChildItem -LiteralPath $ReceiverExchange -File -Filter '*.json' `
@@ -363,10 +385,14 @@ Get-ChildItem -LiteralPath $ReceiverIncoming -File -Filter '*.json' `
 
 ## 8. 先启动公司电脑接收端
 
-在公司电脑的“运行窗口”执行。不同网络使用 `$IceMode='stun'`；同一局域网使用 `host`。
+在公司电脑截图所示包根的资源管理器地址栏再次输入 `powershell`，打开独立“运行窗口”，然后执行：
 
 ```powershell
-$ReceiverRoot = Read-Host '请输入接收端包根完整路径'
+$ReceiverRoot = (Get-Location).Path
+if (-not (Test-Path -LiteralPath (
+    Join-Path $ReceiverRoot 'rtmp_monitor_webrtc_client.exe') -PathType Leaf)) {
+  throw '当前 PowerShell 不在公司电脑候选包根。'
+}
 Set-Location -LiteralPath $ReceiverRoot
 $env:QT_QPA_PLATFORM = 'windows'
 $IceMode = 'stun'
@@ -384,14 +410,14 @@ New-Item -ItemType Directory -Force -Path '.\manual-logs' | Out-Null
 此时 viewer 窗口可能已经打开但没有画面，控制台应出现 `runtime_ready`，随后等待 Offer。这是正常
 状态。不要关闭这个窗口。
 
-如果使用 `host`，把上面 `$IceMode = 'stun'` 改为 `$IceMode = 'host'`。
+当前是不同网络测试，因此固定使用 `stun`，无需再修改 `$IceMode`。
 
 ## 9. 再启动当前电脑发送端
 
 在当前电脑的“运行窗口”执行：
 
 ```powershell
-$SenderRoot = Read-Host '请输入发送端包根完整路径'
+$SenderRoot = 'E:\rtmpProject\out\packages\webrtc-week10\RtmpMonitor-0.2.0-beta.1-windows-x64'
 Set-Location -LiteralPath $SenderRoot
 $env:QT_QPA_PLATFORM = 'windows'
 $IceMode = 'stun'
@@ -415,6 +441,8 @@ New-Item -ItemType Directory -Force -Path '.\manual-logs' | Out-Null
 在当前电脑的“文件窗口”执行：
 
 ```powershell
+$SenderRoot = 'E:\rtmpProject\out\packages\webrtc-week10\RtmpMonitor-0.2.0-beta.1-windows-x64'
+$SenderExchange = Join-Path $SenderRoot 'session-exchange'
 $Offer = Get-ChildItem -LiteralPath $SenderExchange -File `
   -Filter '*.offer.json' | Sort-Object LastWriteTime -Descending |
   Select-Object -First 1
@@ -422,15 +450,20 @@ if (-not $Offer) { throw '发送端还没有生成 Offer。' }
 $Offer | Select-Object Name,Length,LastWriteTime
 ```
 
-用获授权的文件传输方式，把这个文件复制到公司电脑的：
+在公司电脑“文件窗口”执行下面一行，它会显示不需要猜测的完整接收目录：
 
-```text
-<接收端包根>\incoming-staging\
+```powershell
+Write-Host $ReceiverIncoming
 ```
+
+用获授权的文件传输方式，把 Offer 复制到这行显示的目录。
 
 等待文件传输界面明确显示完成，再在公司电脑“文件窗口”执行：
 
 ```powershell
+$ReceiverRoot = (Get-Location).Path
+$ReceiverIncoming = Join-Path $ReceiverRoot 'incoming-staging'
+$ReceiverExchange = Join-Path $ReceiverRoot 'session-exchange'
 $ReceivedOffer = Get-ChildItem -LiteralPath $ReceiverIncoming -File `
   -Filter '*.offer.json' | Sort-Object LastWriteTime -Descending |
   Select-Object -First 1
@@ -454,10 +487,10 @@ if (-not $Answer) { throw '接收端还没有生成 Answer。' }
 $Answer | Select-Object Name,Length,LastWriteTime
 ```
 
-把它复制到当前电脑的：
+把它复制到当前电脑已确认的：
 
 ```text
-<发送端包根>\incoming-staging\
+E:\rtmpProject\out\packages\webrtc-week10\RtmpMonitor-0.2.0-beta.1-windows-x64\incoming-staging\
 ```
 
 传输完成后，在当前电脑“文件窗口”执行：
@@ -723,6 +756,7 @@ STUN 或信令流程。
 | 候选包 CLI | 当前 Windows 候选包执行 `--help` | 参数与本文一致，退出码 0 | 已验证 |
 | 包内 sample | `ffprobe` 只读检查 | H.264 Constrained Baseline、720p30、Level 3.1、零 B 帧 | 已验证 |
 | 候选包闭环 | Week 10 `package-result.json` | 两个干净展开副本、本地角色闭环 2/2 | 已验证 |
+| 当前发送端 STUN | 用户授权后的 5 轮真实 ICE gathering | 5/5 `srflx_observed`；P50 486 ms，最大 747 ms | 已验证 |
 | 教程结构 | `validate_tutorial_structure.py` | 0 结构错误、0 警告 | 已验证 |
 | 当前电脑到公司电脑 | 需要真实两台电脑和授权网络 | 尚无现场结果 | 未验证 |
 | 用户自定义 MP4 | 需要用户提供实际文件并执行第 13～16 节 | 尚无现场结果 | 未验证 |

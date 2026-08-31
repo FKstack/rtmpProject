@@ -62,3 +62,23 @@ W9-RES-01，使 W9-GATE 收敛为 `blocked(camera_environment)`；它不替代�
 - `packagePassed=true`、`armCrossBuildPassed=true`；`armWebRtcQualified=false`、
   `armDeviceQualified=false`、`cameraQualified=false`、`physicalLanQualified=false`、
   `performanceQualified=false`。未创建正式标签、未推送。
+
+## 5. 当前发送端中国大陆 STUN 预检
+
+2026-08-31 在用户明确授权具体第三方目的地及公网 IP/UDP 映射元数据外发后，使用 Week 10 正式
+候选客户端从当前发送端执行 5 轮真实 ICE gathering。服务属于中国大陆厂商公开提供的测试 STUN；
+实际域名、公网 IP、映射端口、candidate 和 Offer 未写入仓库。每轮只验证配置读取、STUN Binding、
+候选类型和 Offer 导出，不发送视频，也不连接公司电脑。
+
+| 轮次 | 配置读取 | 候选类型 | STUN 观察 | 候选收集耗时 |
+| ---: | --- | --- | --- | ---: |
+| 1 | 通过 | host、srflx | srflx_observed | 747 ms |
+| 2 | 通过 | host、srflx | srflx_observed | 486 ms |
+| 3 | 通过 | host、srflx | srflx_observed | 569 ms |
+| 4 | 通过 | host、srflx | srflx_observed | 476 ms |
+| 5 | 通过 | host、srflx | srflx_observed | 459 ms |
+
+汇总为成功率 5/5、P50 486 ms、均值 547.4 ms、P95/最大值 747 ms，五轮均在 1 秒内获得 srflx。
+每轮最终退出码 3 是探针故意不提供 Answer、等待 3 秒后按信令缺失退出的预期结果，不影响 STUN
+成功判定。STUN 不承载媒体，因此这些毫秒数不是视频 RTT、带宽或帧延迟；公司电脑 STUN 可达性、
+双方 Direct、实际媒体吞吐和 viewer 出画仍必须按人工手册执行，W10-GATE 不因此关闭。

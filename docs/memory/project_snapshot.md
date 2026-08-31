@@ -1,5 +1,11 @@
 # RtmpMonitor 当前项目快照
 
+> Week 10 当前发送端 STUN 预检（2026-08-31）：用户明确授权具体中国大陆厂商测试 STUN 以及公网
+> IP/UDP 映射元数据外发后，正式候选客户端连续 5 轮均得到 `host,srflx` 和
+> `srflx_observed`；候选收集为 747/486/569/476/459 ms，P50 486 ms、均值 547.4 ms、最大
+> 747 ms。实际域名、地址、端口、candidate 和 Offer 未进入仓库。该证据只证明当前发送端 STUN
+> 可达，不代表公司电脑、双端 Direct、媒体吞吐或视频延迟通过，W10-GATE 不变。
+
 > Week 10 双电脑 P2P 使用手册（2026-08-31）：新增从当前电脑 publisher/offer 向公司电脑
 > viewer/answer 投放 MP4 的从零人工教程，覆盖完整候选包、manifest 版本核对、host/STUN 选择、
 > Offer/Answer staging 搬运、可视/JSONL 通过条件、自定义 H.264 MP4 替换和精确目录清理。教程明确

@@ -79,3 +79,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File `
 [Week 10 从零双电脑 P2P 视频测试](manual_two_computer_p2p_video_test.md)执行。该手册覆盖完整 ZIP
 展开、同包核对、host/STUN 选择、Offer/Answer 安全搬运、接收端可视证据、自定义 MP4 替换、清理和
 故障定位。跨网络测试必须使用获授权 STUN；当前版本没有 TURN，不能把需要 Relay 的环境冒充通过。
+
+当前发送端已在用户明确授权后完成 5 轮中国大陆测试 STUN 预检，5/5 获得 srflx，候选收集 P50
+486 ms、最大 747 ms。实际服务地址只保留在发送端本机忽略配置中；公司电脑和完整媒体 P2P 尚需按
+手册执行，STUN 收集耗时不能写成视频延迟或带宽。
