@@ -1,5 +1,13 @@
 # RtmpMonitor 当前项目快照
 
+> 全历程与产品化规划交接（2026-08-31）：新增受跟踪的
+> `docs/project_evolution_architecture_and_productization_handoff.md`，以实施起点 `Beta` / `12f731b`、
+> 43 个可审计提交、实际 CMake/headers/schema 和 Week 10 测试为权威，完整记录 RTMP 文档重建历史、
+> WebRTC Week 1～10、当前模块/线程/生命周期、资格边界、ADR/issue 索引，以及可直接交给 Pro 的
+> `P2P-PROD-01 + P2P-PROD-02` 规划提示词。文档约 6 万字符，明确手工文件信令只保留内部回归、
+> 用户目标为自建 WSS/Coturn 的 Direct P2P-first 视频和独立 MQTT 控制；没有改动代码、schema、
+> CMake、网络默认值或现有 W9/W10 门禁。
+
 > Week 10 当前发送端 STUN 预检（2026-08-31）：用户明确授权具体中国大陆厂商测试 STUN 以及公网
 > IP/UDP 映射元数据外发后，正式候选客户端连续 5 轮均得到 `host,srflx` 和
 > `srflx_observed`；候选收集为 747/486/569/476/459 ms，P50 486 ms、均值 547.4 ms、最大

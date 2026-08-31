@@ -4,6 +4,7 @@
 
 ## 公共项目资料
 
+- [项目全历程、现状架构与产品化规划交接](project_evolution_architecture_and_productization_handoff.md)
 - [记忆系统说明](memory/README.md)
 - [当前项目快照](memory/project_snapshot.md)
 - [重要设计决策](memory/decisions.md)
@@ -21,7 +22,7 @@
 | 版本目录 | 状态 | 内容入口 |
 | --- | --- | --- |
 | `versions/rtmp-v1/` | 当前稳定基线 `0.1.0-alpha.1` | [RTMP V1 文档](versions/rtmp-v1/README.md) |
-| `versions/webrtc-v2/` | `0.2.0-beta.1`：Week 7 受限 STUN 与本地设计门禁；真实公网资格延期 | [WebRTC V2 文档](versions/webrtc-v2/README.md) |
+| `versions/webrtc-v2/` | `0.2.0-beta.1`：Week 10 本地 Beta 资格候选；真实摄像头和物理 LAN 门禁阻塞 | [WebRTC V2 文档](versions/webrtc-v2/README.md) |
 
 ## 归档规则
 
