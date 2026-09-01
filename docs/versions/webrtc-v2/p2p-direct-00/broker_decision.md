@@ -20,16 +20,15 @@ legacy 设施从产品候选中排除。它最多用于一次有界的匿名 CON
 Clean Session、随机精确审计 topic、无通配符、无 publish、无业务 payload、超时后 unsubscribe 和
 disconnect。不得订阅 `device/control` 或 `device/status`。
 
-产品候选为隔离的 EMQX 6.2.3 单节点，必须通过 MQTT 5、TLS/Auth/ACL、retained/QoS/expiry、限额和
-恶意客户端 fixture。内部自用单节点是当前许可前提；若交付或托管给第三方必须重新审查 BSL 1.1。
-EMQX 任一门禁失败后才运行 Mosquitto 2.1.2 同等 fixture，不自研 Broker 插件。
+隔离 EMQX/Mosquitto 的 MQTT 5、TLS/Auth/ACL、retained/QoS/expiry、限额与恶意客户端 fixture
+保留为可选未来加固，不再是 DIRECT 阶段前置。未执行这些测试，不宣称任何候选已获产品安全资格。
 
 ## 当前结论
 
 受控 legacy 观察实际通过 MQTT 5 CONNECT、随机精确 topic SUBACK、无 payload、UNSUBACK 和
 DISCONNECT；没有 publish，也没有订阅 control/status。该结果只证明当前兼容性。
 
-`blocked(broker_candidate)`：本机与既有 WSL 均未安装 Docker、Podman、EMQX 或 Mosquitto 隔离运行
-环境，因而没有执行产品候选的 TLS/Auth/ACL/retained/QoS/expiry/limit 负向矩阵。fixture 的
-`capability` 模式在完整矩阵缺失时固定输出 `blocked`，不能把核心 TLS connect/subscribe 冒充资格。
-公网 MQTTS staging 部署属于 `P2P-DIRECT-02`，不得用 legacy 明文 listener 代替。
+用户已确认缩减当前研发门禁，`P2P-DIRECT-00=passed(scope_reduced_by_user_decision)`。本机与既有
+WSL 没有执行隔离产品候选的 TLS/Auth/ACL/retained/QoS/expiry/limit 负向矩阵；fixture 的
+`capability` 输出仍不能冒充资格。公网 MQTTS staging 不在 DIRECT-01 范围，legacy 明文 listener
+也不得冒充产品环境。

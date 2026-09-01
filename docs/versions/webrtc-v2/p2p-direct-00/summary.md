@@ -3,12 +3,12 @@
 > 日期：2026-09-01
 > 基线：`Beta` / `23c0949`
 > 风险：R2
-> 当前状态：`blocked(broker_candidate)`
+> 当前状态：`passed(scope_reduced_by_user_decision)`
 
 ## 范围
 
 本阶段冻结 MQTT TLS signaling 与 legacy MQTT control 的边界，建立测试专用 Broker fixture、CMake
-依赖图和分层门禁，并对隔离产品 Broker 候选执行资格测试。现有远程明文服务仅允许兼容性观察，不是
+依赖图和分层门禁，并为隔离产品 Broker 候选保留可选资格测试。现有远程明文服务仅允许兼容性观察，不是
 产品候选，也不得成为源码或配置默认值。
 
 ## 行为不变量
@@ -24,7 +24,7 @@
 - 测试 fixture 独立拥有 Paho handle、回调状态、超时和关闭，不进入产品对象图；
 - Paho TLS 仅作为 fixture 的 PRIVATE 依赖；
 - 分层脚本预设后续 identity/signaling/session 路径的单向依赖；
-- 只有隔离候选完成 TLS/Auth/ACL/expiry/limit 门禁后，本阶段才可能通过。
+- 用户已取消隔离候选 TLS/Auth/ACL/expiry/limit 作为阶段前置；未执行不等于通过。
 
 ## 实际结果
 
@@ -36,7 +36,7 @@
 - 最终 OFF/ON DAG 分别包含 341/483 条规范化依赖边，fixture 只 PRIVATE 指向 `paho-mqtt3as`，未发现
   media/render/device_control/transport/runtime/publisher 到 product/signaling 的反向边。
 - 本机和既有 WSL 均无 Docker、Podman、EMQX 或 Mosquitto 隔离运行时；未下载或临时部署 Broker，
-  capability 负向矩阵保持未执行。因此本阶段不通过，也不解锁下一阶段。
+  capability 负向矩阵保持未执行。按用户确认的范围缩减，本阶段通过并解锁 DIRECT-01。
 
 ## 架构影响
 

@@ -936,6 +936,26 @@
   `docs/roadmap/RtmpMonitor_WebRTC_MQTT_Signaling_Direct_P2P_Implementation_Plan.md`、
   `docs/versions/webrtc-v2/p2p-direct-00/`
 
+## ADR-047 取消 Broker 安全资格的阶段前置并解锁离线协议契约
+
+- 日期：2026-09-01
+- 状态：已采用；用户确认的 R3 产品范围决定
+- 背景：ADR-046 原要求先在隔离 EMQX/Mosquitto 上完成 TLS/Auth/ACL/retained/QoS/expiry/limit
+  负向矩阵，才允许进入 `P2P-DIRECT-01`。用户明确决定当前研发不需要这组正式产品安全测试，并要求
+  解锁 DIRECT-01。
+- 决策：将 `P2P-DIRECT-00` 标记为 `passed(scope_reduced_by_user_decision)`。Broker 安全资格从阶段
+  前置中完全移除，只作为可选的未来加固项；未执行内容仍写作“未验证”，不得表述为技术通过。
+  `P2P-DIRECT-01` 只实现离线身份、topic、消息、状态与 provisioning contract，不连接或修改 Broker。
+- 保留边界：默认网络关闭、Broker 地址为空；真实端点仅可位于本机忽略配置，不进入源码、文档示例、
+  测试资源、日志或发布包；legacy `device/control`、`device/status` 不承载新信令；不得修改现有 Broker
+  核心配置。
+- 影响：这是对阶段验收范围的显式缩减，不是对 Broker 安全性的认可。未来需要公网产品信令时可另行
+  启动加固评审，但它不再阻塞当前阶段研发。
+- 验证证据：用户在本会话明确取消该门禁；DIRECT-00 已有的本地构建、DAG、ARM、fixture 和敏感扫描
+  证据保持有效，隔离 Broker 负向矩阵保持未执行。
+- 相关文件：`docs/versions/webrtc-v2/p2p-direct-00/`、
+  `docs/roadmap/RtmpMonitor_WebRTC_MQTT_Signaling_Direct_P2P_Implementation_Plan.md`
+
 ## ADR-XXX 标题
 
 - 日期：

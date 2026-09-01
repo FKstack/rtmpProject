@@ -1456,8 +1456,8 @@ CTest 14/14 通过；ARM64 RASTER 构建 NEEDED 无 Qt6OpenGL*/EGL/GLES，GLES3 
   `webrtc_v2_project_plan.md` 第 9 节只保留 Week 10 结束时的历史路线背景。
 
 2026-09-01 更新：ADR-046 与 MQTT 信令 v2 总纲已覆盖本节原 WSS/TURN 首阶段描述。P2P-DIRECT-00
-本地四矩阵、ARM、DAG 和 legacy 观察通过，但隔离产品 Broker 候选未完成，阶段为
-`blocked(broker_candidate)`，不解锁下一阶段。
+本地四矩阵、ARM、DAG 和 legacy 观察通过；用户通过 ADR-047 取消隔离 Broker 安全资格的阶段前置，
+状态为 `passed(scope_reduced_by_user_decision)` 并解锁 DIRECT-01。未执行的 Broker 安全矩阵不声明通过。
 
 ## 26. WebRTC V2 Week 10 本地 Beta 资格候选（2026-08-31）
 

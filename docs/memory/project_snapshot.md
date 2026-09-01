@@ -11,9 +11,10 @@
 > 反向边；敏感端点扫描为零。获授权 legacy 设施只完成 MQTT5 CONNECT、随机精确 SUBACK、无 payload、
 > UNSUBACK 和 DISCONNECT，不发布、不登录管理面，也不构成产品资格。
 
-> P2P-DIRECT-00 门禁：本机/WSL 没有隔离 EMQX/Mosquitto 运行环境，TLS/Auth/ACL/retained/QoS/
-> expiry/limit 恶意客户端矩阵未执行，因此阶段诚实保持 `blocked(broker_candidate)`，不得进入
-> `P2P-DIRECT-01`。真实端点只位于忽略的本机配置，未进入 Git、文档、脚本或结果。
+> P2P-DIRECT-00 范围决定（2026-09-01）：用户明确取消隔离 Broker 安全资格作为研发阶段前置，
+> 状态改为 `passed(scope_reduced_by_user_decision)` 并解锁 `P2P-DIRECT-01`。这不是 Broker 技术验证
+> 通过；TLS/Auth/ACL/retained/QoS/expiry/limit 矩阵保持未执行，只列为可选未来加固。默认网络关闭、
+> Broker 地址为空、真实端点仅在忽略配置、legacy topic 不承载新协议和不修改现有 Broker 的红线不变。
 
 > 全历程与产品化规划交接（2026-08-31）：新增受跟踪的
 > `docs/project_evolution_architecture_and_productization_handoff.md`，以实施起点 `Beta` / `12f731b`、

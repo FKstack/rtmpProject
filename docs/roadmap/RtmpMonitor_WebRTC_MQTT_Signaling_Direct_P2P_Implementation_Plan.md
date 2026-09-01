@@ -5,8 +5,8 @@
 > 权威总纲：`RtmpMonitor_WebRTC_MQTT_Signaling_Direct_P2P_Productization_Outline_v2.md`
 > 实施基线：`Beta` / `23c0949`
 > 风险等级：R2
-> 状态：`P2P-DIRECT-00` 本地构建、DAG、ARM 与 legacy 观察已完成；隔离产品 Broker 候选仍为
-> `blocked(broker_candidate)`，不得进入 `P2P-DIRECT-01`
+> 状态：`P2P-DIRECT-00=passed(scope_reduced_by_user_decision)`；用户通过 ADR-047 取消 Broker
+> 安全资格的阶段前置，`P2P-DIRECT-01` 已解锁。未执行的安全矩阵不声明通过。
 
 本文把 MQTT 信令版总纲展开为可直接执行的阶段、接口、协议、部署、验证和回滚计划。本文不改变总纲约定；实际源码、CMake、运行结果和测试结果高于本文。任何尚未取得的 Broker、摄像头、物理网络或 ARM 真机证据均保持“待验证”。
 
@@ -843,7 +843,8 @@ DeviceProfile与SavedStream v1分离，只持久化DeviceId、友好显示和用
 
 ### 8.1 通用执行规则
 
-- 严格按 `P2P-DIRECT-00` 到 `08` 顺序推进；只有上一阶段退出门禁有可重放证据时才进入下一阶段。
+- 按 `P2P-DIRECT-00` 到 `08` 顺序推进；退出门禁可以由技术证据或明确记录的用户范围决定关闭，
+  后者不得冒充技术验证通过。
 - 每阶段单独变更集、构建、测试和证据记录；不将Broker安全、协议schema、trickle、UI与control多个高风险边界混在一个不可审查提交里。
 - 每个代码阶段执行 Windows Debug/Release × WebRTC OFF/ON fresh configure/build/CTest，并保持现有ARM64 RASTER/GLES3 WebRTC-OFF交叉构建/依赖门禁；ARM device-agent/WebRTC产品资格直到`P2P-DIRECT-07`才成为新阻断项。
 - 线上能力默认feature flag关闭；回滚只切回上一个已资格二进制/配置，不把失败会话自动降级到RTMP。
@@ -856,7 +857,8 @@ DeviceProfile与SavedStream v1分离，只持久化DeviceId、友好显示和用
 1. 将v2总纲、本计划、ADR和RTMP parity ledger纳入版本控制；ADR明确“MQTT TLS是第一阶段产品信令，WSS和TURN旧路线被覆盖”。
 2. 生成实际CMake target/link DAG和分层检查基线，登记当前工作树与所有旧证据真值。
 3. 在服务器上只读核验 `emqx version`、OS/补丁、安装来源、license、TLS、认证、ACL、retained约束、packet/inflight/queue/connection限额、管理面暴露和监控能力；输出仅保存脱敏结论。
-4. EMQX仅在版本受支持、高危漏洞已处置、所需MQTT5/TLS/ACL/限额可测、许可符合产品使用四项全部通过时保留。任一失败则让Mosquitto 2.1.2运行同一能力/恶意客户端fixture；只有全部通过才冻结为回退方案，否则`P2P-DIRECT-00`阻断并产生Broker ADR，不带病进入下一阶段。
+4. 隔离 EMQX/Mosquitto 能力与恶意客户端 fixture 保留为可选未来加固；按 ADR-047 不再阻塞
+   `P2P-DIRECT-01`，未执行时不得声明产品安全资格。
 5. 记录Paho 1.3.16、OpenSSL、libdatachannel 0.24.5、Qt、FFmpeg和编译器版本；建立漏洞和许可清单。
 
 **退出门禁**：OFF/ON四矩阵和层依赖零失败；Broker决策有可审查事实；parity ledger每项有owner/状态/证据路径；运行行为未变。
@@ -870,7 +872,9 @@ DeviceProfile与SavedStream v1分离，只持久化DeviceId、友好显示和用
 1. 实现强类型ID、topic codec、稳定错误码、session/attempt状态机和完全的valid/invalid golden vectors。
 2. 实现严格JSON边界：在`QJsonDocument`前做UTF-8/重复key/depth/size扫描，然后对每个messageType做精确字段集和类型校验。
 3. 实现TTL、clock skew、dedupe/tombstone和ACK的adapter-neutral纯内存模型；本阶段只冻结candidate 64/65、EOC和错序的schema/limit/golden vectors，不实现candidate buffer。唯一buffer/state实现留在`P2P-DIRECT-03` runtime。
-4. 用Go实现非常驻`rtmpmonitor-provision`：创建/轮换/撤销operator和device credential，生成Broker ACL和一次性client bundle；原子写入、0600、日志不输出secret。
+4. 用 Go 实现非常驻 `rtmpmonitor-provision`：生成 device/pair 的离线 identity、ClientId、credential
+   reference 与精确 ACL artifact，并严格校验；原子写入、请求 0600、日志不输出 secret。真实 secret、
+   rotate/revoke 执行、状态数据库和 Broker 写入均延期。
 5. 建立threat model，覆盖credential泄漏、topic spoofing、retained SDP、QoS1重复、ClientId takeover、旧nonce、慢消费者、candidate洪泛和control starvation。
 
 **退出门禁**：所有golden/invalid vector通过；未知字段、重复key、过期、越权topic、超限和重放均得到稳定错误；Go CLI unit/race/fuzz与secret scan通过；模块未接入产品运行路径。

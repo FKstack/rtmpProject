@@ -1,7 +1,7 @@
 # P2P-DIRECT-00 测试结果
 
 > 日期：2026-09-01
-> 状态：`blocked(broker_candidate)`
+> 状态：`passed(scope_reduced_by_user_decision)`
 
 | 门禁 | 当前状态 | 证据边界 |
 | --- | --- | --- |
@@ -11,8 +11,8 @@
 | Debug/Release ON | passed | 50/50、50/50 |
 | ARM64 RASTER/GLES3 OFF | passed(cross-build) | AArch64 ELF 与动态依赖通过；不代表真机 |
 | legacy observe | passed(test-only) | MQTT5、随机 SUBACK、无 payload、UNSUBACK、DISCONNECT；无 publish |
-| isolated EMQX 6.2.3 | blocked(environment) | 候选实例尚未提供或创建 |
-| Mosquitto 2.1.2 fallback | not_applicable | 仅 EMQX 失败后执行 |
+| isolated EMQX 6.2.3 | deferred(optional_hardening) | 用户取消为阶段前置；未执行，不声明通过 |
+| Mosquitto 2.1.2 fallback | deferred(optional_hardening) | 未执行，不声明通过 |
 | OFF/ON target DAG | passed | 341/483 边；fixture PRIVATE TLS 边，无 lower→product 反向边 |
 | 敏感端点扫描 | passed | Git、源码、文档、脚本和结果零真实端点；本机配置被忽略 |
 
@@ -29,5 +29,6 @@ optional-transport、layer dependency、fixture self-test 3/3 通过，并用最
 
 ## 最终判定
 
-本地工程门禁全部通过，但产品 Broker 候选未运行，故 `P2P-DIRECT-00=blocked(broker_candidate)`。
-任何 `blocked` 或 `not_applicable` 不得写成阶段通过，也不得进入 `P2P-DIRECT-01`。
+本地工程门禁全部通过。用户明确取消产品 Broker 候选资格作为阶段前置，故
+`P2P-DIRECT-00=passed(scope_reduced_by_user_decision)` 并解锁 `P2P-DIRECT-01`。隔离 Broker 矩阵
+仍未执行；本状态不表示 Broker、MQTTS、认证或 ACL 已通过产品安全验证。
