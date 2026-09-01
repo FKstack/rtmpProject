@@ -2,8 +2,14 @@
 #include "runtime_config/MqttRuntimeConfig.h"
 #include "signaling_contracts/SignalingContracts.h"
 
+#include <QJsonDocument>
+#include <QJsonArray>
+#include <QJsonObject>
+
 #include <cstdlib>
 #include <iostream>
+#include <fstream>
+#include <sstream>
 #include <string>
 
 using namespace rtmp::p2p;
@@ -19,7 +25,17 @@ void require(bool condition, const char *message)
 
 std::string validOffer()
 {
-    return R"({"schemaVersion":1,"messageId":"123e4567-e89b-42d3-a456-426614174000","messageType":"signaling.offer","sentAtUtc":"2026-09-01T00:00:00.000Z","ttlMs":30000,"sourceIdentity":{"kind":"operator","id":"user-1"},"sourceClientInstanceId":"desktop-1","targetIdentity":{"kind":"device","id":"device-1"},"sessionId":"123e4567-e89b-42d3-a456-426614174001","attemptId":"123e4567-e89b-42d3-a456-426614174002","correlationId":"123e4567-e89b-42d3-a456-426614174003","sequence":1,"sessionNonce":"nonce_1","payload":{"sdp":"v=0"}})";
+    return R"({"schemaVersion":1,"messageId":"123e4567-e89b-42d3-a456-426614174000","messageType":"webrtc.offer","sentAtUtc":"2026-09-01T00:00:00.000Z","ttlMs":30000,"sourceIdentity":{"kind":"operator","id":"user-1"},"sourceClientInstanceId":"desktop-1","targetIdentity":{"kind":"device","id":"device-1"},"sessionId":"123e4567-e89b-42d3-a456-426614174001","attemptId":"123e4567-e89b-42d3-a456-426614174002","correlationId":"123e4567-e89b-42d3-a456-426614174003","sequence":1,"sessionNonce":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","payload":{"sdp":"v=0"}})";
+}
+
+std::string readVector(const char *name)
+{
+    std::ifstream input(std::string(RTMP_MONITOR_SIGNALING_VECTOR_DIR) + "/" + name,
+                        std::ios::binary);
+    require(input.good(), "shared vector open");
+    std::ostringstream buffer;
+    buffer << input.rdbuf();
+    return buffer.str();
 }
 }
 
@@ -62,6 +78,30 @@ int main()
     auto unknown = validOffer();
     unknown.insert(unknown.size() - 1, ",\"extra\":1");
     require(EnvelopeCodec::decode(unknown).validation.error == ContractError::UnknownField, "unknown field");
+    require(EnvelopeCodec::decode(readVector("golden_offer.json")).validation.ok, "shared golden envelope");
+    require(EnvelopeCodec::decode(readVector("invalid_duplicate_key.json")).validation.error
+            == ContractError::DuplicateKey, "shared duplicate vector");
+    require(EnvelopeCodec::decode(readVector("invalid_exponent.json")).validation.error
+            == ContractError::InvalidInteger, "shared exponent vector");
+    const auto tooLargeInteger = std::string(R"({"value":9007199254740992})");
+    require(EnvelopeCodec::decode(tooLargeInteger).validation.error == ContractError::InvalidInteger,
+            "2^53 rejected before schema");
+
+    const auto aclDocument = QJsonDocument::fromJson(QByteArray::fromStdString(readVector("acl_vectors.json")));
+    require(aclDocument.isObject(), "shared acl vector parse");
+    const auto aclRoot = aclDocument.object();
+    AclContext vectorContext{false, "device-1", "target-1", "operator-1", "desktop-1",
+                             ProvisioningScope::View};
+    for (const auto entryValue : aclRoot["operatorPublish"].toArray()) {
+        const auto entry = entryValue.toObject();
+        const auto vectorTopic = entry["topic"].toString().toStdString();
+        vectorContext.scope = ProvisioningScope::View;
+        require(AclPolicy::authorize(vectorContext, Access::Publish, vectorTopic).ok == entry["view"].toBool(),
+                "shared view acl vector");
+        vectorContext.scope = ProvisioningScope::Control;
+        require(AclPolicy::authorize(vectorContext, Access::Publish, vectorTopic).ok == entry["control"].toBool(),
+                "shared control acl vector");
+    }
 
     require(TemporalPolicy::validate(1000, 3000, 2000).ok, "ttl valid");
     require(TemporalPolicy::validate(1000, 500, 2000).error == ContractError::Expired, "ttl expired");
@@ -83,6 +123,11 @@ int main()
     require(candidates.accept({"candidate:1 1 UDP 1 192.0.2.1 9 typ host", "0", false}).error == ContractError::DuplicateCandidate, "candidate duplicate");
     require(candidates.accept({{}, {}, true}).ok, "candidate eoc");
     require(candidates.accept({"candidate:2", "0", false}).error == ContractError::CandidateAfterEnd, "candidate after eoc");
+    CandidatePolicy capacity;
+    for (int i = 0; i < 64; ++i)
+        require(capacity.accept({"candidate:" + std::to_string(i), "0", false}).ok, "candidate capacity 64");
+    require(capacity.accept({"candidate:65", "0", false}).error == ContractError::LimitExceeded,
+            "candidate capacity 65");
 
     MqttRuntimeConfig defaults;
     require(validateMqttRuntimeConfig(defaults).ok, "safe defaults");

@@ -101,6 +101,7 @@ public:
 struct MessagePolicy final {
     int qos{1};
     bool retained{false};
+    std::uint32_t messageExpirySeconds{10};
     std::uint64_t maximumTtlMs{120000};
     std::size_t maximumPayloadBytes{kMaxEnvelopeBytes};
     bool requiresAck{true};

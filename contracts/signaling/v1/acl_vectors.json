@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "signaling-acl-vectors/v1",
+  "context": {
+    "deviceId": "device-1",
+    "mqttControlTargetId": "target-1",
+    "userId": "operator-1",
+    "clientInstanceId": "desktop-1"
+  },
+  "operatorPublish": [
+    {"topic":"rtmp-monitor/v1/signaling/to/device/device-1/from/operator/operator-1/desktop-1","view":true,"control":true},
+    {"topic":"rtmp-monitor/v1/control/to/device/target-1/from/operator/operator-1/desktop-1/command","view":false,"control":true},
+    {"topic":"rtmp-monitor/v1/control/to/device/other-target/from/operator/operator-1/desktop-1/command","view":false,"control":false}
+  ]
+}

@@ -195,32 +195,106 @@ bool extractIdentity(const QJsonValue &value, std::string &kind, std::string &id
         || !object["id"].isString()) return false;
     kind = object["kind"].toString().toStdString();
     id = object["id"].toString().toStdString();
-    if (kind != "device" && kind != "operator" && kind != "authority") return false;
+    if (kind != "device" && kind != "operator" && kind != "provisioner") return false;
     return validOpaque(id);
 }
 
 bool payloadFieldsValid(std::string_view type, const QJsonObject &payload)
 {
-    if (type == "signaling.offer" || type == "signaling.answer")
+    auto strings = [&](const std::set<QString> &fields) {
+        if (!hasExactFields(payload, fields)) return false;
+        return std::all_of(fields.begin(), fields.end(), [&](const QString &field) { return payload[field].isString(); });
+    };
+    auto integer = [&](const char *field) { return payload[field].isDouble(); };
+    if (type == "device.birth")
+        return hasExactFields(payload, {"bootId", "connectionPresenceId", "agentVersion", "startedAtUtc", "status"})
+            && payload["bootId"].isString() && payload["connectionPresenceId"].isString()
+            && payload["agentVersion"].isString() && payload["startedAtUtc"].isString()
+            && payload["status"].toString() == "online";
+    if (type == "device.presence")
+        return hasExactFields(payload, {"bootId", "connectionPresenceId", "status", "ready", "heartbeatSequence"})
+            && payload["bootId"].isString() && payload["connectionPresenceId"].isString()
+            && (payload["status"].toString() == "online" || payload["status"].toString() == "offline")
+            && payload["ready"].isBool() && integer("heartbeatSequence");
+    if (type == "device.capabilities")
+        return hasExactFields(payload, {"revision", "videoCodec", "width", "height", "fps", "profileLevelId", "packetizationMode", "controlSupported"})
+            && integer("revision") && payload["videoCodec"].isString() && integer("width") && integer("height")
+            && integer("fps") && payload["profileLevelId"].isString() && integer("packetizationMode")
+            && payload["controlSupported"].isBool();
+    if (type == "device.busy")
+        return hasExactFields(payload, {"busy", "activeSinceUtc"}) && payload["busy"].isBool()
+            && (payload["activeSinceUtc"].isString() || payload["activeSinceUtc"].isNull());
+    if (type == "device.heartbeat")
+        return hasExactFields(payload, {"bootId", "connectionPresenceId", "heartbeatSequence", "observedAtUtc"})
+            && payload["bootId"].isString() && payload["connectionPresenceId"].isString()
+            && integer("heartbeatSequence") && payload["observedAtUtc"].isString();
+    if (type == "device.telemetry")
+        return hasExactFields(payload, {"sampleAtUtc", "cpuPermille", "memoryBytes", "temperatureMilliC", "encoderFpsMilli", "uplinkKbps"})
+            && payload["sampleAtUtc"].isString()
+            && (payload["cpuPermille"].isDouble() || payload["cpuPermille"].isNull())
+            && (payload["memoryBytes"].isDouble() || payload["memoryBytes"].isNull())
+            && (payload["temperatureMilliC"].isDouble() || payload["temperatureMilliC"].isNull())
+            && (payload["encoderFpsMilli"].isDouble() || payload["encoderFpsMilli"].isNull())
+            && (payload["uplinkKbps"].isDouble() || payload["uplinkKbps"].isNull());
+    if (type == "session.request")
+        return hasExactFields(payload, {"requestNonce", "requestedDeviceId", "requestedRole", "requestedScopes", "capabilitiesRevision"})
+            && payload["requestNonce"].isString() && payload["requestNonce"].toString().size() == 43
+            && payload["requestedDeviceId"].isString() && payload["requestedRole"].toString() == "viewer"
+            && payload["requestedScopes"].isArray() && integer("capabilitiesRevision");
+    if (type == "session.accept")
+        return hasExactFields(payload, {"requestNonce", "authorizationExpiresAtUtc", "capabilitiesRevision", "grantedScopes"})
+            && payload["requestNonce"].isString() && payload["authorizationExpiresAtUtc"].isString()
+            && integer("capabilitiesRevision") && payload["grantedScopes"].isArray();
+    if (type == "session.reject")
+        return hasExactFields(payload, {"requestNonce", "code", "retryable"}, {"retryAfterMs"})
+            && payload["requestNonce"].isString() && payload["code"].isString() && payload["retryable"].isBool()
+            && (!payload.contains("retryAfterMs") || (payload["retryable"].toBool() && integer("retryAfterMs")));
+    if (type == "session.cancel" || type == "session.cancelled" || type == "session.timeout" || type == "session.closed")
+        return strings({"reasonCode"});
+    if (type == "session.resume")
+        return strings({"bootId", "lastPeerMessageId", "previousAttemptId"});
+    if (type == "session.authorization.renewed")
+        return strings({"newSessionNonce", "newExpiresAtUtc", "oldNonceValidUntilUtc"});
+    if (type == "session.authorization.activated")
+        return strings({"renewedMessageId", "activatedAtUtc"});
+    if (type == "webrtc.offer" || type == "webrtc.answer")
         return hasExactFields(payload, {"sdp"}) && payload["sdp"].isString()
             && payload["sdp"].toString().toUtf8().size() <= static_cast<int>(kMaxSdpBytes);
-    if (type == "signaling.candidate")
-        return hasExactFields(payload, {"candidate", "mid", "mLineIndex"})
+    if (type == "webrtc.ice_candidate")
+        return hasExactFields(payload, {"candidate", "mid"})
             && payload["candidate"].isString() && payload["mid"].isString()
-            && payload["mLineIndex"].isDouble()
             && payload["candidate"].toString().toUtf8().size() <= static_cast<int>(kMaxCandidateBytes)
             && payload["mid"].toString().toUtf8().size() <= static_cast<int>(kMaxMidBytes);
-    if (type == "signaling.end_of_candidates") return payload.isEmpty();
-    if (type == "message.ack") return hasExactFields(payload, {"result"}) && payload["result"].isString();
-    if (type == "message.rejected") return hasExactFields(payload, {"code"}) && payload["code"].isString();
-    if (type == "control.command") return hasExactFields(payload, {"command"}) && payload["command"].isString();
-    if (type == "control.receipt" || type == "control.safety")
-        return hasExactFields(payload, {"code"}) && payload["code"].isString();
-    if (type == "session.reject") return hasExactFields(payload, {"reason"}) && payload["reason"].isString();
-    if (type == "presence.online" || type == "presence.offline" || type == "capabilities"
-        || type == "busy" || type == "heartbeat" || type == "telemetry.snapshot"
-        || type == "session.request" || type == "session.accept" || type == "session.cancel")
-        return payload.size() <= 64;
+    if (type == "webrtc.ice_complete")
+        return hasExactFields(payload, {"candidateCount"}) && integer("candidateCount");
+    if (type == "webrtc.restart_requested") return strings({"reasonCode", "failedAttemptId"});
+    if (type == "webrtc.restart_accepted") return strings({"previousAttemptId"});
+    if (type == "message.ack")
+        return hasExactFields(payload, {"acknowledgedMessageId", "outcome"})
+            && payload["acknowledgedMessageId"].isString()
+            && (payload["outcome"].toString() == "applied" || payload["outcome"].toString() == "buffered"
+                || payload["outcome"].toString() == "duplicate");
+    if (type == "message.rejected" || type == "webrtc.protocol_error")
+        return hasExactFields(payload, {"rejectedMessageId", "code", "retryable"})
+            && payload["rejectedMessageId"].isString() && payload["code"].isString() && payload["retryable"].isBool();
+    if (type == "control.lease.request")
+        return hasExactFields(payload, {"mqttControlTargetId", "requestedTtlMs", "purpose"})
+            && payload["mqttControlTargetId"].isString() && integer("requestedTtlMs") && payload["purpose"].toString() == "control";
+    if (type == "control.lease.granted")
+        return hasExactFields(payload, {"controlLeaseId", "mqttControlTargetId", "expiresAtUtc", "initialSequence"})
+            && payload["controlLeaseId"].isString() && payload["mqttControlTargetId"].isString()
+            && payload["expiresAtUtc"].isString() && integer("initialSequence");
+    if (type == "control.lease.revoked") return strings({"controlLeaseId", "reasonCode"});
+    if (type == "session.peer_state" || type == "session.media_state" || type == "session.direct_failed")
+        return strings({"stateOrCode", "observedAtUtc"});
+    if (type == "identity.authorization_revoked")
+        return hasExactFields(payload, {"registryVersion", "affectedPrincipalKind", "affectedPlane", "affectedPrincipalId",
+            "affectedClientInstanceId", "affectedDeviceId", "revokedScopes", "credentialIds", "effectiveAtUtc", "reasonCode"})
+            && integer("registryVersion") && payload["affectedPrincipalKind"].isString() && payload["affectedPlane"].isString()
+            && payload["affectedPrincipalId"].isString()
+            && (payload["affectedClientInstanceId"].isString() || payload["affectedClientInstanceId"].isNull())
+            && payload["affectedDeviceId"].isString() && payload["revokedScopes"].isArray()
+            && payload["credentialIds"].isArray() && payload["effectiveAtUtc"].isString() && payload["reasonCode"].isString();
     return false;
 }
 
@@ -371,14 +445,30 @@ ValidationResult AclPolicy::authorize(const AclContext &c, Access a, std::string
 
 std::optional<MessagePolicy> policyFor(std::string_view type)
 {
-    if (type == "message.ack" || type == "message.rejected") return MessagePolicy{1, false, 120000, 4096, false};
-    if (type == "signaling.offer" || type == "signaling.answer") return MessagePolicy{1, false, 120000, kMaxSdpBytes, true};
-    if (type == "signaling.candidate") return MessagePolicy{1, false, 120000, kMaxCandidateBytes, true};
-    if (type == "signaling.end_of_candidates") return MessagePolicy{1, false, 120000, 1024, true};
+    if (type == "device.birth" || type == "device.presence")
+        return MessagePolicy{1, true, 45, 30000, kMaxEnvelopeBytes, false};
+    if (type == "device.capabilities")
+        return MessagePolicy{1, true, 86400, 86400000, kMaxEnvelopeBytes, false};
+    if (type == "device.busy" || type == "device.heartbeat")
+        return MessagePolicy{1, false, 10, 30000, kMaxEnvelopeBytes, false};
+    if (type == "device.telemetry")
+        return MessagePolicy{0, false, 5, 5000, kMaxEnvelopeBytes, false};
+    if (type == "message.ack" || type == "message.rejected" || type == "webrtc.protocol_error")
+        return MessagePolicy{1, false, 10, 10000, 4096, false};
+    if (type == "webrtc.offer" || type == "webrtc.answer")
+        return MessagePolicy{1, false, 30, 30000, kMaxSdpBytes, true};
+    if (type == "webrtc.ice_candidate")
+        return MessagePolicy{1, false, 10, 10000, kMaxCandidateBytes, true};
+    if (type == "webrtc.ice_complete" || type == "webrtc.restart_requested" || type == "webrtc.restart_accepted")
+        return MessagePolicy{1, false, 15, 15000, 4096, true};
+    if (type == "session.peer_state" || type == "session.media_state" || type == "session.direct_failed")
+        return MessagePolicy{0, false, 5, 5000, 4096, false};
     if (type == "session.request" || type == "session.accept" || type == "session.reject" || type == "session.cancel"
-        || type == "presence.online" || type == "presence.offline" || type == "capabilities" || type == "busy"
-        || type == "heartbeat" || type == "telemetry.snapshot" || type == "control.command"
-        || type == "control.receipt" || type == "control.safety") return MessagePolicy{};
+        || type == "session.cancelled" || type == "session.timeout" || type == "session.closed" || type == "session.resume"
+        || type == "session.authorization.renewed" || type == "session.authorization.activated"
+        || type == "control.lease.request" || type == "control.lease.granted" || type == "control.lease.revoked"
+        || type == "identity.authorization_revoked")
+        return MessagePolicy{1, false, 10, 10000, kMaxEnvelopeBytes, true};
     return std::nullopt;
 }
 
@@ -396,8 +486,10 @@ EnvelopeDecodeResult EnvelopeCodec::decode(std::string_view json)
     if (parseError.error != QJsonParseError::NoError || !document.isObject())
         return {failure(ContractError::InvalidJson), std::nullopt};
     const auto object = document.object();
-    const std::set<QString> required{"schemaVersion", "messageId", "messageType", "sentAtUtc", "ttlMs", "sourceIdentity", "targetIdentity", "sequence", "payload"};
-    const std::set<QString> optional{"sourceClientInstanceId", "sessionId", "attemptId", "correlationId", "sessionNonce"};
+    const std::set<QString> required{"schemaVersion", "messageId", "messageType", "sentAtUtc", "ttlMs",
+        "sourceIdentity", "sourceClientInstanceId", "targetIdentity", "sessionId", "attemptId",
+        "correlationId", "sequence", "sessionNonce", "payload"};
+    const std::set<QString> optional;
     for (const auto &field : required) if (!object.contains(field)) return {failure(ContractError::MissingField), std::nullopt};
     if (!hasExactFields(object, required, optional)) return {failure(ContractError::UnknownField), std::nullopt};
     if (!object["schemaVersion"].isDouble() || object["schemaVersion"].toInt() != 1
@@ -419,11 +511,13 @@ EnvelopeDecodeResult EnvelopeCodec::decode(std::string_view json)
     const auto sent = QDateTime::fromString(QString::fromStdString(e.sentAtUtc), Qt::ISODateWithMs);
     if (!sent.isValid() || e.sentAtUtc.empty() || e.sentAtUtc.back() != 'Z')
         return {failure(ContractError::InvalidJson), std::nullopt};
-    if (!extractIdentity(object["sourceIdentity"], e.sourceKind, e.sourceId)
-        || !extractIdentity(object["targetIdentity"], e.targetKind, e.targetId))
+    if (!extractIdentity(object["sourceIdentity"], e.sourceKind, e.sourceId))
+        return {failure(ContractError::InvalidIdentity), std::nullopt};
+    if (!object["targetIdentity"].isNull()
+        && !extractIdentity(object["targetIdentity"], e.targetKind, e.targetId))
         return {failure(ContractError::InvalidIdentity), std::nullopt};
     auto optionalString = [&](const char *name, std::string &target) {
-        if (!object.contains(name)) return true;
+        if (object[name].isNull()) return true;
         if (!object[name].isString()) return false;
         target = object[name].toString().toStdString(); return true;
     };
@@ -434,8 +528,16 @@ EnvelopeDecodeResult EnvelopeCodec::decode(std::string_view json)
     if ((!e.sourceClientInstanceId.empty() && !validOpaque(e.sourceClientInstanceId))
         || (!e.sessionId.empty() && !validUuid(e.sessionId)) || (!e.attemptId.empty() && !validUuid(e.attemptId))
         || (!e.correlationId.empty() && !validUuid(e.correlationId))
-        || (!e.sessionNonce.empty() && !validOpaque(e.sessionNonce)))
+        || (!e.sessionNonce.empty() && (e.sessionNonce.size() != 43 || !validOpaque(e.sessionNonce))))
         return {failure(ContractError::InvalidIdentity), std::nullopt};
+    if ((e.sourceKind == "operator") != !e.sourceClientInstanceId.empty())
+        return {failure(ContractError::InvalidIdentity), std::nullopt};
+    const bool broadcast = e.messageType == "device.birth" || e.messageType == "device.presence"
+        || e.messageType == "device.capabilities" || e.messageType == "device.busy";
+    if (broadcast && (!e.targetId.empty() || !e.sessionId.empty() || !e.attemptId.empty()
+                      || !e.correlationId.empty() || !e.sessionNonce.empty()))
+        return {failure(ContractError::InvalidIdentity), std::nullopt};
+    if (!broadcast && e.targetId.empty()) return {failure(ContractError::InvalidIdentity), std::nullopt};
     const auto payload = object["payload"].toObject();
     if (!payloadFieldsValid(e.messageType, payload)) return {failure(ContractError::UnknownField), std::nullopt};
     const auto payloadBytes = QJsonDocument(payload).toJson(QJsonDocument::Compact);
@@ -454,11 +556,15 @@ std::optional<std::string> EnvelopeCodec::encode(const Envelope &e)
     QJsonObject target{{"kind", QString::fromStdString(e.targetKind)}, {"id", QString::fromStdString(e.targetId)}};
     QJsonObject object{{"schemaVersion", e.schemaVersion}, {"messageId", QString::fromStdString(e.messageId)},
         {"messageType", QString::fromStdString(e.messageType)}, {"sentAtUtc", QString::fromStdString(e.sentAtUtc)},
-        {"ttlMs", static_cast<double>(e.ttlMs)}, {"sourceIdentity", source}, {"targetIdentity", target},
-        {"sequence", static_cast<double>(e.sequence)}, {"payload", payload.object()}};
-    auto add = [&](const char *name, const std::string &value) { if (!value.empty()) object[name] = QString::fromStdString(value); };
-    add("sourceClientInstanceId", e.sourceClientInstanceId); add("sessionId", e.sessionId); add("attemptId", e.attemptId);
-    add("correlationId", e.correlationId); add("sessionNonce", e.sessionNonce);
+        {"ttlMs", static_cast<double>(e.ttlMs)}, {"sourceIdentity", source},
+        {"sourceClientInstanceId", e.sourceClientInstanceId.empty() ? QJsonValue{} : QJsonValue(QString::fromStdString(e.sourceClientInstanceId))},
+        {"targetIdentity", e.targetId.empty() ? QJsonValue{} : QJsonValue(target)},
+        {"sessionId", e.sessionId.empty() ? QJsonValue{} : QJsonValue(QString::fromStdString(e.sessionId))},
+        {"attemptId", e.attemptId.empty() ? QJsonValue{} : QJsonValue(QString::fromStdString(e.attemptId))},
+        {"correlationId", e.correlationId.empty() ? QJsonValue{} : QJsonValue(QString::fromStdString(e.correlationId))},
+        {"sequence", static_cast<double>(e.sequence)},
+        {"sessionNonce", e.sessionNonce.empty() ? QJsonValue{} : QJsonValue(QString::fromStdString(e.sessionNonce))},
+        {"payload", payload.object()}};
     const auto bytes = QJsonDocument(object).toJson(QJsonDocument::Compact);
     std::string encoded(bytes.constData(), static_cast<std::size_t>(bytes.size()));
     if (!decode(encoded).validation.ok) return std::nullopt;

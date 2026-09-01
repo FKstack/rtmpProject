@@ -26,6 +26,52 @@ func TestDeviceArtifact(t *testing.T) {
 	}
 }
 
+func TestSharedACLVectors(t *testing.T) {
+	_, source, _, _ := runtime.Caller(0)
+	root := filepath.Clean(filepath.Join(filepath.Dir(source), "..", "..", "..", ".."))
+	data, err := os.ReadFile(filepath.Join(root, "contracts", "signaling", "v1", "acl_vectors.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var vectors struct {
+		SchemaVersion   string `json:"schemaVersion"`
+		OperatorPublish []struct {
+			Topic   string `json:"topic"`
+			View    bool   `json:"view"`
+			Control bool   `json:"control"`
+		} `json:"operatorPublish"`
+	}
+	if err := json.Unmarshal(data, &vectors); err != nil {
+		t.Fatal(err)
+	}
+	if vectors.SchemaVersion != "signaling-acl-vectors/v1" {
+		t.Fatal("unknown shared vector version")
+	}
+	for _, scope := range []string{"view", "control"} {
+		artifact, err := PairArtifact("device-1", "target-1", "operator-1", "desktop-1", scope)
+		if err != nil {
+			t.Fatal(err)
+		}
+		published := map[string]bool{}
+		for _, permission := range artifact.Permissions {
+			if permission.PrincipalRef == "operator-signal" || permission.PrincipalRef == "operator-control" {
+				if permission.Direction == "publish" {
+					published[permission.Topic] = true
+				}
+			}
+		}
+		for _, vector := range vectors.OperatorPublish {
+			expected := vector.View
+			if scope == "control" {
+				expected = vector.Control
+			}
+			if published[vector.Topic] != expected {
+				t.Fatalf("shared ACL mismatch for %s", vector.Topic)
+			}
+		}
+	}
+}
+
 func TestPairScopes(t *testing.T) {
 	view, err := PairArtifact("device-1", "target-1", "operator-1", "desktop-1", "view")
 	if err != nil {

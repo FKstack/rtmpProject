@@ -1184,9 +1184,12 @@ if(BUILD_TESTING)
     add_executable(rtmp_monitor_direct_contracts_test
         tests/DirectContractsTest.cpp)
     target_link_libraries(rtmp_monitor_direct_contracts_test PRIVATE
+        Qt6::Core
         rtmp_monitor_identity_contracts
         rtmp_monitor_signaling_contracts
         rtmp_monitor_runtime_config)
+    target_compile_definitions(rtmp_monitor_direct_contracts_test PRIVATE
+        "RTMP_MONITOR_SIGNALING_VECTOR_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/contracts/signaling/v1\"")
     rtmp_monitor_apply_project_options(rtmp_monitor_direct_contracts_test)
     add_test(NAME rtmp_monitor_direct_contracts_test
         COMMAND rtmp_monitor_direct_contracts_test)
