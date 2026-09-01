@@ -1,5 +1,20 @@
 # RtmpMonitor 当前项目快照
 
+> P2P-DIRECT-00 本地基线（2026-09-01）：架构风险 R2。首阶段产品信令冻结为 MQTT 5 over TLS，
+> signaling/control 分连接、principal、topic、ACL、队列和状态机；legacy `device/control`、
+> `device/status` 与默认离线保持不变。旧 WSS Draft 1 已归档，ADR-046 只覆盖 ADR-044 的首阶段
+> WSS/TURN 选择，WebRTC 媒体、MQTT 控制和组合根授权边界继续有效。
+
+> P2P-DIRECT-00 实际验证：新增 Windows BUILD_TESTING-only Broker fixture，PRIVATE 链接
+> `paho-mqtt3as` 并使用独立输出目录；fresh Debug/Release OFF 40/40、40/40，ON 50/50、50/50，
+> ARM64 RASTER/GLES3 WebRTC-OFF 交叉构建通过。最终 OFF/ON DAG 为 341/483 边，无 lower→product
+> 反向边；敏感端点扫描为零。获授权 legacy 设施只完成 MQTT5 CONNECT、随机精确 SUBACK、无 payload、
+> UNSUBACK 和 DISCONNECT，不发布、不登录管理面，也不构成产品资格。
+
+> P2P-DIRECT-00 门禁：本机/WSL 没有隔离 EMQX/Mosquitto 运行环境，TLS/Auth/ACL/retained/QoS/
+> expiry/limit 恶意客户端矩阵未执行，因此阶段诚实保持 `blocked(broker_candidate)`，不得进入
+> `P2P-DIRECT-01`。真实端点只位于忽略的本机配置，未进入 Git、文档、脚本或结果。
+
 > 全历程与产品化规划交接（2026-08-31）：新增受跟踪的
 > `docs/project_evolution_architecture_and_productization_handoff.md`，以实施起点 `Beta` / `12f731b`、
 > 43 个可审计提交、实际 CMake/headers/schema 和 Week 10 测试为权威，完整记录 RTMP 文档重建历史、

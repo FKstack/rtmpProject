@@ -26,5 +26,10 @@ EMQX 任一门禁失败后才运行 Mosquitto 2.1.2 同等 fixture，不自研 B
 
 ## 当前结论
 
-`blocked(broker_candidate)`：隔离 EMQX/Mosquitto 技术 fixture 与供应链审计尚未形成实际结果。公网
-MQTTS staging 部署属于 `P2P-DIRECT-02`，不得用 legacy 明文 listener 代替。
+受控 legacy 观察实际通过 MQTT 5 CONNECT、随机精确 topic SUBACK、无 payload、UNSUBACK 和
+DISCONNECT；没有 publish，也没有订阅 control/status。该结果只证明当前兼容性。
+
+`blocked(broker_candidate)`：本机与既有 WSL 均未安装 Docker、Podman、EMQX 或 Mosquitto 隔离运行
+环境，因而没有执行产品候选的 TLS/Auth/ACL/retained/QoS/expiry/limit 负向矩阵。fixture 的
+`capability` 模式在完整矩阵缺失时固定输出 `blocked`，不能把核心 TLS connect/subscribe 冒充资格。
+公网 MQTTS staging 部署属于 `P2P-DIRECT-02`，不得用 legacy 明文 listener 代替。

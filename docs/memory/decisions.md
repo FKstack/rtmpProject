@@ -906,7 +906,7 @@
 ## ADR-046 第一阶段采用隔离的 MQTT TLS 信令并排除 legacy 公网测试 Broker
 
 - 日期：2026-09-01
-- 状态：已确认；`P2P-DIRECT-00` 技术候选资格待完成
+- 状态：已采用；`P2P-DIRECT-00` 本地门禁完成，产品 Broker 候选仍阻塞
 - 背景：现有 RTMP 产品使用默认关闭、Broker 地址为空的单客户端 MQTT 3.1.1 控制路径，
   `device/control` 与 `device/status` 分别承担嵌入式设备控制和状态观察。用户另行授权的远程设施只
   提供公网明文 MQTT 与 HTTP 管理面，用于兼容性观察，不具备产品 MQTTS、安全或许可资格。ADR-044
@@ -928,9 +928,10 @@
 - 影响：本 ADR 只覆盖 ADR-044 的 WSS/TURN 首阶段选择；ADR-044 的 WebRTC 媒体、MQTT 控制、组合根
   授权绑定、四路独立会话和禁止静默 RTMP fallback 继续有效。现有 schema、legacy topic、产品线程、
   默认离线行为和运行时依赖不变。后续若进入第三方托管/客户嵌入、TURN 或 WSS，必须新建许可/架构 ADR。
-- 验证证据：当前只读事实与最终候选资格分别记录在
-  `docs/versions/webrtc-v2/p2p-direct-00/broker_decision.md` 和 `test_results.md`；未完成的隔离候选
-  fixture 不得预写为通过。
+- 验证证据：fresh Windows OFF 40/40、40/40，ON 50/50、50/50；ARM64 RASTER/GLES3 OFF、
+  341/483 条 DAG 边、fixture self-test、敏感扫描和无 publish legacy observe 通过。隔离产品 Broker
+  的 TLS/Auth/ACL/retained/QoS/expiry/limit 矩阵未执行，故阶段为 `blocked(broker_candidate)`；详见
+  `docs/versions/webrtc-v2/p2p-direct-00/broker_decision.md` 和 `test_results.md`。
 - 相关文件：`docs/roadmap/RtmpMonitor_WebRTC_MQTT_Signaling_Direct_P2P_Productization_Outline_v2.md`、
   `docs/roadmap/RtmpMonitor_WebRTC_MQTT_Signaling_Direct_P2P_Implementation_Plan.md`、
   `docs/versions/webrtc-v2/p2p-direct-00/`

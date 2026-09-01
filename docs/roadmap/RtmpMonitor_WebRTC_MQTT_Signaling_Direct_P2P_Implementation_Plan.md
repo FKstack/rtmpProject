@@ -5,7 +5,8 @@
 > 权威总纲：`RtmpMonitor_WebRTC_MQTT_Signaling_Direct_P2P_Productization_Outline_v2.md`
 > 实施基线：`Beta` / `23c0949`
 > 风险等级：R2
-> 状态：v2总纲决策已冻结；本实施计划待 `P2P-DIRECT-00` 以真实 Broker/构建证据确认
+> 状态：`P2P-DIRECT-00` 本地构建、DAG、ARM 与 legacy 观察已完成；隔离产品 Broker 候选仍为
+> `blocked(broker_candidate)`，不得进入 `P2P-DIRECT-01`
 
 本文把 MQTT 信令版总纲展开为可直接执行的阶段、接口、协议、部署、验证和回滚计划。本文不改变总纲约定；实际源码、CMake、运行结果和测试结果高于本文。任何尚未取得的 Broker、摄像头、物理网络或 ARM 真机证据均保持“待验证”。
 

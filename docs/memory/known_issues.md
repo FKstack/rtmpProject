@@ -203,6 +203,22 @@
 - 回滚/监测：如需回滚，移除 `codex-auth.conf` drop-in、恢复受保护的旧 store 并重启；但旧凭据已过期，回滚后提取会再次失败。Windows Codex 退出登录或认证文件被移动后，应先检查 bootstrap 路径、auth 有效期和 `/api/v1/tasks` 终态，不能只看 commit accepted。
 - 相关文档和代码：`docs/project_handoff.md`、`docs/versions/rtmp-v1/guides/development/openviking_usage_and_testing.md`、`/etc/systemd/system/openviking.service.d/codex-auth.conf`
 
+## ISSUE-018 P2P-DIRECT-00 缺少隔离产品 Broker 候选资格
+
+- 状态：未解决；本地代码/构建门禁通过，阶段为 `blocked(broker_candidate)`。
+- 影响范围：MQTT TLS signaling 的 EMQX/Mosquitto 选型与进入 `P2P-DIRECT-01` 的资格。
+- 已验证现象：Windows OFF/ON 四矩阵 40/40、40/40、50/50、50/50，ARM64 RASTER/GLES3 OFF、
+  fixture self-test、DAG 和敏感扫描通过；获授权 legacy 服务只完成无 publish 的随机 SUBACK 观察。
+- 复现步骤：执行 `scripts/webrtc/qualify_p2p_direct_00.ps1 -Action Capability` 时必须提供隔离 MQTTS
+  候选、CA 与 credential 文件；当前没有这些输入，fixture 会拒绝把核心观察写成完整资格。
+- 已排除内容：不是 Paho TLS 链接、Windows DLL 布局、WebRTC OFF 污染、legacy MQTT5 SUBACK 或 ARM
+  交叉构建问题。
+- 下一步验证：提供隔离 EMQX 6.2.3 单节点及脱敏配置，完成错 CA/hostname/credential、精确 ACL、
+  retained/QoS/expiry、packet/inflight/queue/connection/rate 和恶意客户端矩阵；失败后才评估 Mosquitto。
+- 临时规避：现有公网明文 MQTT/HTTP 管理设施永远只作 legacy 测试，不进入默认值、产品候选或发布声明。
+- 相关文档和代码：`docs/versions/webrtc-v2/p2p-direct-00/`、
+  `scripts/webrtc/qualify_p2p_direct_00.ps1`、`tests/P2PDirectBrokerFixtureMain.cpp`
+
 ## ISSUE-XXX 标题
 
 - 状态：

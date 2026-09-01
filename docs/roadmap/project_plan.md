@@ -1442,14 +1442,22 @@ CTest 14/14 通过；ARM64 RASTER 构建 NEEDED 无 Qt6OpenGL*/EGL/GLES，GLES3 
 
 - Week 1～10 的交付口径保持为 WebRTC V2 P2P Beta；完成 Week 10 不自动等于生产级替代 RTMP。
 - Beta 之后的产品主线是每一路设备视频对应一条独立 WebRTC 会话，独占 PeerConnection、StreamId、
-  generation、队列和 UI tile；Direct 优先，复杂 NAT/防火墙场景使用 TURN Relay。
-- MQTT 继续作为硬件与软件之间的命令、回执、状态和遥测基础设施；WSS 只负责自动信令、trickle ICE
-  和短期会话授权。WebRTC DataChannel 不在本阶段替换 MQTT。
+  generation、队列和 UI tile；第一阶段严格 Direct-only，失败进入可诊断状态，不部署 TURN。
+- 第一阶段使用 MQTT 5 over TLS 自动交换 Offer/Answer/trickle ICE 和短期会话消息；MQTT control 继续
+  承担硬件命令、回执、状态和遥测。两平面可共用未来合格 Broker 基础设施，但连接、principal、topic、
+  ACL、payload、队列和状态机隔离。WSS 和 TURN 只有未来新 ADR 才能进入。
 - 产品组合根必须显式绑定已授权设备身份、操作员、WebRTC 视频会话和 MQTT 控制目标；视频建连、MQTT
   在线或 tile 切换都不能隐式授予或切换控制权限。
-- RTMP 迁移期保留但不得静默 fallback。只有 WSS、TURN、身份绑定、自动重连、真实网络/多设备/长时
-  资源和发布包门禁全部通过后，RTMP 才退出产品实时视频主链路。
-- 完整职责分面、阶段顺序和退役门禁见 [WebRTC V2 总计划第 9 节](webrtc_v2_project_plan.md#9-week-10-后-webrtc-first-低延迟远程操作产品化主线)。
+- RTMP 迁移期保留但不得静默 fallback。只有 MQTT TLS 信令、身份绑定、自动重连、声明支持的 Direct
+  网络、多设备/长时资源和发布包门禁全部通过后，RTMP 才退出产品实时视频主链路；复杂网络覆盖若
+  重新要求 TURN，必须另立阶段且不能倒推为当前门禁已通过。
+- 最新职责分面、阶段顺序和退役门禁见
+  [MQTT 信令 Direct P2P 实施计划](RtmpMonitor_WebRTC_MQTT_Signaling_Direct_P2P_Implementation_Plan.md)；
+  `webrtc_v2_project_plan.md` 第 9 节只保留 Week 10 结束时的历史路线背景。
+
+2026-09-01 更新：ADR-046 与 MQTT 信令 v2 总纲已覆盖本节原 WSS/TURN 首阶段描述。P2P-DIRECT-00
+本地四矩阵、ARM、DAG 和 legacy 观察通过，但隔离产品 Broker 候选未完成，阶段为
+`blocked(broker_candidate)`，不解锁下一阶段。
 
 ## 26. WebRTC V2 Week 10 本地 Beta 资格候选（2026-08-31）
 
