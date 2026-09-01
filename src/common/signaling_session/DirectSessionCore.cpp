@@ -134,6 +134,7 @@ bool DirectOperatorCore::start()
         [this](const SignalingFrame &frame) { receive(frame); });
     channel_.setStateHandler([this](SignalingChannelState state,
                                     const std::string &detail) {
+        snapshot_.channelState = state;
         if (state == SignalingChannelState::Error) {
             snapshot_.lastError = detail.empty() ? "channel_error" : detail;
             changed();
@@ -220,6 +221,7 @@ bool DirectOperatorCore::publishSessionMessage(const std::string &type,
     }
     SignalingPublish publish{*route, *encoded, policy->qos, policy->retained,
                                policy->messageExpirySeconds};
+    lastCommandPublish_ = publish;
     if (trackAck) {
         pendingMessageId_ = envelope.messageId;
         pendingPublish_ = publish;
@@ -237,6 +239,17 @@ bool DirectOperatorCore::publishSessionMessage(const std::string &type,
     ++snapshot_.published;
     changed();
     return true;
+}
+
+bool DirectOperatorCore::replayLastCommandForValidation()
+{
+    if (lastCommandPublish_.payload.empty()) return false;
+    const bool published = channel_.publish(lastCommandPublish_);
+    if (published) {
+        ++snapshot_.published;
+        changed();
+    }
+    return published;
 }
 
 void DirectOperatorCore::poll()
@@ -257,6 +270,23 @@ void DirectOperatorCore::poll()
 void DirectOperatorCore::receive(const SignalingFrame &frame)
 {
     ++snapshot_.received;
+    if (matches(identity_, frame, TopicKind::Presence)) {
+        const auto decodedPresence = EnvelopeCodec::decode(frame.payload);
+        if (!decodedPresence.validation.ok || !decodedPresence.envelope
+            || !validFramePolicy(frame, *decodedPresence.envelope)
+            || decodedPresence.envelope->messageType != "device.presence"
+            || decodedPresence.envelope->sourceKind != "device"
+            || decodedPresence.envelope->sourceId != identity_.deviceId) {
+            ++snapshot_.rejected;
+            snapshot_.lastError = "invalid_presence";
+        } else {
+            const auto state = payloadString(
+                decodedPresence.envelope->payloadJson, "status");
+            snapshot_.deviceReady = state && *state == "online";
+        }
+        changed();
+        return;
+    }
     if (!matches(identity_, frame, TopicKind::SignalToOperator)) {
         ++snapshot_.rejected;
         snapshot_.lastError = "wrong_topic";
@@ -336,6 +366,8 @@ DirectDeviceCore::DirectDeviceCore(ISignalingChannel &channel,
       clock_(clock ? std::move(clock) : DirectClock(systemNow)),
       ids_(ids ? std::move(ids) : DirectIdFactory(uuidV4))
 {
+    bootId_ = ids_();
+    presenceId_ = ids_();
 }
 
 bool DirectDeviceCore::start()
@@ -346,9 +378,12 @@ bool DirectDeviceCore::start()
         [this](const SignalingFrame &frame) { receive(frame); });
     channel_.setStateHandler([this](SignalingChannelState state,
                                     const std::string &detail) {
+        snapshot_.channelState = state;
         if (state == SignalingChannelState::Ready
-            && snapshot_.deviceState == DeviceAgentState::Offline)
+            && snapshot_.deviceState == DeviceAgentState::Offline) {
             snapshot_.deviceState = DeviceAgentState::Online;
+            publishPresence(true);
+        }
         if (state == SignalingChannelState::Error) {
             snapshot_.lastError = detail.empty() ? "channel_error" : detail;
             snapshot_.deviceState = DeviceAgentState::Faulted;
@@ -360,6 +395,8 @@ bool DirectDeviceCore::start()
 
 void DirectDeviceCore::stop()
 {
+    if (snapshot_.channelState == SignalingChannelState::Ready)
+        publishPresence(false);
     channel_.stop();
     snapshot_.deviceState = DeviceAgentState::Offline;
     changed();
@@ -457,6 +494,30 @@ bool DirectDeviceCore::publishReply(const Envelope &request,
     if (publish.payload.empty() || !channel_.publish(publish)) return false;
     ++snapshot_.published;
     cache_[request.messageId].push_back(std::move(publish));
+    return true;
+}
+
+bool DirectDeviceCore::publishPresence(bool online)
+{
+    const auto route = topic(identity_, TopicKind::Presence);
+    const auto policy = policyFor("device.presence");
+    if (!route || !policy) return false;
+    Envelope envelope;
+    envelope.messageId = ids_();
+    envelope.messageType = "device.presence";
+    envelope.sentAtUtc = timestamp(clock_());
+    envelope.ttlMs = policy->maximumTtlMs;
+    envelope.sourceKind = "device";
+    envelope.sourceId = identity_.deviceId;
+    envelope.sequence = ++presenceSequence_;
+    envelope.payloadJson = "{\"bootId\":\"" + bootId_
+        + "\",\"connectionPresenceId\":\"" + presenceId_
+        + "\",\"status\":\"" + (online ? "online" : "offline")
+        + "\",\"ready\":" + (online ? "true" : "false")
+        + ",\"heartbeatSequence\":" + std::to_string(presenceSequence_) + "}";
+    SignalingPublish publish = encodedPublish(envelope, *route);
+    if (publish.payload.empty() || !channel_.publish(publish)) return false;
+    ++snapshot_.published;
     return true;
 }
 

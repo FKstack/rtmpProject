@@ -43,8 +43,28 @@ class PlatformEventBridgeTest final : public QObject
 private slots:
     void mapsEdgesWithoutInitialOrRemovalNoise();
     void mapsControlFailuresAndShutdownHonestly();
+    void mapsSignalingTransportAsIndependentResource();
     void resourceIdsAreStableAndSanitized();
 };
+
+void PlatformEventBridgeTest::mapsSignalingTransportAsIndependentResource()
+{
+    QTemporaryDir directory;
+    EventCenterService service(directory.filePath(QStringLiteral("events.json")));
+    QVERIFY(service.initialize());
+    PlatformEventBridge bridge(&service);
+    bridge.observeMqttSignalingState(MqttConnectionState::Disconnected);
+    QCOMPARE(countType(service.events(), SecurityEventType::MqttConnectionLost), 0);
+    const auto resources = bridge.resources();
+    QVERIFY(std::any_of(resources.cbegin(), resources.cend(), [](const auto &item) {
+        return item.localResourceId == QStringLiteral("transport:mqtt-signaling");
+    }));
+    bridge.observeMqttSignalingState(MqttConnectionState::Connected);
+    bridge.observeMqttSignalingState(MqttConnectionState::Disconnected);
+    QCOMPARE(countType(service.events(), SecurityEventType::MqttConnectionLost), 1);
+    QCOMPARE(service.events().first().localResourceId,
+             QStringLiteral("transport:mqtt-signaling"));
+}
 
 void PlatformEventBridgeTest::mapsEdgesWithoutInitialOrRemovalNoise()
 {

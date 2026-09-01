@@ -118,6 +118,32 @@ void PlatformEventBridge::observeMqttState(MqttConnectionState state)
     }
 }
 
+void PlatformEventBridge::observeMqttSignalingState(MqttConnectionState state)
+{
+    if (!accepting_ || shutdownMode_) return;
+    if (!signalingRegistered_) {
+        signalingRegistered_ = true;
+        publishResources();
+    }
+    EventObservation observation;
+    observation.eventType = SecurityEventType::MqttConnectionLost;
+    observation.severity = SecurityEventSeverity::Medium;
+    observation.localResourceId = QStringLiteral("transport:mqtt-signaling");
+    observation.displayNameSnapshot = tr("MQTT 信令通道");
+    observation.identitySource = QStringLiteral("local");
+    observation.source = QStringLiteral("mqtt-signaling-state");
+    if (state == MqttConnectionState::Connected) {
+        signalingSeenConnected_ = true;
+        signalingFaultOpen_ = false;
+        submitRecovery(observation);
+    } else if (signalingSeenConnected_ && !signalingFaultOpen_
+               && state != MqttConnectionState::Connecting
+               && state != MqttConnectionState::Subscribing) {
+        signalingFaultOpen_ = true;
+        submitFault(observation);
+    }
+}
+
 void PlatformEventBridge::observeDeviceBound(const QString &deviceId)
 {
     const QString normalized = deviceId.trimmed();
@@ -283,6 +309,11 @@ QList<EventResourceDescriptor> PlatformEventBridge::resources() const
     values.insert(QStringLiteral("transport:mqtt-control"), {
         QStringLiteral("transport:mqtt-control"), {}, tr("MQTT 控制通道"),
         QStringLiteral("local")});
+    if (signalingRegistered_) {
+        values.insert(QStringLiteral("transport:mqtt-signaling"), {
+            QStringLiteral("transport:mqtt-signaling"), {},
+            tr("MQTT 信令通道"), QStringLiteral("local")});
+    }
     if (!mediaServerResourceId_.isEmpty()) {
         values.insert(mediaServerResourceId_, {
             mediaServerResourceId_, {}, tr("SRS 媒体服务器"),

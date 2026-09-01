@@ -8,6 +8,8 @@
 #include <QTextStream>
 #include <QThread>
 
+#include "RtmpMonitorBuildConfig.h"
+
 namespace {
 
 int defaultDecodeWorkerCount()
@@ -97,6 +99,20 @@ ApplicationOptionsParseStatus ApplicationOptions::parse(
         QStringLiteral("validation-layout"),
         QStringLiteral("Hide application chrome for controlled comparison recording.")
     );
+#if RTMP_MONITOR_HAS_WEBRTC
+    QCommandLineOption directConfigOption(
+        QStringLiteral("direct-config"),
+        QStringLiteral("Git 外的 DIRECT MQTT 运行配置。"),
+        QStringLiteral("ignored-json"));
+    QCommandLineOption directScenarioOption(
+        QStringLiteral("direct-validation-scenario"),
+        QStringLiteral("DIRECT 验证场景：normal、duplicate 或 reconnect。"),
+        QStringLiteral("scenario"));
+    QCommandLineOption directResultOption(
+        QStringLiteral("direct-result"),
+        QStringLiteral("写入脱敏 DIRECT 验证结果。"),
+        QStringLiteral("ignored-json"));
+#endif
     for (const QCommandLineOption &option :
          {urlOption, decodeThreadsOption, metricsFileOption, rendererOption,
           displayFpsOption, latencyMarkerOption, maximumReconnectFailuresOption,
@@ -105,8 +121,17 @@ ApplicationOptionsParseStatus ApplicationOptions::parse(
           validationLayoutOption}) {
         parser.addOption(option);
     }
+#if RTMP_MONITOR_HAS_WEBRTC
+    parser.addOption(directConfigOption);
+    parser.addOption(directScenarioOption);
+    parser.addOption(directResultOption);
+#endif
 
-    if (parser.parse(application.arguments()) && parser.isSet(versionOption)) {
+    if (!parser.parse(application.arguments())) {
+        if (error != nullptr) *error = parser.errorText();
+        return ApplicationOptionsParseStatus::Invalid;
+    }
+    if (parser.isSet(versionOption)) {
         QTextStream output(stdout);
         output << QCoreApplication::applicationName() << ' '
                << QCoreApplication::applicationVersion() << Qt::endl;
@@ -154,5 +179,24 @@ ApplicationOptionsParseStatus ApplicationOptions::parse(
     options->mediaServerConfigSet = parser.isSet(mediaServerConfigOption);
     options->cameraAutostartDisabled = parser.isSet(noCameraAutostartOption);
     options->validationLayout = parser.isSet(validationLayoutOption);
+#if RTMP_MONITOR_HAS_WEBRTC
+    options->directConfig = parser.value(directConfigOption).trimmed();
+    options->directValidationScenario =
+        parser.value(directScenarioOption).trimmed().toLower();
+    options->directResult = parser.value(directResultOption).trimmed();
+    if ((!options->directValidationScenario.isEmpty()
+         || !options->directResult.isEmpty()) && options->directConfig.isEmpty()) {
+        if (error) *error = QStringLiteral("DIRECT 验证参数必须同时提供 --direct-config。");
+        return ApplicationOptionsParseStatus::Invalid;
+    }
+    if (!options->directValidationScenario.isEmpty()
+        && options->directValidationScenario != QStringLiteral("normal")
+        && options->directValidationScenario != QStringLiteral("duplicate")
+        && options->directValidationScenario != QStringLiteral("reconnect")) {
+        if (error) *error = QStringLiteral(
+            "--direct-validation-scenario 必须是 normal、duplicate 或 reconnect。");
+        return ApplicationOptionsParseStatus::Invalid;
+    }
+#endif
     return ApplicationOptionsParseStatus::Ready;
 }

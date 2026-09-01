@@ -30,6 +30,9 @@ struct ApplicationOptions
     bool mediaServerConfigSet = false;
     bool cameraAutostartDisabled = false;
     bool validationLayout = false;
+    QString directConfig;
+    QString directValidationScenario;
+    QString directResult;
 
     [[nodiscard]] static ApplicationOptionsParseStatus parse(
         QCoreApplication &application,

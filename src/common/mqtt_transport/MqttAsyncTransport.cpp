@@ -50,6 +50,23 @@ QString validConfig(const MqttTransportConfig &config,
 }
 }
 
+class MqttTransportCallbackAccess final
+{
+public:
+    static void connected(void *raw, char *);
+    static void connectionLost(void *raw, char *);
+    static void connectFailure(void *raw, MQTTAsync_failureData *);
+    static void connectFailure5(void *raw, MQTTAsync_failureData5 *);
+    static void subscribeSuccess(void *raw, MQTTAsync_successData *response);
+    static void subscribeSuccess5(void *raw, MQTTAsync_successData5 *response);
+    static void subscribeFailure(void *raw, MQTTAsync_failureData *);
+    static void subscribeFailure5(void *raw, MQTTAsync_failureData5 *);
+    static int messageArrived(void *raw, char *topicName, int topicLength,
+                              MQTTAsync_message *message);
+    static void disconnectSuccess(void *raw, MQTTAsync_successData *);
+    static void disconnectFailure(void *raw, MQTTAsync_failureData *);
+};
+
 MqttAsyncTransport::MqttAsyncTransport(QObject *parent) : QObject(parent)
 {
     qRegisterMetaType<MqttTransportState>();
@@ -105,9 +122,9 @@ void MqttAsyncTransport::connectToBroker(
     client_ = handle;
     auto *context = new CallbackContext{this, generation};
     callbackContext_ = context;
-    MQTTAsync_setConnected(handle, context, &MqttAsyncTransport::onConnected);
-    MQTTAsync_setCallbacks(handle, context, &MqttAsyncTransport::onConnectionLost,
-        reinterpret_cast<MQTTAsync_messageArrived *>(&MqttAsyncTransport::onMessageArrived), nullptr);
+    MQTTAsync_setConnected(handle, context, &MqttTransportCallbackAccess::connected);
+    MQTTAsync_setCallbacks(handle, context, &MqttTransportCallbackAccess::connectionLost,
+        &MqttTransportCallbackAccess::messageArrived, nullptr);
     MQTTAsync_connectOptions options = MQTTAsync_connectOptions_initializer;
     options.keepAliveInterval = config.keepAliveSeconds;
     options.automaticReconnect = config.automaticReconnect ? 1 : 0;
@@ -118,10 +135,10 @@ void MqttAsyncTransport::connectToBroker(
         options.cleansession = 0;
         options.cleanstart = 1;
         options.MQTTVersion = MQTTVERSION_5;
-        options.onFailure5 = reinterpret_cast<MQTTAsync_onFailure5 *>(&MqttAsyncTransport::onConnectFailure5);
+        options.onFailure5 = &MqttTransportCallbackAccess::connectFailure5;
     } else {
         options.cleansession = 1;
-        options.onFailure = reinterpret_cast<MQTTAsync_onFailure *>(&MqttAsyncTransport::onConnectFailure);
+        options.onFailure = &MqttTransportCallbackAccess::connectFailure;
     }
     setState(MqttTransportState::Connecting);
     code = MQTTAsync_connect(handle, &options);
@@ -144,8 +161,8 @@ void MqttAsyncTransport::disconnectFromBroker()
             MQTTAsync_disconnectOptions options = MQTTAsync_disconnectOptions_initializer;
             options.timeout = 500;
             options.context = context;
-            options.onSuccess = reinterpret_cast<MQTTAsync_onSuccess *>(&MqttAsyncTransport::onDisconnectSuccess);
-            options.onFailure = reinterpret_cast<MQTTAsync_onFailure *>(&MqttAsyncTransport::onDisconnectFailure);
+            options.onSuccess = &MqttTransportCallbackAccess::disconnectSuccess;
+            options.onFailure = &MqttTransportCallbackAccess::disconnectFailure;
             if (MQTTAsync_disconnect(handle, &options) == MQTTASYNC_SUCCESS)
                 context->completion.tryAcquire(1, 600);
             destroySession();
@@ -224,13 +241,13 @@ void MqttAsyncTransport::beginSubscription(std::uint64_t generation)
     MQTTAsync_responseOptions response = MQTTAsync_responseOptions_initializer;
     response.context = callbackContext_;
     if (config_.protocol == MqttTransportProtocol::V5) {
-        response.onSuccess5 = reinterpret_cast<MQTTAsync_onSuccess5 *>(&MqttAsyncTransport::onSubscribeSuccess5);
-        response.onFailure5 = reinterpret_cast<MQTTAsync_onFailure5 *>(&MqttAsyncTransport::onSubscribeFailure5);
+        response.onSuccess5 = &MqttTransportCallbackAccess::subscribeSuccess5;
+        response.onFailure5 = &MqttTransportCallbackAccess::subscribeFailure5;
         response.subscribeOptionsCount = subscribeOptions.size();
         response.subscribeOptionsList = subscribeOptions.data();
     } else {
-        response.onSuccess = reinterpret_cast<MQTTAsync_onSuccess *>(&MqttAsyncTransport::onSubscribeSuccess);
-        response.onFailure = reinterpret_cast<MQTTAsync_onFailure *>(&MqttAsyncTransport::onSubscribeFailure);
+        response.onSuccess = &MqttTransportCallbackAccess::subscribeSuccess;
+        response.onFailure = &MqttTransportCallbackAccess::subscribeFailure;
     }
     const int code = MQTTAsync_subscribeMany(asClient(client_), topics.size(), topics.data(), qos.data(), &response);
     if (code != MQTTASYNC_SUCCESS) {
@@ -311,23 +328,28 @@ void MqttAsyncTransport::destroySession()
     delete callback(callbackContext_); callbackContext_ = nullptr;
 }
 
-void MqttAsyncTransport::onConnected(void *raw, char *)
+void MqttTransportCallbackAccess::connected(void *raw, char *)
 {
     auto *ctx = callback(raw); if (!ctx || ctx->owner.isNull()) return;
     const auto owner = ctx->owner; const auto generation = ctx->generation;
     QMetaObject::invokeMethod(owner, [owner, generation] { if (owner) owner->handleConnected(generation); }, Qt::QueuedConnection);
 }
-void MqttAsyncTransport::onConnectionLost(void *raw, char *)
+void MqttTransportCallbackAccess::connectionLost(void *raw, char *)
 {
     auto *ctx = callback(raw); if (!ctx || ctx->owner.isNull()) return;
     const auto owner = ctx->owner; const auto generation = ctx->generation;
     QMetaObject::invokeMethod(owner, [owner, generation] { if (owner) owner->handleFailure(generation, QStringLiteral("mqtt_connection_lost"), false); }, Qt::QueuedConnection);
 }
-void MqttAsyncTransport::onConnectFailure(void *raw, void *) { onConnectionLost(raw, nullptr); }
-void MqttAsyncTransport::onConnectFailure5(void *raw, void *) { onConnectionLost(raw, nullptr); }
-void MqttAsyncTransport::onSubscribeSuccess(void *raw, void *value)
+void MqttTransportCallbackAccess::connectFailure(
+    void *raw, MQTTAsync_failureData *)
+{ connectionLost(raw, nullptr); }
+void MqttTransportCallbackAccess::connectFailure5(
+    void *raw, MQTTAsync_failureData5 *)
+{ connectionLost(raw, nullptr); }
+void MqttTransportCallbackAccess::subscribeSuccess(
+    void *raw, MQTTAsync_successData *response)
 {
-    auto *ctx = callback(raw); auto *response = static_cast<MQTTAsync_successData *>(value);
+    auto *ctx = callback(raw);
     if (!ctx || ctx->owner.isNull()) return;
     QList<int> qos;
     for (int i = 0; i < ctx->owner->subscriptions_.size(); ++i)
@@ -335,30 +357,43 @@ void MqttAsyncTransport::onSubscribeSuccess(void *raw, void *value)
     const auto owner = ctx->owner; const auto generation = ctx->generation;
     QMetaObject::invokeMethod(owner, [owner, generation, qos] { if (owner) owner->handleSubscribeSuccess(generation, qos); }, Qt::QueuedConnection);
 }
-void MqttAsyncTransport::onSubscribeSuccess5(void *raw, void *value)
+void MqttTransportCallbackAccess::subscribeSuccess5(
+    void *raw, MQTTAsync_successData5 *response)
 {
-    auto *ctx = callback(raw); auto *response = static_cast<MQTTAsync_successData5 *>(value);
+    auto *ctx = callback(raw);
     if (!ctx || ctx->owner.isNull()) return;
     QList<int> qos;
-    for (int i = 0; i < ctx->owner->subscriptions_.size(); ++i) {
-        const bool available = response != nullptr
-            && response->alt.sub.reasonCodes != nullptr
-            && i < response->alt.sub.reasonCodeCount;
-        qos.push_back(available
-            ? static_cast<int>(response->alt.sub.reasonCodes[i]) : -1);
+    if (ctx->owner->subscriptions_.size() == 1) {
+        qos.push_back(response ? static_cast<int>(response->reasonCode) : -1);
+    } else {
+        for (int i = 0; i < ctx->owner->subscriptions_.size(); ++i) {
+            const bool available = response != nullptr
+                && response->alt.sub.reasonCodes != nullptr
+                && i < response->alt.sub.reasonCodeCount;
+            qos.push_back(available
+                ? static_cast<int>(response->alt.sub.reasonCodes[i]) : -1);
+        }
     }
     const auto owner = ctx->owner; const auto generation = ctx->generation;
     QMetaObject::invokeMethod(owner, [owner, generation, qos] { if (owner) owner->handleSubscribeSuccess(generation, qos); }, Qt::QueuedConnection);
 }
-void MqttAsyncTransport::onSubscribeFailure(void *raw, void *)
+void MqttTransportCallbackAccess::subscribeFailure(
+    void *raw, MQTTAsync_failureData *)
 {
     auto *ctx = callback(raw); if (!ctx || ctx->owner.isNull()) return; const auto owner=ctx->owner; const auto generation=ctx->generation;
     QMetaObject::invokeMethod(owner, [owner,generation]{ if(owner) owner->handleFailure(generation,QStringLiteral("mqtt_subscribe_failed"),true); }, Qt::QueuedConnection);
 }
-void MqttAsyncTransport::onSubscribeFailure5(void *raw, void *value) { onSubscribeFailure(raw, value); }
-int MqttAsyncTransport::onMessageArrived(void *raw, char *topicName, int topicLength, void *rawMessage)
+void MqttTransportCallbackAccess::subscribeFailure5(
+    void *raw, MQTTAsync_failureData5 *)
 {
-    auto *ctx = callback(raw); auto *message = static_cast<MQTTAsync_message *>(rawMessage);
+    auto *ctx = callback(raw); if (!ctx || ctx->owner.isNull()) return;
+    const auto owner=ctx->owner; const auto generation=ctx->generation;
+    QMetaObject::invokeMethod(owner, [owner,generation]{ if(owner) owner->handleFailure(generation,QStringLiteral("mqtt_subscribe_failed"),true); }, Qt::QueuedConnection);
+}
+int MqttTransportCallbackAccess::messageArrived(
+    void *raw, char *topicName, int topicLength, MQTTAsync_message *message)
+{
+    auto *ctx = callback(raw);
     const int length = topicLength > 0 ? topicLength : (topicName ? static_cast<int>(std::strlen(topicName)) : 0);
     MqttInboundMessage result; result.topic = QString::fromUtf8(topicName, length); result.receivedAtMs = QDateTime::currentMSecsSinceEpoch();
     if (message) {
@@ -376,5 +411,9 @@ int MqttAsyncTransport::onMessageArrived(void *raw, char *topicName, int topicLe
     if (ctx && !ctx->owner.isNull()) ctx->owner->enqueue(ctx->generation, std::move(result));
     MQTTAsync_freeMessage(&message); MQTTAsync_free(topicName); return 1;
 }
-void MqttAsyncTransport::onDisconnectSuccess(void *raw, void *) { if (auto *ctx=static_cast<DisconnectContext *>(raw)) ctx->completion.release(); }
-void MqttAsyncTransport::onDisconnectFailure(void *raw, void *) { onDisconnectSuccess(raw,nullptr); }
+void MqttTransportCallbackAccess::disconnectSuccess(
+    void *raw, MQTTAsync_successData *)
+{ if (auto *ctx=static_cast<DisconnectContext *>(raw)) ctx->completion.release(); }
+void MqttTransportCallbackAccess::disconnectFailure(
+    void *raw, MQTTAsync_failureData *)
+{ disconnectSuccess(raw,nullptr); }

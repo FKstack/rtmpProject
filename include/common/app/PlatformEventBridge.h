@@ -23,6 +23,7 @@ public:
 
     void setMediaServerEndpoint(const MediaServerEndpoint &endpoint);
     void observeMqttState(MqttConnectionState state);
+    void observeMqttSignalingState(MqttConnectionState state);
     void observeDeviceBound(const QString &deviceId);
     void observeDeviceUnbound(const QString &deviceId);
     void observePresence(const QString &deviceId, DevicePresenceState state);
@@ -63,6 +64,9 @@ private:
     QString mediaServerResourceId_;
     bool mqttSeenConnected_ = false;
     bool mqttFaultOpen_ = false;
+    bool signalingRegistered_ = false;
+    bool signalingSeenConnected_ = false;
+    bool signalingFaultOpen_ = false;
     bool mediaServerSeenHealthy_ = false;
     bool mediaServerFaultOpen_ = false;
     bool movementPotential_ = false;

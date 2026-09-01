@@ -38,6 +38,7 @@
 #include "ui/VideoCanvasHost.h"
 
 #if RTMP_MONITOR_HAS_WEBRTC
+#include "app/DirectDesktopRuntime.h"
 #include "webrtc_product/WebRtcProductSessionController.h"
 #endif
 
@@ -432,6 +433,9 @@ int ApplicationBootstrap::run(int argc, char *argv[])
             return connectionController.controlMediaObservation(streamId);
         });
     PlatformEventBridge platformEventBridge(&eventCenterService);
+#if RTMP_MONITOR_HAS_WEBRTC
+    std::unique_ptr<DirectDesktopRuntime> directDesktopRuntime;
+#endif
     EvidenceCoordinator evidenceCoordinator(
         &evidenceService, &eventCenterService, &connectionController,
         &mainWindow, &logManager);
@@ -463,6 +467,19 @@ int ApplicationBootstrap::run(int argc, char *argv[])
                 eventId, sourceResourceId,
                 PlatformEventBridge::localActorName());
         });
+#if RTMP_MONITOR_HAS_WEBRTC
+    if (!options.directConfig.isEmpty()) {
+        directDesktopRuntime = std::make_unique<DirectDesktopRuntime>(
+            options.directConfig, options.directValidationScenario,
+            options.directResult, &platformEventBridge);
+        QString directError;
+        if (!directDesktopRuntime->start(&directError)) {
+            qCritical().noquote() << QStringLiteral("DIRECT 启动失败：")
+                                  << directError;
+            return EXIT_FAILURE;
+        }
+    }
+#endif
     QObject::connect(
         eventCenterPanel, &EventCenterPanel::exportEventRequested,
         &evidenceCoordinator,
@@ -836,6 +853,9 @@ int ApplicationBootstrap::run(int argc, char *argv[])
     deviceControlController.start();
     const int exitCode = app.exec();
     platformEventBridge.beginShutdown();
+#if RTMP_MONITOR_HAS_WEBRTC
+    if (directDesktopRuntime) directDesktopRuntime->stop();
+#endif
     deviceControlController.stop();
     platformEventBridge.stopAccepting();
     evidenceService.stopAccepting();

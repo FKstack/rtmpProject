@@ -1061,7 +1061,13 @@ target_link_libraries(rtmp_monitor
 )
 
 if(RTMP_MONITOR_ENABLE_WEBRTC)
-    target_link_libraries(rtmp_monitor PRIVATE rtmp_monitor_webrtc_product)
+    target_sources(rtmp_monitor PRIVATE
+        include/common/app/DirectDesktopRuntime.h
+        src/common/app/DirectDesktopRuntime.cpp)
+    target_link_libraries(rtmp_monitor PRIVATE
+        rtmp_monitor_webrtc_product
+        rtmp_monitor_mqtt_signaling
+        rtmp_monitor_signaling_session)
 endif()
 
 target_include_directories(rtmp_monitor
@@ -1257,6 +1263,28 @@ if(BUILD_TESTING)
     rtmp_monitor_apply_project_options(rtmp_monitor_direct_session_core_test)
     add_test(NAME rtmp_monitor_direct_session_core_test
         COMMAND rtmp_monitor_direct_session_core_test)
+
+    qt_add_executable(rtmp_monitor_direct_runtime_config_test
+        tests/DirectRuntimeConfigTest.cpp)
+    target_link_libraries(rtmp_monitor_direct_runtime_config_test PRIVATE
+        Qt6::Test rtmp_monitor_mqtt_signaling)
+    rtmp_monitor_apply_project_options(
+        rtmp_monitor_direct_runtime_config_test)
+    add_test(NAME rtmp_monitor_direct_runtime_config_test
+        COMMAND rtmp_monitor_direct_runtime_config_test)
+
+    if(WIN32 AND RTMP_MONITOR_ENABLE_WEBRTC)
+        qt_add_executable(rtmp_monitor_direct_device_harness
+            src/tools/DirectDeviceHarnessMain.cpp)
+        set_target_properties(rtmp_monitor_direct_device_harness
+            PROPERTIES WIN32_EXECUTABLE FALSE)
+        target_link_libraries(rtmp_monitor_direct_device_harness PRIVATE
+            Qt6::Core
+            rtmp_monitor_mqtt_signaling
+            rtmp_monitor_signaling_session)
+        rtmp_monitor_apply_project_options(
+            rtmp_monitor_direct_device_harness)
+    endif()
 
     qt_add_executable(rtmp_monitor_event_center_service_test
         tests/EventCenterServiceTest.cpp

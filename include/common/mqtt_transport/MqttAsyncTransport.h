@@ -9,6 +9,8 @@
 
 #include <atomic>
 
+class MqttTransportCallbackAccess;
+
 /** The single reusable Paho MQTTAsync owner used by control and signaling. */
 class MqttAsyncTransport final : public QObject
 {
@@ -35,20 +37,8 @@ signals:
     void publishFailed(const QString &detail);
 
 private:
+    friend class MqttTransportCallbackAccess;
     struct PendingMessage { std::uint64_t generation; MqttInboundMessage value; };
-    static void onConnected(void *context, char *cause);
-    static void onConnectionLost(void *context, char *cause);
-    static void onConnectFailure(void *context, void *response);
-    static void onConnectFailure5(void *context, void *response);
-    static void onSubscribeSuccess(void *context, void *response);
-    static void onSubscribeSuccess5(void *context, void *response);
-    static void onSubscribeFailure(void *context, void *response);
-    static void onSubscribeFailure5(void *context, void *response);
-    static int onMessageArrived(void *context, char *topicName, int topicLength,
-                                void *message);
-    static void onDisconnectSuccess(void *context, void *response);
-    static void onDisconnectFailure(void *context, void *response);
-
     void setState(MqttTransportState state, const QString &detail = {});
     void beginSubscription(std::uint64_t generation);
     void handleConnected(std::uint64_t generation);

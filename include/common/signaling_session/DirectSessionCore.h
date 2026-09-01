@@ -22,6 +22,8 @@ enum class DirectAction { StartStream, StopStream };
 struct DirectCoreSnapshot final {
     SessionState sessionState{SessionState::Idle};
     DeviceAgentState deviceState{DeviceAgentState::Offline};
+    SignalingChannelState channelState{SignalingChannelState::Stopped};
+    bool deviceReady{false};
     std::uint64_t received{0};
     std::uint64_t published{0};
     std::uint64_t rejected{0};
@@ -42,6 +44,7 @@ public:
     void stop();
     bool requestStartStream();
     bool requestStopStream();
+    bool replayLastCommandForValidation();
     void poll();
     [[nodiscard]] DirectCoreSnapshot snapshot() const;
     void setChangedHandler(std::function<void(const DirectCoreSnapshot &)> handler);
@@ -66,6 +69,7 @@ private:
     std::string nonce_;
     std::string pendingMessageId_;
     SignalingPublish pendingPublish_;
+    SignalingPublish lastCommandPublish_;
     std::function<void(const DirectCoreSnapshot &)> changedHandler_;
 };
 
@@ -84,6 +88,7 @@ private:
     void receive(const SignalingFrame &frame);
     bool publishReply(const Envelope &request, const std::string &type,
                       const std::string &payload);
+    bool publishPresence(bool online);
     bool replayCached(const std::string &messageId);
     void changed();
 
@@ -94,6 +99,9 @@ private:
     DirectCoreSnapshot snapshot_;
     ReplayGuard replayGuard_;
     std::unordered_map<std::string, std::vector<SignalingPublish>> cache_;
+    std::string bootId_;
+    std::string presenceId_;
+    std::uint64_t presenceSequence_{0};
     std::function<void(DirectAction)> actionHandler_;
     std::function<void(const DirectCoreSnapshot &)> changedHandler_;
 };
