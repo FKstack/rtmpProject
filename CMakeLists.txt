@@ -1571,6 +1571,33 @@ if(BUILD_TESTING)
             -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckLayerDependencies.cmake
     )
 
+    if(WIN32)
+        qt_add_executable(rtmp_monitor_p2p_direct_broker_fixture
+            tests/P2PDirectBrokerFixtureMain.cpp)
+        set_target_properties(rtmp_monitor_p2p_direct_broker_fixture PROPERTIES
+            WIN32_EXECUTABLE FALSE
+            RUNTIME_OUTPUT_DIRECTORY
+                "${CMAKE_BINARY_DIR}/broker-fixture/$<CONFIG>")
+        target_link_libraries(rtmp_monitor_p2p_direct_broker_fixture PRIVATE
+            Qt6::Core
+            eclipse-paho-mqtt-c::paho-mqtt3as)
+        rtmp_monitor_apply_project_options(
+            rtmp_monitor_p2p_direct_broker_fixture)
+        add_custom_command(
+            TARGET rtmp_monitor_p2p_direct_broker_fixture POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_RUNTIME_DLLS:rtmp_monitor_p2p_direct_broker_fixture>
+                $<TARGET_FILE_DIR:rtmp_monitor_p2p_direct_broker_fixture>
+            COMMAND_EXPAND_LISTS
+            VERBATIM)
+        add_test(NAME rtmp_monitor_p2p_direct_broker_fixture_self_test
+            COMMAND rtmp_monitor_p2p_direct_broker_fixture
+                --mode self-test)
+        set_tests_properties(
+            rtmp_monitor_p2p_direct_broker_fixture_self_test PROPERTIES
+            TIMEOUT 15)
+    endif()
+
     qt_add_executable(rtmp_monitor_camera_validation_core_test
         tests/CameraValidationCoreTest.cpp
     )
