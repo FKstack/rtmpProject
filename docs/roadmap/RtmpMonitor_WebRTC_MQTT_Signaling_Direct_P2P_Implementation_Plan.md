@@ -94,7 +94,9 @@
 | 入站元数据 | `MqttObservedMessage` 不保存 qos/dup/retained；payload 4 KiB 截断、64 条 drop-oldest | 新 signaling message 保留 MQTT5 metadata，关键消息不能静默 drop；SDP 独立上限 192 KiB |
 | Control | 全局 `device/control`/`device/status`，payload 无 target、TTL、CommandId、lease | P2P-DIRECT-06 新建 per-device command/receipt 契约；legacy control 在迁移期保留 |
 | 回执 | 代码只有本地 Paho submit，固定 `executionConfirmation=unavailable` | 设备执行 ACK/receipt 是新能力；不得把大纲“已有回执”当成源码事实 |
-| MQTT owner | `ApplicationBootstrap` 创建单一 `MqttDeviceClient`；Paho callback 回投 Qt owner | 保留 callback→bounded value→owner 的代次模式，新建独立 `MqttSignalingClient` |
+| MQTT owner | `ApplicationBootstrap` 创建单一 `MqttDeviceClient`；其 connect/双订阅/publish/reconnect/callback 已有测试 | 提取唯一通用 `MqttAsyncTransport`；legacy façade 与 signaling adapter 复用实现、持有独立连接实例 |
+| Desktop/UI | `MainWindow`、DeviceControlPanel、动态网格、OpenGL/CPU、全屏已存在 | 继续作为唯一产品 UI；DIRECT 只经组合根注入状态，不另建窗口、网格或控制面板 |
+| Event/evidence | EventCenter/Panel、Evidence、事件证据截图和全屏截图已存在；截图均由用户触发 | 复用现有 store/service/panel/截图链；DIRECT-02 不新建事件系统或自动截图 |
 | WebRTC signaling | `WebRtcReceiveSession` 直接轮询 `SessionPackageStore` | 引入窄 `ISignalingChannel`；文件 adapter 保留，MQTT adapter 成为产品路径 |
 | Trickle | endpoint 等 gathering complete 后返回整包 SDP | 增加 local candidate 事件和 remote candidate 注入 |
 | ICE restart | libdatachannel 0.24.5 有 `onLocalCandidate/addRemoteCandidate`，没有 `restartIce()` | v1 的 restart 定义为同 SessionId、新 AttemptId、完整新 PeerConnection；不宣称原地 ICE restart |
@@ -896,15 +898,15 @@ DeviceProfile与SavedStream v1分离，只持久化DeviceId、友好显示和用
 1. 保持现有 legacy control `paho-mqtt3a` 路径不变；新 signaling 以独立 target 和连接使用 Paho MQTT5
    API。当前团队 Broker 采用明文 MQTT，TLS 库迁移不作为本阶段前置；未来启用 MQTTS 时再单独迁移
    `paho-mqtt3as`、OpenSSL、CA/hostname 校验和发布包依赖。
-2. 新建独立 `MqttSignalingClient`：MQTT5 create/connect，稳定 ClientId、CONNACK/SUBACK 门禁、
-   LWT/presence、QoS1/expiry、有界发送和接收队列、callback generation 与 slow-consumer 关闭。Broker
-   endpoint 必须由 Git 外部署配置显式注入；入站值事件保留 QoS/DUP/retained/Message Expiry/topic/
-   signaling connection epoch 元数据。
-3. 实现`MqttSignalingChannel`和`SignalingSessionService`，完成presence/device list/session request/accept/reject/cancel/ACK/reconnect；此阶段先用虚拟SDP payload验证协议，不连接transport。
+2. 从现有 `MqttDeviceClient` 提取通用 `MqttAsyncTransport`，迁出 Paho handle、callback、connect/reconnect、
+   SUBACK 门禁、通用 publish 和有界分发；legacy façade 通过该 transport 保持原行为和字节契约。
+3. 在通用 transport 上实现 `MqttSignalingChannel` 与 Direct Operator/Device Core，完成 presence、
+   session request/accept/reject/cancel、ACK、TTL、dedupe、状态和 reconnect；不新增完整 Operator Harness。
 4. 使用现有团队公网 MQTT Server 的正常客户端数据面；只创建新 `rtmp-monitor/v1/...` 精确 topic
    流量，不登录管理后台写配置，不修改 listener、用户、ACL、插件、限额或 retained 数据。
-5. 完成真实 Desktop process 与 device-agent harness 的公网 MQTT 自动信令会话，不使用 MQTTX、
-   文件搬运或手工粘贴作为产品成功证据。
+5. 将 DirectOperatorCore 接入现有桌面组合根，并提供显式 CLI 验证入口；Device Harness 只是未来 ARM
+   runtime 的可替换 shell。使用真实 `rtmp_monitor.exe` 与 Device Harness 完成公网协议会话。
+6. 对现有控制面板/固定指令、OpenGL/CPU、动态网格、全屏、事件、证据和截图执行强制 parity 回归。
 
 **退出门禁**：两个真实进程通过团队公网 MQTT Server 建立 source-bound session；精确 topic、
 ClientId、QoS1 重复、TTL、retained SDP/ICE 拒绝、断线/重连、control 回归和敏感扫描通过。结果标记为
@@ -932,7 +934,9 @@ endpoint 配置并断开 signaling 客户端，不修改或回滚团队 Broker �
 **实施项**
 
 1. 建立`DeviceAgentBootstrap`，组合MQTT signaling、SendOnly runtime、Media Foundation camera/encoder source、presence/capabilities和安全关闭。
-2. 建立Desktop device directory/UI和`DeviceSessionCoordinator`，实现DeviceId→SessionId/AttemptId→StreamId/widget/mailbox绑定，取消产品路径的一次性Offer/Answer dialog。
+2. 将 device directory 与 `DeviceSessionCoordinator` 接入并扩展现有 `MainWindow`、动态网格、
+   `VideoWidget` 和 `DeviceControlPanel`，实现 DeviceId→SessionId/AttemptId→StreamId/widget/mailbox
+   绑定；不得新建平行桌面 UI。
 3. 实现Direct、ConnectedNoMedia、MediaInterrupted、NeedsRelay、DeviceOffline/Busy/Unauthorized的稳定UI和日志映射。
 4. 在真实Windows摄像头、两台物理机LAN、自建STUN跨NAT和受限网络中分别取证；不用同机证据替代。
 
@@ -963,6 +967,8 @@ endpoint 配置并断开 signaling 客户端，不修改或回滚团队 Broker �
 3. 用户显式点击Armed后，由device agent通过signaling request/grant签发ControlLeaseId；视频Direct或tile选中都不自动授权。
 4. device agent核验topic/target/session/attempt/lease/TTL/sequence并发送实际执行receipt；旧lease/attempt、重复sequence、过期命令和错target必须在设备端拒绝。
 5. 在device agent新建`DeviceCommandReceiver`、`IActuatorPort`、`ITimeHealthProvider`和独立高优先级control owner thread；receiver唯一拥有lease/sequence/replay/dead-man状态，actuator port只接收已验证的500ms租约式脉冲与幂等`stop()`，执行器/下位机必须有独立watchdog；不把设备端执行塞入desktop `MqttDeviceClient`或signaling service。
+6. 保留现有 `DeviceControlPanel`、键盘/摇杆、`DeviceControlController`、`DeviceCommand` 语义和当前已发布
+   MQTT 指令兼容；新 control wire schema 只允许位于兼容 adapter 后，不得静默改变按钮行为。
 6. WSS字样不进入本阶段；control lease通过MQTT signaling交换，视频媒体仍仅走P2P。
 
 **退出门禁**：错topic/target、旧lease/attempt、重复/过期command、tile切换、失焦、Broker断线、Direct丢失和帧过旧全部无法误控；设备端负向receipt可证明；agent crash/kill、control thread freeze、重启/断电时独立actuator watchdog的设计硬上限不大于500ms，规定样本中**零次**物理停止>500ms；P99仅作性能指标不替代硬门禁。StopCar ACK P95不大于250ms，signaling洪泛对其P95增量不大于50ms。
@@ -1011,7 +1017,7 @@ endpoint 配置并断开 signaling 客户端，不修改或回滚团队 Broker �
 | --- | --- | --- | --- |
 | `P2P-DIRECT-00` | `docs/roadmap/...Outline_v2.md`、本计划、`docs/memory/decisions.md`、`docs/roadmap/webrtc_mqtt_direct_parity_ledger.md`(新)、`CMakeLists.txt`、`cmake/CheckLayerDependencies.cmake`、`scripts/validate_windows_matrix.ps1`(新) | architecture/release owner：ADR、DAG、parity、四fresh矩阵和新层门禁 | layer check + OFF/ON Debug/Release baseline；运行行为无变化 |
 | `P2P-DIRECT-01` | `include/common/identity/StrongIds.h`(新)、`include/common/lifecycle/AsyncClose.h`(新)、`include/common/signaling/{SignalingTypes,SignalingEnvelope,SignalingTopicCodec,SignalingStateMachine}.h`(新)、对应`src/common/signaling/*.cpp`、`include/common/runtime_config/{MqttRuntimeConfig,IceRuntimeConfig,DeviceAuthorizationRegistry,RuntimeConfigRepository,ICredentialStore}.h`(新)、`src/common/runtime_config/*`(新)、`contracts/signaling/v1/*`(新)、`tools/provisioning/*`(新)、`tests/{IdentityContracts,AsyncCloseContracts,SignalingCodec,SignalingStateMachine,RuntimeConfig}Test.cpp`(新) | contract/security owner：ID、CloseTicket/dispatcher、strict codec、topic、scope、state、MQTT/ICE config、operator roster/device registry、Go provisioning CLI | golden/invalid/fuzz、close exactly-once、STUN URI allow/deny、duplicate key、TTL、ACL vector、registry rollback、CLI race/secret scan |
-| `P2P-DIRECT-02` | `include/common/mqtt_signaling/{MqttSignalingClient,MqttSignalingChannel}.h`(新)、对应`src/common/mqtt_signaling/*.cpp`、`include/common/signaling_session/SignalingSessionService.h`(新)、`src/common/signaling_session/SignalingSessionService.cpp`(新)、`include/common/device_control/MqttDeviceClient.h`、`src/common/device_control/MqttDeviceClient.cpp`、`scripts/{setup_arm64_build_env.sh,package_linux_arm64.sh,package_windows.ps1}`、`THIRD_PARTY_NOTICES`、`THIRD_PARTY_NOTICES_LINUX_ARM64`、`tests/mqtt_integration/*`(新)、`deploy/mqtt-direct/broker/*`(新)、`src/tools/mqtt_signaling_peer/*`(新) | signaling/Broker owner：Paho pImpl、Windows/ARM MQTT5+TLS dependency、process connection、directory/acceptor/route handles、presence、adapter-neutral session wire、公网staging | consumer不传递Paho include/link；ARM OFF cross-build；Windows/ARM legacy package smoke/DLL/SO/license审计；TLS/ACL/retain/offline/takeover/slow consumer负向；双进程session |
+| `P2P-DIRECT-02` | 通用 `mqtt_transport`(从现有 client 提取)、`mqtt_signaling` adapter、Direct Operator/Device Core、现有 `ApplicationBootstrap`/`MqttDeviceClient`、Device Harness 与 protocol tests | mqtt transport owner：唯一 Paho 生命周期实现；desktop composition：现有产品 Operator；Device Harness：可替换 runtime shell | legacy MQTT 字节/重连回归；现有 desktop + harness 公网 session；控制/UI/render/event/evidence/screenshot parity；无 Operator Harness |
 | `P2P-DIRECT-03` | `include/common/webrtc_negotiation/{SdpContractValidator,IceCandidateContractValidator}.h`(新)、对应`src/common/webrtc_negotiation/*.cpp`、`include/common/webrtc_transport/WebRtcEndpointSession.h`、`src/common/webrtc_transport/WebRtcEndpointSession.cpp`、`include/common/webrtc_runtime/WebRtcReceiveSession.h`、`src/common/webrtc_runtime/WebRtcReceiveSession.cpp`、`include/common/webrtc_runtime/WebRtcPublishSession.h`(新)、`src/common/webrtc_runtime/WebRtcPublishSession.cpp`(新)、`include/common/webrtc_file_signaling_adapter/SessionPackageSignalingChannel.h`(新)、`src/common/webrtc_file_signaling_adapter/SessionPackageSignalingChannel.cpp`(新)、`tests/{WebRtcNegotiationContracts,WebRtcEndpointTrickle,WebRtcRuntimeSignaling,SessionPackageAdapter}Test.cpp`(新)、`deploy/mqtt-direct/stun/*`(新) | shared negotiation-contract/transport/runtime/file-adapter owners：单一SDP/candidate安全策略、异步description/candidate/EOC、generation、runtime唯一buffer、legacy bundled SDP拆/组、STUN-only | 同一golden/invalid vectors覆盖MQTT与file adapter；trickle、64/65、EOC、relay、晚回调、SessionPackage v1回归、TURN负向 |
 | `P2P-DIRECT-04` | `src/device_agent/main.cpp`(新，QCoreApplication)、`include/common/device_agent/DeviceAgentBootstrap.h`(新)、`src/common/device_agent/DeviceAgentBootstrap.cpp`(新)、`include/common/device_agent_session/DeviceAgentSessionCoordinator.h`(新)、`src/common/device_agent_session/DeviceAgentSessionCoordinator.cpp`(新)、`include/common/device_directory/*`(新)、`src/common/device_directory/*`(新)、`include/common/stream/StreamId.h`(新，从`media/PlaybackTypes.h`下沉)、`include/common/product_media/ProductMediaSessionPort.h`(新)、`include/common/device_session/DeviceSessionCoordinator.h`(新)、`src/common/device_session/DeviceSessionCoordinator.cpp`(新)、`include/common/webrtc_product/WebRtcProductSessionController.h`、`src/common/webrtc_product/WebRtcProductSessionController.cpp`、`src/common/app/ApplicationBootstrap.cpp`、`src/common/ui/MainWindow.cpp`、`tests/{StreamContracts,DeviceDirectory,DeviceSessionCoordinator,DeviceAgentSessionCoordinator,DeviceAgentBootstrap}Test.cpp`(新) | `rtmp_monitor_device_agent` executable、desktop/device独立composition owners：StreamId低层契约、device directory、MF source、route/runtime/product port、UI四分面映射 | QCoreApplication启动/异步关闭/无QWidget依赖；媒体/UI对StreamId兼容回归；真Windows camera、两机LAN、跨NAT、NeedsRelay |
 | `P2P-DIRECT-05` | `include/common/device_session/DeviceSessionCloseReaper.h`(新)、`src/common/device_session/{DeviceSessionCoordinator,DeviceSessionCloseReaper}.cpp`、`include/common/device_agent_session/DeviceAgentSessionCloseReaper.h`(新)、`src/common/device_agent_session/DeviceAgentSessionCloseReaper.cpp`(新)、`src/common/webrtc_runtime/{WebRtcReceiveSession,WebRtcPublishSession}.cpp`、`src/common/webrtc_product/WebRtcProductSessionController.cpp`、`tests/{DeviceSessionRecovery,DeviceAgentSessionRecovery,WebRtcAsyncClose,WebRtcFourSession}Test.cpp`(新)、`scripts/webrtc_mqtt_stability_runner.ps1`(新) | lifecycle owner：resume、new Attempt/PC、desktop/agent close reaper、camera/network恢复、四路隔离 | 竞争/晚事件、单路故障、第5路、600/1800s |
@@ -1168,6 +1174,10 @@ MQTT不使用Caddy标准HTTP reverse proxy；Broker直接加载ACME证书并严�
 | SRS health | 替换为Broker/TLS、STUN、presence、video、control分面健康 | 故障注入和UI错误映射 |
 | MQTT `StartStream(rtmpUrl)` | 只在legacy RTMP tile保留到退役 | 新DeviceSession payload中零RTMP URL |
 | FFmpeg | 保留H.264解码、像素处理和fixture | 无SRS/RTMP的干净安装回归 |
+| 上下左右、停车、键盘和摇杆 | 保留现有 DeviceControlPanel/Controller/codec 行为 | 固定指令字节、控制回归和焦点/停车安全测试 |
+| OpenGL/CPU、动态网格和全屏 | 原实现持续复用，不建立 DIRECT 渲染体系 | WebRTC viewer pipeline、canvas、grid、fullscreen 全回归 |
+| 事件显示、详情和目录导出 | 原 EventCenter store/service/panel 持续复用 | 事件状态机、panel、持久化和导出回归 |
+| 事件证据截图与全屏截图 | 保持当前用户触发行为；不冒充自动截图 | EvidenceService/Coordinator 与 fullscreen screenshot 回归 |
 | 项目/二进制名 | 退役阶段一次重命名 | 安装/升级/卸载/回滚演练 |
 
 RTMP退役的必要条件是“不安装SRS、不配RTMP URL也能完成设备发现、受授权MQTT信令、Direct视频、四路、恢复、安全控制、干净安装和回滚”；不以代码行数、同机演示或单个NAT成功代替。

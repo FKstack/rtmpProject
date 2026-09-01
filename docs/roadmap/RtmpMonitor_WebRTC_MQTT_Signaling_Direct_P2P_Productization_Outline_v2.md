@@ -154,6 +154,9 @@ SRS            = 不再是产品运行依赖
 | MQTT 控制体系 | 已有 heartbeat、guard、回执和控制策略 | 复用 Broker 与客户端库，但不把信令塞入控制 handler |
 | Paho MQTT C | 已有异步 MQTT 接入基础 | 核验 MQTT 版本、TLS、重连和 MQTT 5 能力后建立信令 adapter |
 | 日志、事件、证据和诊断 | 已形成旁路观察能力 | 增加 Broker、信令、ICE、身份和设备会话事实，不记录敏感载荷 |
+| `MainWindow` 与动态视频网格 | 已承载 RTMP/WebRTC 画面、全屏和状态覆盖 | 继续作为唯一桌面产品 UI，不另建 DIRECT 主窗口或视频网格 |
+| `DeviceControlPanel` 与固定 MQTT 指令 | 已有上下左右、停车、Start/StopStream、键盘和摇杆路径 | 保持 UI/controller/codec 兼容；DIRECT signaling 不截获或替换 control 指令 |
+| EventCenter、Evidence 与截图 | 已有事件显示、详情、导出、用户触发的事件证据截图和全屏截图 | 原 service/store/panel 持续复用；当前没有事件自动截图，不在底座迁移中重复建设 |
 | Windows 打包和资格脚本 | 已有干净包和长稳基线 | 扩展为 MQTT/STUN 配置、真实设备和安全资格 |
 
 ### 1.2 当前关键缺口
@@ -320,14 +323,18 @@ H.264 视频通过 WebRTC/SRTP 在设备和操作端之间直连
     └─ 独立诊断指标
 ```
 
-客户端连接方式建议优先采用：
+客户端连接方式采用：
 
 ```text
-MqttSignalingClient  → 一条长连接，负责设备目录和 WebRTC 信令
-MqttDeviceClient     → 保留现有控制职责，负责命令、回执和 heartbeat
+MqttSignalingChannel → 独立 signaling 连接实例，负责设备目录和 WebRTC 信令
+MqttDeviceClient     → 保留现有 control façade，负责命令、回执和 heartbeat
+                 \     /
+          shared MqttAsyncTransport implementation
 ```
 
-两者连接同一个 Broker，但不共享可变业务状态。是否进一步共享底层 Paho connection，必须在代码审计和压力测试后决定，不应为了“少一条连接”提前制造控制与信令耦合。
+两者连接同一个 Broker、复用从现有 `MqttDeviceClient` 提取的同一 Paho transport 实现，但使用两个独立
+handle、ClientId、connection epoch、订阅、队列和状态机。不得复制一套 Operator MQTT 生命周期代码，
+也不得为了“少一条连接”制造 control/signaling 可变状态耦合。
 
 ### 3.4 共用 Broker 的代价
 
@@ -880,14 +887,16 @@ snapshot()
 
 推荐第一版：
 
-- 保留现有 `MqttDeviceClient` 的控制语义；
-- 新建 `MqttSignalingClient`；
-- 两者连接相同 Broker；
+- 从现有 `MqttDeviceClient` 提取唯一通用 `MqttAsyncTransport`；
+- `MqttDeviceClient` 保留控制 façade、固定 Topic、指令 codec 和现有 Qt signals；
+- `MqttSignalingChannel` 通过同一 transport 实现建立独立 signaling 连接实例；
+- 两者连接相同 Broker，但不共享 handle 或可变业务状态；
 - 分别拥有 connection epoch、队列、重连和指标；
 - 产品层通过 `DeviceSession` 组合二者事实；
 - 不让 `MqttDeviceClient` 演变为同时管理设备目录、SDP、ICE、控制、遥测和 UI 的 God Client。
 
-若后续证据表明两个 Paho connection 成本不可接受，可在更低层增加共享 `MqttConnectionService`，但上层 signaling/control 接口仍保持分离。
+不得新增包含 connect/subscribe/publish/callback 的完整 Operator Harness。自动化必须运行现有桌面程序；
+Device Harness 只替代未来 ARM runtime shell，并复用正式 DirectDeviceCore 和 transport。
 
 ### 8.6 线程与回调边界
 
@@ -1568,7 +1577,7 @@ WebRTC 成为唯一实时视频入口前，至少满足：
 **主要输出**：
 
 - device agent；
-- desktop device directory；
+- 把 device directory/session 状态接入并扩展现有 `MainWindow`、网格和 `DeviceControlPanel`，不新建平行 UI；
 - DeviceId→SessionContext→StreamId 绑定；
 - 真实摄像头 publisher；
 - Direct、freshness 和错误映射；
@@ -1607,6 +1616,8 @@ WebRTC 成为唯一实时视频入口前，至少满足：
 - tile/目标切换安全策略；
 - 权限、离线、忙碌、NeedsRelay、重连用户提示；
 - 事件、证据和诊断接入。
+- 现有按钮、键盘/摇杆、`DeviceCommand` 语义和已发布 MQTT 指令保持兼容；新 wire schema 只能位于兼容
+  adapter 后，不能静默替换现有产品行为；`StartStream(rtmpUrl)` 的最终迁移另走 parity 决策。
 
 **退出门禁**：无法通过 topic、tile、旧 session 或身份冒用造成误控。
 
@@ -1651,7 +1662,8 @@ WebRTC 成为唯一实时视频入口前，至少满足：
 **主要输出**：
 
 - 默认和唯一视频入口切换为 WebRTC；
-- 删除 RTMP UI、URL、auto-connect 和 SRS health UI；
+- 删除 RTMP URL、auto-connect 和 SRS health 的协议专属入口；保留并复用 MainWindow、动态网格、
+  DeviceControlPanel、OpenGL/CPU canvas、全屏、事件、证据和截图等通用产品 UI；
 - SavedStream v1 只读迁移后停止写入；
 - 删除/归档 RTMP-specific input、server target、SRS 脚本和 DVR PoC；
 - 清理 RTMP runtime 配置、部署文档和包内容；
