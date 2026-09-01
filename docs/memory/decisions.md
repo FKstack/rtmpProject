@@ -906,7 +906,7 @@
 ## ADR-046 第一阶段采用隔离的 MQTT TLS 信令并排除 legacy 公网测试 Broker
 
 - 日期：2026-09-01
-- 状态：已采用；原 Broker 阻塞结论已由 ADR-047 的用户范围决定覆盖
+- 状态：部分被覆盖；阶段阻塞由 ADR-047 覆盖，现有公网 Broker 的产品定位由 ADR-048 覆盖
 - 背景：现有 RTMP 产品使用默认关闭、Broker 地址为空的单客户端 MQTT 3.1.1 控制路径，
   `device/control` 与 `device/status` 分别承担嵌入式设备控制和状态观察。用户另行授权的远程设施只
   提供公网明文 MQTT 与 HTTP 管理面，用于兼容性观察，不具备产品 MQTTS、安全或许可资格。ADR-044
@@ -915,7 +915,7 @@
   基础设施，但必须使用独立连接、ClientId、principal、topic、ACL、payload、队列、状态机和指标。
   `device/control` 与 `device/status` 继续属于 legacy/control 平面，不得承载 SDP、candidate 或会话
   授权。首阶段严格 Direct-only，不部署 TURN；WSS 只保留为未来 `ISignalingChannel` adapter。
-  现有远程设施永久限定为 legacy 测试输入，从产品候选中排除，不在原实例上原地加固。
+  当时将现有远程设施限定为 legacy 测试输入并从产品候选中排除；该产品定位现已由 ADR-048 覆盖。
 - 安全边界：产品与测试默认均保持网络关闭；真实 Broker/管理地址、凭据和测试 topic 只进入本机忽略
   配置，不进入源码、文档示例、测试资源、普通日志或发布包。legacy 观察只允许随机精确 topic 的有界
   SUBSCRIBE，不发布、不订阅控制/状态 topic、不登录管理后台或调用写 API。
@@ -954,6 +954,31 @@
 - 验证证据：用户在本会话明确取消该门禁；DIRECT-00 已有的本地构建、DAG、ARM、fixture 和敏感扫描
   证据保持有效，隔离 Broker 负向矩阵保持未执行。
 - 相关文件：`docs/versions/webrtc-v2/p2p-direct-00/`、
+  `docs/roadmap/RtmpMonitor_WebRTC_MQTT_Signaling_Direct_P2P_Implementation_Plan.md`
+
+## ADR-048 团队共享公网 MQTT Server 作为当前产品首选 Broker
+
+- 日期：2026-09-02
+- 状态：已采用；用户确认的 R3 产品范围决定
+- 背景：ADR-046 将现有公网 MQTT 设施永久限定为 legacy 测试输入，ADR-047 只取消了隔离 Broker
+  安全资格的阶段前置。用户现已进一步确认：该设施是当前团队共同维护和使用的 MQTT Server，也是
+  当前团队性质产品优先使用的公网 MQTT Broker，可用于 DIRECT-02 真实公网自动信令。
+- 决策：当前产品部署优先复用 `<team-public-mqtt-broker>`。DIRECT-02 可对该 Broker 执行正常 MQTT
+  客户端操作，包括显式连接、精确 topic 订阅、向 `rtmp-monitor/v1/...` 发布、取消订阅和断开；不再
+  要求先部署另一台公网服务器。signaling 与 legacy control 仍必须使用独立连接、ClientId、topic、
+  队列和状态机，`device/control`、`device/status` 不承载 WebRTC 信令。
+- 配置边界：真实 IP、URL、端口组合和凭据不得进入源码、Git、示例、fixture、普通日志、发布包默认值
+  或软件自动连接目标。产品二进制仍默认网络关闭、Broker hostname/port 为空；部署时通过 Git 外部的
+  本机或受控部署配置显式注入真实 endpoint。
+- 运维边界：本决定授权正常 MQTT 客户端数据面使用，不授权登录管理后台执行写操作，也不授权修改
+  listener、认证、ACL、用户、插件、限额、retained 数据或其他 Broker 核心配置；如需这些操作必须
+  另行取得明确授权。
+- 资格表述：当前 endpoint 为明文 MQTT。它可以作为当前产品首选公网 Broker 和功能联调/运行设施，
+  但不得表述为 MQTTS、TLS/Auth/ACL 安全资格已通过。TLS 与正式安全加固保留为可选未来工作，不阻塞
+  当前团队产品研发。
+- 覆盖关系：本 ADR 覆盖 ADR-046 中“现有远程设施永久仅作 legacy 测试、从产品候选排除”的结论，
+  不覆盖 ADR-046 的平面隔离、禁止 legacy topic 承载新信令和禁止真实 endpoint 成为默认值等边界。
+- 相关文件：`docs/versions/webrtc-v2/p2p-direct-02/broker_scope_decision.md`、
   `docs/roadmap/RtmpMonitor_WebRTC_MQTT_Signaling_Direct_P2P_Implementation_Plan.md`
 
 ## ADR-XXX 标题

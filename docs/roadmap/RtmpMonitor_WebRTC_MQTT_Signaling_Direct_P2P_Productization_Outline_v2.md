@@ -1,11 +1,17 @@
 # RtmpMonitor 产品级 WebRTC Direct P2P 总体方案大纲（MQTT 信令版）
 
 > 文档版本：Draft 2.0
-> 修订日期：2026-09-01
+> 修订日期：2026-09-02
 > 依据文档：`RtmpMonitor 从零到 WebRTC 产品化前夜：全历程、现状架构与下一规划交接`
 > 上一版：`RtmpMonitor 产品级 WebRTC Direct P2P 总体方案大纲 Draft 1.0`
 > 文档定位：交给 GPT-5.6 Sol Ultra 继续生成 **decision-complete 的详细研发计划**。
 > 本文是产品化总纲，不代表其中能力已经实现，也不替代源码、CMake、测试结果和 ADR。
+
+> 当前部署范围覆盖（ADR-048）：用户确认现有团队共享公网 MQTT Server 是当前团队产品首选 Broker，
+> 可用于 DIRECT-02 的正常客户端连接、精确订阅、向 `rtmp-monitor/v1/...` 发布、取消订阅和断开，
+> 不要求另建公网 Broker。真实 endpoint 仍只由 Git 外部署配置显式注入，软件默认网络关闭；当前明文
+> MQTT 不声明 MQTTS/TLS/Auth/ACL 安全资格，管理面和核心配置修改仍需另行授权。本文其余 TLS/安全
+> 门禁描述作为可选未来加固目标，不再阻塞当前团队产品研发。
 
 ---
 

@@ -1463,6 +1463,10 @@ CTest 14/14 通过；ARM64 RASTER 构建 NEEDED 无 Qt6OpenGL*/EGL/GLES，GLES3 
 contract 已实现并通过 Windows 四矩阵、ARM64 OFF 交叉构建和 Go unit/race/fuzz；没有 UI、Broker
 连接或产品入口。该状态不代表 MQTTS、Broker 安全或真实 P2P 链路完成。
 
+2026-09-02 更新：ADR-048 将现有团队共享公网 MQTT Server 定位为当前产品首选 Broker，DIRECT-02
+不需要另备公网服务器，可使用其数据面完成真实自动信令。真实 endpoint 仍只由 Git 外部署配置注入，
+默认网络关闭；当前明文 MQTT 不冒充 MQTTS，管理面和核心配置修改仍不在授权范围。
+
 ## 26. WebRTC V2 Week 10 本地 Beta 资格候选（2026-08-31）
 
 - 源版本集中为 `0.2.0-beta.1`；fresh Debug/Release × WebRTC OFF/ON 四矩阵分别通过 39/39、

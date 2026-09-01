@@ -1,5 +1,8 @@
 # P2P-DIRECT-00 Broker 决策记录
 
+> 历史覆盖说明（2026-09-02）：ADR-048 已将该团队共享公网 MQTT Server 定位为当前产品首选 Broker。
+> 下述“从产品候选排除”只记录 DIRECT-00 当时决定；只读审计事实和“不修改核心配置”边界仍有效。
+
 ## 已验证 legacy 事实
 
 用户明确授权的远程设施仅作测试。2026-09-01 的只读检查得到：
@@ -16,7 +19,7 @@
 
 ## 决策
 
-legacy 设施从产品候选中排除。它最多用于一次有界的匿名 CONNECT/SUBACK 兼容性观察：随机 ClientId、
+DIRECT-00 当时将该设施从产品候选中排除，最多用于一次有界的匿名 CONNECT/SUBACK 兼容性观察：随机 ClientId、
 Clean Session、随机精确审计 topic、无通配符、无 publish、无业务 payload、超时后 unsubscribe 和
 disconnect。不得订阅 `device/control` 或 `device/status`。
 
@@ -31,4 +34,4 @@ DISCONNECT；没有 publish，也没有订阅 control/status。该结果只证�
 用户已确认缩减当前研发门禁，`P2P-DIRECT-00=passed(scope_reduced_by_user_decision)`。本机与既有
 WSL 没有执行隔离产品候选的 TLS/Auth/ACL/retained/QoS/expiry/limit 负向矩阵；fixture 的
 `capability` 输出仍不能冒充资格。公网 MQTTS staging 不在 DIRECT-01 范围，legacy 明文 listener
-也不得冒充产品环境。
+也不得冒充当时尚未授权的产品环境。当前产品授权以 ADR-048 为准。

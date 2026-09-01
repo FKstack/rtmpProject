@@ -1,5 +1,11 @@
 # RtmpMonitor 当前项目快照
 
+> 团队公网 MQTT 产品定位（2026-09-02，ADR-048）：用户确认现有团队共享公网 MQTT Server 是当前
+> 产品首选 Broker，可供 DIRECT-02 通过正常客户端数据面执行连接、精确订阅、向新 signaling topic
+> 发布、取消订阅和断开，不需要另备公网服务器。当前为明文 MQTT，不声明 MQTTS/TLS/Auth/ACL 安全
+> 资格；管理后台写操作和 Broker 核心配置修改仍未授权。真实 endpoint/credential 仅由 Git 外部署配置
+> 显式注入，产品默认网络仍关闭、Broker 默认值仍为空，legacy control/status topic 不承载新信令。
+
 > P2P-DIRECT-01（2026-09-02）：状态 `passed`，只表示离线身份、Topic、严格消息、TTL/重放/墓碑/ACK、
 > 状态迁移、candidate 策略、非敏感 runtime config 和 Go provisioning artifact 契约稳定。新增三个未接入
 > 产品对象图的 C++ 静态目标与标准库-only Go CLI；无 UI、Broker 连接或默认网络变化。最终 Windows

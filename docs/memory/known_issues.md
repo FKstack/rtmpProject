@@ -216,7 +216,8 @@
 - 关闭决定：用户明确取消 Broker 安全资格作为阶段前置，`P2P-DIRECT-00` 改为
   `passed(scope_reduced_by_user_decision)`。上述矩阵没有执行，不能据此宣称 Broker、MQTTS 或 ACL
   安全性通过。
-- 临时规避：现有公网明文 MQTT/HTTP 管理设施永远只作 legacy 测试，不进入默认值、产品候选或发布声明。
+- 最新范围：ADR-048 已将团队共享公网 MQTT Server 定位为当前产品首选 Broker；本 issue 仍只说明
+  TLS/Auth/ACL 安全资格未验证。真实 endpoint 不进入默认值或 Git，管理面和核心配置修改仍未授权。
 - 相关文档和代码：`docs/versions/webrtc-v2/p2p-direct-00/`、
   `scripts/webrtc/qualify_p2p_direct_00.ps1`、`tests/P2PDirectBrokerFixtureMain.cpp`
 

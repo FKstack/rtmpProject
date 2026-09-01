@@ -4,9 +4,10 @@
 > 生成日期：2026-09-01
 > 权威总纲：`RtmpMonitor_WebRTC_MQTT_Signaling_Direct_P2P_Productization_Outline_v2.md`
 > 实施基线：`Beta` / `23c0949`
-> 风险等级：R2
+> 风险等级：代码阶段 R2；ADR-047/048 为用户确认后的 R3 产品范围决定
 > 状态：`P2P-DIRECT-00=passed(scope_reduced_by_user_decision)`；`P2P-DIRECT-01=passed`（仅离线
-> contract/provisioning 范围）。未执行的 Broker/MQTTS/真实 P2P 能力不声明通过。
+> contract/provisioning 范围）。ADR-048 已确认团队共享公网 MQTT Server 是当前产品首选 Broker；
+> DIRECT-02 不需要另备公网服务器。当前为明文 MQTT，不声明 MQTTS/TLS/Auth/ACL 安全资格。
 
 本文把 MQTT 信令版总纲展开为可直接执行的阶段、接口、协议、部署、验证和回滚计划。本文不改变总纲约定；实际源码、CMake、运行结果和测试结果高于本文。任何尚未取得的 Broker、摄像头、物理网络或 ARM 真机证据均保持“待验证”。
 
@@ -34,8 +35,10 @@
   可选未来加固；按 ADR-047 不再作为 DIRECT-00/01 的阶段前置。未执行时不得声明产品安全资格，
   Dynamic Security 能力不足时也不临时自研 Broker 插件。
 - EMQX 5.9+ 使用 BSL 1.1；是否能作为最终交付的一部分必须完成许可审查。Mosquitto 2.1.2 是明确的 EPL/EDL 回退。版本依据见 [EMQX 6.2.3 官方发布说明](https://docs.emqx.com/en/emqx/latest/changes/changes-ee-v6.html#v6-2-3)、[EMQX LICENSE](https://github.com/emqx/emqx/blob/master/LICENSE)、[Mosquitto 2.1.2](https://mosquitto.org/blog/2026/02/version-2-1-2-released/)。
-- 客户端继续使用 [Paho MQTT C 1.3.16](https://github.com/eclipse-paho/paho.mqtt.c/releases/tag/v1.3.16)；不更换 MQTT SDK。产品路径改用 SSL-enabled `paho-mqtt3as` 和 MQTT 5 create/connect API。不得在同一个可执行程序中同时链接 `paho-mqtt3a` 与 `paho-mqtt3as` 的同名 API；迁移时先把现有 control target 统一切到 `paho-mqtt3as`，其原有 `tcp://` 行为仍作为迁移兼容路径。MQTT5属性和packet语义以[OASIS MQTT 5.0](https://docs.oasis-open.org/mqtt/mqtt/v5.0/mqtt-v5.0.html)为准。
-- 公网预发布 MQTTS 是 `P2P-DIRECT-02` 的前置必需品；公网 STUN-only 是 `P2P-DIRECT-03` 的前置必需品。
+- 客户端继续使用 [Paho MQTT C 1.3.16](https://github.com/eclipse-paho/paho.mqtt.c/releases/tag/v1.3.16)；不更换 MQTT SDK。当前 signaling 使用与团队 Broker 相符的 MQTT5 明文客户端路径，legacy control 保持既有 `paho-mqtt3a`；未来 MQTTS 迁移再单独引入 `paho-mqtt3as`、OpenSSL 与 CA/hostname 校验。MQTT5 属性和 packet 语义以 [OASIS MQTT 5.0](https://docs.oasis-open.org/mqtt/mqtt/v5.0/mqtt-v5.0.html) 为准。
+- `P2P-DIRECT-02` 优先使用现有团队共享公网 MQTT Server，不要求另建公网 Broker。TLS/MQTTS 迁移与
+  正式安全资格保留为可选未来加固，不阻塞当前团队产品；公网 STUN-only 仍是 `P2P-DIRECT-03` 的
+  媒体可达性输入。
 - STUN 使用 [coturn 4.17.2](https://github.com/coturn/coturn/releases/tag/4.17.2) 的 `stun-only` 模式。当前不部署可工作的 TURN listener、credential 或 relay port range；未来 TURN 必须另立 ADR、独立实例和资格阶段。
 - 第一阶段不需要 Go 在线服务。只有未来出现动态多租户、设备共享、集中授权或浏览器 WSS adapter 时，才优先用 Go 实现独立 authority/adapter；该服务不得承载媒体或代替 Broker。
 
@@ -82,8 +85,8 @@
 | Paho | Windows/ARM 固定 Paho MQTT C 1.3.16 | 保留版本，显式限定 CMake 最低/精确支持版本 |
 | TLS | CMake 链接非 TLS `paho-mqtt3a`；ARM `PAHO_WITH_SSL=OFF` | 迁移到 `paho-mqtt3as`、OpenSSL/CA、严格 hostname 校验 |
 | 协议版本 | `MQTTAsync_connectOptions_initializer`，实际为 MQTT 3.1.1/default fallback | 新 signaling 强制 MQTT 5；拒绝协议降级 |
-| 当前运行配置 | 本机启用的是匿名 `mqtt://`、1883、无 user info | 只视为 legacy 开发配置；不得作为公网产品端点 |
-| Broker | 历史只证明 EMQX+MQTTX 消息联调，精确版本/配置未知 | SSH 只读核验版本、TLS、ACL、retain、queue、limit、license 后再决定原地加固或 Mosquitto 回退 |
+| 当前运行配置 | 团队共享公网 Broker 使用明文 MQTT；精确 endpoint 只在 Git 外配置 | 作为当前产品首选 Broker 显式注入；不成为源码/示例/默认值，不声明 MQTTS |
+| Broker | 用户确认是团队共同使用的 MQTT Server；版本/安全配置未验证 | DIRECT-02 使用正常客户端数据面；管理面/核心配置不修改，安全加固可选延期 |
 | ClientId | 每次显式 connect 生成随机 UUID；自动重连复用 handle | 新建持久 ClientInstanceId 和稳定 MqttClientId；signal/control每次CONNACK分别增加自己的connection epoch |
 | Session | `cleansession=1`；没有 MQTT 5 Session Expiry | signaling 固定 Clean Start=1、Session Expiry=0，不允许离线信令堆积 |
 | QoS/retain | pub/sub 均 QoS0；发送 retain=false | signaling 使用 QoS1+Message Expiry+应用层 TTL；SDP/ICE 永不 retained |
@@ -886,19 +889,29 @@ DeviceProfile与SavedStream v1分离，只持久化DeviceId、友好显示和用
 
 **回滚点**：删除新目标和fixture即可；现有SessionPackage、SavedStream v1和MQTT control不变。
 
-### 8.4 `P2P-DIRECT-02` — MQTTS 产品信令与公网预发布
+### 8.4 `P2P-DIRECT-02` — 团队公网 MQTT 产品信令
 
 **实施项**
 
-1. 先将现有control目标从`paho-mqtt3a`统一切到`paho-mqtt3as`，保持legacy `tcp://`回归，避免同名Paho库同时链接。同时把`MQTTAsync.h`和callback类型从公共`MqttDeviceClient.h`移入pImpl/private callback header，将Paho/OpenSSL link改为PRIVATE，用consumer target证明不再继承Paho include/link。该步同步将ARM sysroot的Paho改为`PAHO_WITH_SSL=ON`、纳入OpenSSL/`libpaho-mqtt3as`包依赖，并先通过ARM64 WebRTC-OFF RASTER/GLES3交叉构建；不把破坏的ARM legacy路径拖到`P2P-DIRECT-07`。Windows/ARM同步更新`scripts/package_windows.ps1`、runtime DLL/SO清单、真实文件`THIRD_PARTY_NOTICES`和`THIRD_PARTY_NOTICES_LINUX_ARM64`，包含`paho-mqtt3as`/OpenSSL并移除`paho-mqtt3a` DLL/SO硬编码，完成WebRTC-OFF legacy RTMP便携包smoke。
-2. 新建独立`MqttSignalingClient`：MQTT5 create/connect，TLS1.2+、CA/hostname严格校验，稳定ClientId，CONNACK/SUBACK门禁，LWT/presence，QoS1/expiry，有界发送和接收队列，callback generation、slow-consumer失败关闭。入站值事件必须保留QoS/DUP/retained/Message Expiry/topic/signaling connection epoch元数据，才能实现retained污染拒绝和live-ready resume。
+1. 保持现有 legacy control `paho-mqtt3a` 路径不变；新 signaling 以独立 target 和连接使用 Paho MQTT5
+   API。当前团队 Broker 采用明文 MQTT，TLS 库迁移不作为本阶段前置；未来启用 MQTTS 时再单独迁移
+   `paho-mqtt3as`、OpenSSL、CA/hostname 校验和发布包依赖。
+2. 新建独立 `MqttSignalingClient`：MQTT5 create/connect，稳定 ClientId、CONNACK/SUBACK 门禁、
+   LWT/presence、QoS1/expiry、有界发送和接收队列、callback generation 与 slow-consumer 关闭。Broker
+   endpoint 必须由 Git 外部署配置显式注入；入站值事件保留 QoS/DUP/retained/Message Expiry/topic/
+   signaling connection epoch 元数据。
 3. 实现`MqttSignalingChannel`和`SignalingSessionService`，完成presence/device list/session request/accept/reject/cancel/ACK/reconnect；此阶段先用虚拟SDP payload验证协议，不连接transport。
-4. 在独立staging listener/instance上部署公网MQTTS，不原地修改现有生产listener；配置DNS、证书、精确ACL、packet/queue/rate/connection限额、审计和回滚单元。
-5. 完成真实Desktop process与device-agent harness的TLS会话，不使用MQTTX、文件搬运或手工粘贴作为产品成功证据。
+4. 使用现有团队公网 MQTT Server 的正常客户端数据面；只创建新 `rtmp-monitor/v1/...` 精确 topic
+   流量，不登录管理后台写配置，不修改 listener、用户、ACL、插件、限额或 retained 数据。
+5. 完成真实 Desktop process 与 device-agent harness 的公网 MQTT 自动信令会话，不使用 MQTTX、
+   文件搬运或手工粘贴作为产品成功证据。
 
-**退出门禁**：两个真实进程通过公网MQTTS建立受授权session；错CA/hostname/credential/ClientId/topic/QoS/retained均被拒绝；Broker不保存离线SDP/ICE；control回归通过；敏感扫描为零。
+**退出门禁**：两个真实进程通过团队公网 MQTT Server 建立 source-bound session；精确 topic、
+ClientId、QoS1 重复、TTL、retained SDP/ICE 拒绝、断线/重连、control 回归和敏感扫描通过。结果标记为
+`plaintext_team_broker`，不声明 MQTTS/TLS/Auth/ACL 安全资格。
 
-**回滚点**：关闭feature flag后产品仅保留developer file fixture，不自动fallback；公网回滚到上一版Broker二进制/脱敏配置或停掉staging listener。
+**回滚点**：关闭 feature flag 后产品仅保留 developer file fixture，不自动 fallback；清除本机显式
+endpoint 配置并断开 signaling 客户端，不修改或回滚团队 Broker 核心配置。
 
 ### 8.5 `P2P-DIRECT-03` — Trickle ICE 和公网 STUN-only
 
@@ -1135,9 +1148,12 @@ MQTT不使用Caddy标准HTTP reverse proxy；Broker直接加载ACME证书并严�
 
 ### 10.5 TURN 与 Go 服务的明确边界
 
-- 当前公网部署仅为MQTTS和STUN-only。用户已具备立即部署条件，所以它们是早期必需品时不作为计划阻塞；但仍必须经过本节的安全门禁后才对外开放。
+- 当前团队公网 Broker 为明文 MQTT 并已获授权作为产品首选数据面；STUN-only 仍按媒体阶段单独处理。
+  TLS/MQTTS 与 Broker 正式安全加固是可选未来工作，不阻塞当前团队产品，但不得伪称已验证。
 - 不部署“先开着备用”的TURN。如产品未来接受relay，必须新建ADR、隔离实例/DNS/credential/relay range、带宽和隐私模型、独立测试阶段和发布文案。
-- 第一阶段不自研在线服务，因为Broker已提供标准MQTT5/TLS/ACL/QoS/expiry能力。需要自研的provisioning CLI用Go；未来authority/WSS adapter如被ADR批准也优先Go，但不承载媒体、control或Broker功能。
+- 第一阶段不自研在线服务，因为团队 Broker 可提供当前 MQTT 数据面；已观察到 MQTT5 兼容性，但
+  TLS/ACL 安全能力未验证。provisioning CLI 使用 Go；未来 authority/WSS adapter 如被 ADR 批准也
+  优先 Go，但不承载媒体、control 或 Broker 功能。
 
 ---
 
@@ -1172,8 +1188,8 @@ RTMP退役的必要条件是“不安装SRS、不配RTMP URL也能完成设备�
 
 | 输入 | 最晚时点 | 缺失时的处理 |
 | --- | --- | --- |
-| SSH host/user/key引用、host fingerprint、现有Broker安装边界 | `P2P-DIRECT-00` Broker审计前 | 只完成本地contract，不猜服务器 |
-| MQTT/STUN域名、DNS变更权限和DNS-01最小权限API方式 | `P2P-DIRECT-01` 结束前 | 使用本地staging证据，不对外声称公网通过 |
+| Broker 管理面或核心配置变更授权 | 仅确有运维变更需求时 | 当前只用客户端数据面；无授权则不执行管理写操作 |
+| Git 外团队 Broker endpoint 配置 | `P2P-DIRECT-02` 联调前 | 缺失则只做离线测试，不把 endpoint 写入仓库默认值 |
 | EMQX许可/交付法务结论 | 可选未来加固 | 保持未验证，不阻塞当前离线研发；不声明产品交付资格 |
 | 两台Windows x64物理机、至少两个真camera/source、三种已记录NAT/防火墙拓扑 | `P2P-DIRECT-04` 退出前 | 可完成本地/harness开发证据，物理资格保持false |
 | 四个独立DeviceId/agent/source；RC时四个独立物理camera/encoder（可分布在两台以上主机） | `P2P-DIRECT-05` 四路软件门禁 / `P2P-DIRECT-08` RC物理门禁 | `P2P-DIRECT-05`可用四个隔离harness证明生命周期，`P2P-DIRECT-08`不得用单source复制替代四路物理资格 |
@@ -1202,4 +1218,5 @@ TURN/relay、SFU、MCU、浏览器互操作、WSS产品adapter、DataChannel控�
 
 当前任务在本计划文档完成审校后停止，**不修改源码/CMake/脚本，不连接SSH，不部署Broker/STUN，不运行实施阶段测试**。
 
-未来获得独立的实施指令后，从`P2P-DIRECT-00`开始：先纳入总纲/计划与ADR，生成CMake DAG/parity ledger，运行fresh OFF/ON基线，然后对公网主机的现有EMQX做只读审计。未取得SSH引用时，本地基线和contract工作可继续，不伪造线上结论；一旦准备完成，MQTTS和STUN-only按`P2P-DIRECT-02/03`的早期必需时序部署。
+后续从 `P2P-DIRECT-02` 继续：使用 ADR-048 授权的团队公网 MQTT 数据面实现自动信令，真实 endpoint
+只由 Git 外配置注入，不执行管理面写操作；STUN-only 按 `P2P-DIRECT-03` 的媒体可达性时序处理。
