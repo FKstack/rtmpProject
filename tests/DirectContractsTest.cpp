@@ -133,6 +133,17 @@ int main()
     require(validateMqttRuntimeConfig(defaults).ok, "safe defaults");
     defaults.brokerHostname = "example.invalid";
     require(!validateMqttRuntimeConfig(defaults).ok, "disabled endpoint rejected");
+    MqttRuntimeConfig anonymous;
+    anonymous.enabled = true;
+    anonymous.brokerHostname = "broker.invalid";
+    anonymous.brokerPort = 1883;
+    anonymous.signalClientId = "operator-user-desktop-signal";
+    require(validateMqttRuntimeConfig(anonymous).ok,
+            "explicit anonymous runtime accepted");
+    anonymous.signalCredentialReference = "credential-ref";
+    require(validateMqttRuntimeConfig(anonymous).error
+                == "anonymous_config_contains_credential",
+            "anonymous runtime rejects credential reference");
     MqttRuntimeConfig viewConfig;
     viewConfig.authorizedDevices.push_back({"device-1", "target-1", DeviceScope::View});
     viewConfig.controlClientId = "operator-user-desktop-control";

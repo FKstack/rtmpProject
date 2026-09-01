@@ -9,7 +9,10 @@ namespace rtmp::p2p {
 ConfigValidation validateMqttRuntimeConfig(const MqttRuntimeConfig &config)
 {
     if (config.schemaVersion != 1 || config.protocolVersion != 5
-        || config.topicRoot != "rtmp-monitor/v1") {
+        || config.topicRoot != "rtmp-monitor/v1"
+        || config.transport != "tcp"
+        || (config.authMode != "anonymous"
+            && config.authMode != "credential-reference")) {
         return {false, "unsupported_config_version"};
     }
     if (!config.enabled) {
@@ -20,8 +23,16 @@ ConfigValidation validateMqttRuntimeConfig(const MqttRuntimeConfig &config)
             return {false, "disabled_config_contains_endpoint_or_credential"};
         }
     } else if (config.brokerHostname.empty() || config.brokerPort < 1
-               || config.brokerPort > 65535 || config.signalClientId.empty()
-               || config.signalCredentialReference.empty()) {
+               || config.brokerPort > 65535 || config.signalClientId.empty()) {
+        return {false, "enabled_config_incomplete"};
+    }
+    if (config.enabled && config.authMode == "anonymous"
+        && (!config.signalCredentialReference.empty()
+            || !config.controlCredentialReference.empty())) {
+        return {false, "anonymous_config_contains_credential"};
+    }
+    if (config.enabled && config.authMode == "credential-reference"
+        && config.signalCredentialReference.empty()) {
         return {false, "enabled_config_incomplete"};
     }
 

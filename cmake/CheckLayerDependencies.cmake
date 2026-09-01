@@ -213,6 +213,14 @@ foreach(source_file IN LISTS signaling_channel_files)
     endif()
 endforeach()
 
+foreach(source_file IN LISTS signaling_session_files)
+    file(READ "${source_file}" source_text)
+    if(source_text MATCHES "#[ \t]*include[ \t]*[<\"](app|device_control|diagnostics|evidence|event_center|logging|media|mqtt_signaling|mqtt_transport|profiles|publisher|render|runtime_config|server|ui|webrtc_dev|webrtc_product|webrtc_runtime|webrtc_transport)/")
+        message(FATAL_ERROR
+            "signaling session core depends on infrastructure/product/UI: ${source_file}")
+    endif()
+endforeach()
+
 foreach(source_file IN LISTS mqtt_signaling_files)
     file(READ "${source_file}" source_text)
     if(source_text MATCHES "#[ \t]*include[ \t]*[<\"](app|device_control|diagnostics|evidence|event_center|media|profiles|publisher|render|server|ui|webrtc_dev|webrtc_product|webrtc_runtime|webrtc_transport)/")

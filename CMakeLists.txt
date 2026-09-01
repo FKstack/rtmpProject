@@ -395,6 +395,25 @@ target_link_libraries(rtmp_monitor_runtime_config
     PRIVATE rtmp_monitor_identity_contracts)
 rtmp_monitor_apply_project_options(rtmp_monitor_runtime_config)
 
+add_library(rtmp_monitor_signaling_channel INTERFACE)
+target_sources(rtmp_monitor_signaling_channel INTERFACE
+    include/common/signaling_channel/SignalingChannel.h)
+target_include_directories(rtmp_monitor_signaling_channel INTERFACE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/common)
+
+add_library(rtmp_monitor_signaling_session STATIC
+    include/common/signaling_session/DirectSessionCore.h
+    src/common/signaling_session/DirectSessionCore.cpp)
+target_include_directories(rtmp_monitor_signaling_session PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/common)
+target_link_libraries(rtmp_monitor_signaling_session
+    PUBLIC
+        rtmp_monitor_signaling_channel
+        rtmp_monitor_signaling_contracts
+    PRIVATE
+        Qt6::Core)
+rtmp_monitor_apply_project_options(rtmp_monitor_signaling_session)
+
 add_library(rtmp_monitor_webrtc_contracts INTERFACE)
 target_sources(rtmp_monitor_webrtc_contracts INTERFACE
     include/common/webrtc_contracts/WebRtcSessionContracts.h)
@@ -657,6 +676,27 @@ target_link_libraries(rtmp_monitor_mqtt_transport
         eclipse-paho-mqtt-c::paho-mqtt3a
 )
 rtmp_monitor_apply_project_options(rtmp_monitor_mqtt_transport)
+
+qt_add_library(rtmp_monitor_mqtt_signaling STATIC
+    include/common/mqtt_signaling/DirectRuntimeConfig.h
+    src/common/mqtt_signaling/DirectRuntimeConfig.cpp
+    include/common/mqtt_signaling/MqttSignalingChannel.h
+    src/common/mqtt_signaling/MqttSignalingChannel.cpp
+)
+target_include_directories(rtmp_monitor_mqtt_signaling PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/common
+)
+target_link_libraries(rtmp_monitor_mqtt_signaling
+    PUBLIC
+        Qt6::Core
+        rtmp_monitor_signaling_channel
+        rtmp_monitor_signaling_session
+    PRIVATE
+        rtmp_monitor_mqtt_transport
+        rtmp_monitor_identity_contracts
+        rtmp_monitor_signaling_contracts
+)
+rtmp_monitor_apply_project_options(rtmp_monitor_mqtt_signaling)
 
 qt_add_library(rtmp_monitor_device_control STATIC
     include/common/device_control/DeviceControlTypes.h
@@ -1209,6 +1249,14 @@ if(BUILD_TESTING)
     rtmp_monitor_apply_project_options(rtmp_monitor_direct_contracts_test)
     add_test(NAME rtmp_monitor_direct_contracts_test
         COMMAND rtmp_monitor_direct_contracts_test)
+
+    add_executable(rtmp_monitor_direct_session_core_test
+        tests/DirectSessionCoreTest.cpp)
+    target_link_libraries(rtmp_monitor_direct_session_core_test PRIVATE
+        rtmp_monitor_signaling_session)
+    rtmp_monitor_apply_project_options(rtmp_monitor_direct_session_core_test)
+    add_test(NAME rtmp_monitor_direct_session_core_test
+        COMMAND rtmp_monitor_direct_session_core_test)
 
     qt_add_executable(rtmp_monitor_event_center_service_test
         tests/EventCenterServiceTest.cpp

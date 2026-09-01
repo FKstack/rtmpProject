@@ -16,6 +16,8 @@ struct AuthorizedDevice final {
 struct MqttRuntimeConfig final {
     int schemaVersion{1};
     bool enabled{false};
+    std::string transport{"tcp"};
+    std::string authMode{"anonymous"};
     std::string brokerHostname;
     int brokerPort{0};
     int protocolVersion{5};
