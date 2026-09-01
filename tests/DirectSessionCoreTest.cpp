@@ -106,10 +106,43 @@ int main()
     require(deviceCore.snapshot().duplicates == 1, "duplicate counted");
     require(operatorCore.snapshot().duplicates == 3, "duplicate replies counted");
 
+    SignalingPublish retainedRequest = originalRequest;
+    retainedRequest.retained = true;
+    deviceChannel.inject(retainedRequest);
+    require(deviceCore.snapshot().rejected == 1 && startActions == 1,
+            "retained session request rejected without side effect");
+
     const auto rejectedBefore = deviceCore.snapshot().rejected;
     deviceChannel.inject(originalRequest, "rtmp-monitor/v1/signaling/to/device/device-2/from/operator/operator-1/desktop-1");
     require(deviceCore.snapshot().rejected == rejectedBefore + 1,
             "wrong device route rejected");
+
+    FakeChannel operatorChannel2;
+    FakeChannel deviceChannel2;
+    operatorChannel2.peer = &deviceChannel2;
+    deviceChannel2.peer = &operatorChannel2;
+    operatorChannel2.now = now;
+    deviceChannel2.now = now;
+    IdSequence ids2;
+    const DirectRouteIdentity identity2{
+        "device-2", "operator-1", "desktop-1"};
+    DirectOperatorCore operatorCore2(
+        operatorChannel2, identity2, [now] { return now; },
+        [&ids2] { return ids2.next(); });
+    DirectDeviceCore deviceCore2(
+        deviceChannel2, identity2, [now] { return now; },
+        [&ids2] { return ids2.next(); });
+    int device2Actions = 0;
+    deviceCore2.setActionHandler([&](DirectAction) { ++device2Actions; });
+    require(deviceCore2.start() && operatorCore2.start(),
+            "second device route starts");
+    deviceChannel2.inject(originalRequest);
+    require(deviceCore2.snapshot().rejected == 1 && device2Actions == 0,
+            "device two rejects device one route");
+    require(operatorCore2.requestStartStream(), "second device session");
+    require(device2Actions == 1
+            && operatorCore2.snapshot().sessionState == SessionState::Connected,
+            "second device is independently connected");
 
     require(operatorCore.requestStopStream(), "session cancel");
     require(stopActions == 1, "stop action exactly once");
