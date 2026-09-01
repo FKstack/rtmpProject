@@ -642,6 +642,22 @@ target_include_directories(rtmp_monitor_evidence PUBLIC
 target_link_libraries(rtmp_monitor_evidence PUBLIC Qt6::Core Qt6::Gui)
 rtmp_monitor_apply_project_options(rtmp_monitor_evidence)
 
+qt_add_library(rtmp_monitor_mqtt_transport STATIC
+    include/common/mqtt_transport/MqttTransportTypes.h
+    include/common/mqtt_transport/MqttAsyncTransport.h
+    src/common/mqtt_transport/MqttAsyncTransport.cpp
+)
+target_include_directories(rtmp_monitor_mqtt_transport PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/common
+)
+target_link_libraries(rtmp_monitor_mqtt_transport
+    PUBLIC
+        Qt6::Core
+    PRIVATE
+        eclipse-paho-mqtt-c::paho-mqtt3a
+)
+rtmp_monitor_apply_project_options(rtmp_monitor_mqtt_transport)
+
 qt_add_library(rtmp_monitor_device_control STATIC
     include/common/device_control/DeviceControlTypes.h
     include/common/device_control/DeviceCommandCodec.h
@@ -663,7 +679,7 @@ target_include_directories(rtmp_monitor_device_control PUBLIC
 target_link_libraries(rtmp_monitor_device_control
     PUBLIC
         Qt6::Core
-        eclipse-paho-mqtt-c::paho-mqtt3a
+        rtmp_monitor_mqtt_transport
 )
 rtmp_monitor_apply_project_options(rtmp_monitor_device_control)
 

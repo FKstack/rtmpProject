@@ -10,6 +10,10 @@ file(GLOB_RECURSE device_control_files
     "${PROJECT_SOURCE_DIR}/include/common/device_control/*.h"
     "${PROJECT_SOURCE_DIR}/src/common/device_control/*.h"
     "${PROJECT_SOURCE_DIR}/src/common/device_control/*.cpp")
+file(GLOB_RECURSE mqtt_transport_files
+    "${PROJECT_SOURCE_DIR}/include/common/mqtt_transport/*.h"
+    "${PROJECT_SOURCE_DIR}/src/common/mqtt_transport/*.h"
+    "${PROJECT_SOURCE_DIR}/src/common/mqtt_transport/*.cpp")
 file(GLOB_RECURSE control_policy_files
     "${PROJECT_SOURCE_DIR}/include/common/control_policy/*.h"
     "${PROJECT_SOURCE_DIR}/src/common/control_policy/*.h"
@@ -161,6 +165,14 @@ foreach(source_file IN LISTS render_files)
     if(source_text MATCHES "#[ \t]*include[ \t]*[<\"](identity_contracts|signaling_contracts|signaling_channel|signaling_session|mqtt_signaling|runtime_config|device_session|device_agent_session)/")
         message(FATAL_ERROR
             "render layer depends on product signaling/session: ${source_file}")
+    endif()
+endforeach()
+
+foreach(source_file IN LISTS mqtt_transport_files)
+    file(READ "${source_file}" source_text)
+    if(source_text MATCHES "#[ \t]*include[ \t]*[<\"](app|control_policy|device_control|diagnostics|evidence|event_center|identity_contracts|logging|media|mqtt_signaling|profiles|publisher|render|runtime_config|server|signaling_channel|signaling_contracts|signaling_session|ui|webrtc_dev|webrtc_product|webrtc_runtime|webrtc_transport)/")
+        message(FATAL_ERROR
+            "MQTT transport depends on a product or outer layer: ${source_file}")
     endif()
 endforeach()
 
