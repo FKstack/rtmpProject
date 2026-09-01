@@ -1439,7 +1439,7 @@ DeviceId
 | signaling 组件测试 | session request/accept、Offer/Answer、candidate 暂存、cancel、close |
 | transport 测试 | trickle ICE、remote candidate 注入、ICE restart、旧 generation 拒绝 |
 | media 集成 | RTP→AU→decode→mailbox→presented、关键帧恢复、容量 drop |
-| 双进程测试 | device agent + desktop client + 本地 MQTT Broker/STUN，无文件搬运 |
+| 双进程测试 | 现有 desktop 产品进程 + 可替换 Device Harness + 本地 fixture 或团队公网 MQTT；不创建 Operator Harness，不搬运信令文件 |
 | 物理 LAN | 两台真实机器、真实摄像头、防火墙和网卡 |
 | 跨 NAT Direct | 双方通过自建 STUN 获取 srflx 并建立 Direct |
 | 不支持网络 | Direct 失败后稳定进入 NeedsRelay，不挂死、不回退 RTMP |
@@ -1545,15 +1545,17 @@ WebRTC 成为唯一实时视频入口前，至少满足：
 
 - `signaling_contracts`；
 - `ISignalingChannel`；
-- `MqttSignalingClient`；
-- desktop/device 双端连接、认证、订阅、keepalive 和 reconnect；
+- 从现有 `MqttDeviceClient` 提取的唯一 `MqttAsyncTransport` 实现；
+- legacy control façade 与 `MqttSignalingChannel` 分别持有独立 transport 实例，不复制 Paho 生命周期；
+- 现有 desktop 产品进程与可替换 Device Harness 的连接、订阅、keepalive 和 reconnect；
 - device birth/LWT/presence/capabilities；
 - session request/accept/reject/cancel；
-- 本地 Broker fixture 和双进程 integration；
-- TLS/ACL/retained/offline queue 负向测试；
+- 本地 Broker/Core fixture 和现有 desktop + Device Harness 集成；
+- retained/TTL/重复/错误 route/offline queue 负向测试；TLS/ACL 加固按 ADR-047 延期且不冒充已验证；
 - 敏感日志门禁。
 
-**退出门禁**：两个真实进程通过 MQTT 自动建立受授权逻辑 session，不复制 JSON。
+**退出门禁**：现有桌面产品进程与 Device Harness 通过团队公网 MQTT 自动建立 source-bound 逻辑
+session，不复制桌面 UI、MQTT transport 或 JSON 协议实现。
 
 ### P2P-DIRECT-03：trickle ICE 与 transport 适配
 

@@ -184,7 +184,8 @@ media     -> h264_contracts + stream_contracts + FFmpeg
 
 - media、publisher、webrtc_transport、mqtt_signaling、device_control 互不反向依赖；`device_control` 保持不依赖 `control_policy`，两者只在composition root/device session组合。
 - `webrtc_runtime` 只依赖 session signaling port抽象和transport，不包含 Paho 或 raw topic。
-- Paho 仅为 `mqtt_signaling`/`device_control` 私有实现依赖，不出现在公共产品头文件。
+- Paho 仅为共享 `mqtt_transport` 的 PRIVATE 实现依赖；`mqtt_signaling` 与 `device_control` 都不在公共
+  头文件暴露 Paho 类型。
 - `DeviceSessionCoordinator` 是唯一跨 identity、signaling、WebRTC、StreamId 和 control target 的组合 owner，但不取代各子系统的资源owner。
 - Desktop-only `device_session` 与 headless `device_agent_session` 不相互依赖；共享的只是identity/signaling session/runtime/control contracts。`webrtc_product` 不强持runtime，只实现中立`product_media_port`。
 - MainWindow、QWidget、media、transport 和 control policy 不接触 Paho callback。
@@ -194,7 +195,7 @@ media     -> h264_contracts + stream_contracts + FFmpeg
 
 | Owner | 执行上下文 | 独占状态/资源 | 停止终点 |
 | --- | --- | --- | --- |
-| `MqttSignalingClient` | 进程级独立 signaling owner QThread + Paho callback threads | 单条共享MQTT handle、ClientId、connection epoch、subscriptions、tx/rx queue、metrics | 应用退出时：closing→先递增epoch/generation并停投递→清有界队列→unsubscribe/disconnect/destroy→join owner |
+| `MqttAsyncTransport` signaling 实例 | Desktop/Harness Qt owner thread + Paho callback threads | signaling 专属 MQTT handle、ClientId、connection epoch、精确 subscriptions 和有界 rx queue；与 control 实例只共享实现 | 应用退出时：先递增 generation 并停投递→清有界队列→disconnect/destroy；不等待 UI 线程中的 Paho callback |
 | `MqttOperatorControlClient`（由现有`MqttDeviceClient`演进） | Desktop Qt owner + Paho callbacks | operator-control principal/handle、command tx、receipt/safety/heartbeat rx、control epoch | UI Locked→closing+先失效control epoch/generation→清有界队列→unsubscribe/disconnect/destroy |
 | `MqttDeviceControlTransport` | device-agent control I/O thread + Paho callbacks | device-control principal/handle、dynamic command subscription、receipt/safety/heartbeat tx/rx queue、control epoch | 先失效control epoch/停投递→清队列→unsubscribe/disconnect/destroy；不拥有lease/policy/actuator |
 | `DeviceCommandReceiver` | device-agent high-priority control owner thread | lease/scope/sequence/replay/dead-man状态和`IActuatorPort` | 本地/硬件watchdog停车→失效lease→请求transport unsubscribe |
@@ -923,7 +924,9 @@ endpoint 配置并断开 signaling 客户端，不修改或回滚团队 Broker �
 2. 把`WebRtcReceiveSession`改为注入signaling port，建立`SessionPackageSignalingChannel`回归adapter，实现`WebRtcPublishSession`。
 3. 实现candidate-before-SDP缓冲、去重、EOC、旧attempt/旧generation拒绝、relay双向拒绝、selected-pair校验和完整PC重建。
 4. 用`IceRuntimeConfig v1`将同一个受控STUN URI注入desktop/device agent，并在公网主机部署coturn 4.17.2 `--stun-only`，仅开UDP/3478；TCP/UDP 5349、TURN listener和relay range保持关闭。
-5. 用MP4 publisher/device harness和Desktop viewer经MQTTS+trickle完成真实RTP→AU→decode→mailbox→presented闭环。
+5. 用MP4 publisher/device runtime和现有 Desktop viewer 经 MQTT+trickle 完成真实
+   RTP→AU→decode→mailbox→presented 闭环；当前团队 Broker 仍按 ADR-048 的明文范围使用，除非另行
+   完成可选 MQTTS 加固。
 
 **退出门禁**：SessionPackage整包回归不变；WSS不出现在产品路径；SDP内嵌candidate/额外m-line、candidate 64/65、EOC、乱序、晚回调和relay注入负向通过；无凭据与合成错凭据TURN Allocate都不得成功，也不得返回401/438 REALM/NONCE challenge或XOR-RELAYED-ADDRESS；媒体不经Broker/STUN服务器。
 
@@ -1096,19 +1099,19 @@ cmake -DPROJECT_SOURCE_DIR=. -P cmake/CheckLayerDependencies.cmake
 ### 10.1 部署时序与端口
 
 ```text
-P2P-DIRECT-00  SSH只读审计现有EMQX，冻结EMQX/Mosquitto决策
-P2P-DIRECT-01  准备DNS、CA/ACME、credential/ACL生成与staging配置
-P2P-DIRECT-02  开放 mqtt.<domain>:8883/TCP，真实客户端通过安全门禁
+P2P-DIRECT-00  完成基线、红线和本地 fixture
+P2P-DIRECT-01  完成离线身份、Topic、协议和 provisioning contract
+P2P-DIRECT-02  通过 Git 外配置复用团队公网明文 MQTT 数据面
 P2P-DIRECT-03  开放 stun.<domain>:3478/UDP，完成Binding与TURN Allocate负向
 ```
 
 | 端口/服务 | 公网状态 | 说明 |
 | --- | --- | --- |
-| TCP 8883 / MQTT TLS | `P2P-DIRECT-02`起开放 | Broker直接终止TLS，只MQTT5产品credential |
-| TCP 1883 / plaintext MQTT | 关闭 | 如本机legacy必需，仅loopback/私网临时listener且不用产品credential |
+| TCP 1883 / plaintext MQTT | 当前团队 Broker 已提供 | DIRECT-02 当前产品功能范围；只由 Git 外配置显式注入，不声明 TLS/Auth/ACL 资格 |
+| TCP 8883 / MQTT TLS | 可选未来加固 | 当前阶段不要求开放；启用时必须另做 CA/hostname/credential 资格 |
 | UDP 3478 / STUN | `P2P-DIRECT-03`起开放 | coturn固定`stun-only` |
 | TCP/UDP 5349、TURN 3478/TCP、relay range | 关闭 | 无TURN listener/credential/allocation |
-| EMQX 18083 / Mosquitto admin | 关闭 | 管理面只loopback/VPN/SSH tunnel |
+| Broker 管理面 | 不在本阶段操作范围 | 不登录执行写操作，不修改 listener、用户、ACL、插件或核心配置 |
 | metrics | 关闭 | 只loopback，由受控采集器读取 |
 
 MQTT不使用Caddy标准HTTP reverse proxy；Broker直接加载ACME证书并严格热重载。首版冻结DNS-01 challenge，DNS provider token只允许修改该域名TXT记录，由OS受支持的ACME client/systemd timer续期；deploy hook先校验新证书再reload Broker，失败继续使用旧证书并告警。首版只发布IPv4 A记录；AAAA只在IPv6防火墙、MQTTS/STUN正负向和媒体路径全资格后增加。
@@ -1121,7 +1124,8 @@ MQTT不使用Caddy标准HTTP reverse proxy；Broker直接加载ACME证书并严�
 - 订阅上限按principal类型冻结：operator-signal最多1600个精确topic（最坏512设备×presence/capabilities/busy + 最多4个session route + authority/headroom），device-signal最多64，operator/device-control最多16。超限SUBSCRIBE稳定拒绝并记审计，不用`#`压缩授权。
 - 认证前无principal，所以另设全局最多128个和每IP最多5个未认证TCP/TLS连接、TLS handshake 5秒、MQTT Auth/CONNACK 5秒、每IP新握手20/min burst10；主机启用SYN cookie/backlog保护，Broker unit默认`LimitNOFILE=4096`、`TasksMax=512`、`MemoryMax=1G`（`P2P-DIRECT-00`若主机更小只能下调连接容量，不取消资源上限）。慢握手/连接洪泛测试必须证明已连接control StopCar P95增量仍不大于50ms。
 - MQTT5服务端Session Expiry与Message Expiry不能被客户端或管理默认放大；signal/control/authority所有短期principal均由Broker强制Session Expiry=0、离线queue=0，拒绝客户端请求的持久session。只有presence/capabilities的精确topic可retained，仍受Message Expiry约束。
-- 外网防火墙仅开8883/TCP和3478/UDP；不为“方便调试”开dashboard、1883、SSH全网段或relay range。SSH使用现有受控用户/密钥和主机指纹校验。
+- 当前团队 Broker 的明文 MQTT 监听属于既有外部设施，本仓库不修改其防火墙或管理配置；DIRECT-03
+  如新增 STUN 只按该阶段授权开放 UDP/3478。未来 MQTTS、防火墙和管理面硬化必须单独评审。
 - 仓库`deploy/mqtt-direct/`只放`<mqtt-host>`/`<stun-host>`占位符和脱敏模板；真endpoint、DNS provider token、credential、CA private key和identity registry只在服务器受控路径与客户端secret store。
 - coturn固定`--stun-only --no-tcp --no-tls --no-dtls`、绑定指定公网IPv4并关闭CLI/TURN credential/relay range；主机或上游对单源20pps burst40、全局1000pps做限速/告警，异常只记录聚合计数。合成测试同时门禁Binding成功，无凭据/假凭据Allocate不得成功且不得出现REALM/NONCE challenge/XOR-RELAYED-ADDRESS，TCP/TLS/DTLS无listener，配置/监听socket/抓包中无relay range，响应/请求字节放大比不大于2.5。
 
@@ -1226,7 +1230,7 @@ TURN/relay、SFU、MCU、浏览器互操作、WSS产品adapter、DataChannel控�
 
 ## 13. 后续实施起点（不属于当前文档任务）
 
-当前任务在本计划文档完成审校后停止，**不修改源码/CMake/脚本，不连接SSH，不部署Broker/STUN，不运行实施阶段测试**。
-
-后续从 `P2P-DIRECT-02` 继续：使用 ADR-048 授权的团队公网 MQTT 数据面实现自动信令，真实 endpoint
-只由 Git 外配置注入，不执行管理面写操作；STUN-only 按 `P2P-DIRECT-03` 的媒体可达性时序处理。
+`P2P-DIRECT-02` 已于 2026-09-02 实施并通过 `passed(plaintext_team_broker)` 范围门禁。实现复用现有
+桌面、控制、渲染、事件、证据和截图系统；真实 endpoint 只在 Git 外配置，未执行管理面写操作。
+后续从 `P2P-DIRECT-03` 继续，将自动信令接入现有 WebRTC transport 与 trickle ICE；STUN-only 按
+DIRECT-03 的媒体可达性时序处理，DIRECT-02 不冒充真实媒体链路已经完成。

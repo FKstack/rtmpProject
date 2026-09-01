@@ -221,6 +221,21 @@
 - 相关文档和代码：`docs/versions/webrtc-v2/p2p-direct-00/`、
   `scripts/webrtc/qualify_p2p_direct_00.ps1`、`tests/P2PDirectBrokerFixtureMain.cpp`
 
+## ISSUE-019 DIRECT 自动逻辑 Session 尚未绑定真实 WebRTC 媒体
+
+- 状态：开放；按阶段计划待 DIRECT-03/04 处理。
+- 影响范围：DIRECT-02 已能通过团队公网 MQTT 建立逻辑 session，但不会自动交换/应用真实 SDP/ICE，
+  不会创建 PeerConnection、视频 StreamId/mailbox/tile，也没有正式 ARM Device Runtime。
+- 已验证现象：现有 desktop + Device Harness 的 normal/duplicate/reconnect 和双 route 通过；Harness 的
+  `SimulatedDeviceActions` 只计 START/STOP 动作，不伪造视频、截图或媒体状态资源。
+- 已排除内容：不是 MQTT 连通性、SUBACK、QoS1 重复、legacy 控制回归、OpenGL/CPU、EventCenter、
+  Evidence 或 ARM64 交叉构建失败。
+- 下一步验证：DIRECT-03 把 Core 接入 `WebRtcEndpointSession` 与 trickle ICE，完成真实
+  RTP→AU→decode→mailbox→presented；DIRECT-04 将正式 roster/session 映射接入现有 MainWindow 和 tile。
+- 临时规避：RTMP 与手工 WebRTC developer 路径保持不变；不得把逻辑 connected 显示成真实视频出画。
+- 相关文档和代码：`docs/versions/webrtc-v2/p2p-direct-02/`、
+  `docs/roadmap/RtmpMonitor_WebRTC_MQTT_Signaling_Direct_P2P_Implementation_Plan.md`
+
 ## ISSUE-XXX 标题
 
 - 状态：

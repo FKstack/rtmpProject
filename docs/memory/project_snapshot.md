@@ -1,5 +1,13 @@
 # RtmpMonitor 当前项目快照
 
+> P2P-DIRECT-02（2026-09-02）：状态 `passed(plaintext_team_broker)`。从现有 `MqttDeviceClient` 提取
+> 唯一 `MqttAsyncTransport`，legacy control 与 MQTT5 signaling 使用同一实现的两个独立实例；新增
+> broker-neutral Operator/Device Core、MQTT adapter、现有 desktop 组合根和 Windows 测试 Harness。
+> 默认 UI/网络行为不变，OFF 无 DIRECT CLI/Harness。团队公网 MQTT 的 normal、duplicate、reconnect
+> 和双 route 四进程用例通过；不登录或修改 Broker 管理面。fresh Windows Debug/Release OFF 43/43、
+> 43/43，ON 53/53、53/53；ARM64 RASTER/GLES3 OFF 302/302、316/316 交叉构建通过。该状态不表示
+> MQTTS、安全资格、trickle ICE、真实媒体或 ARM 真机完成，详见 `docs/versions/webrtc-v2/p2p-direct-02/`。
+
 > 团队公网 MQTT 产品定位（2026-09-02，ADR-048）：用户确认现有团队共享公网 MQTT Server 是当前
 > 产品首选 Broker，可供 DIRECT-02 通过正常客户端数据面执行连接、精确订阅、向新 signaling topic
 > 发布、取消订阅和断开，不需要另备公网服务器。当前为明文 MQTT，不声明 MQTTS/TLS/Auth/ACL 安全

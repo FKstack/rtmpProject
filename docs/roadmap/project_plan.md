@@ -1467,6 +1467,12 @@ contract 已实现并通过 Windows 四矩阵、ARM64 OFF 交叉构建和 Go uni
 不需要另备公网服务器，可使用其数据面完成真实自动信令。真实 endpoint 仍只由 Git 外部署配置注入，
 默认网络关闭；当前明文 MQTT 不冒充 MQTTS，管理面和核心配置修改仍不在授权范围。
 
+2026-09-02 更新：`P2P-DIRECT-02=passed(plaintext_team_broker)`。共享 MQTT transport、Direct
+Operator/Device Core、MQTT5 adapter、现有 desktop 组合根和 Device Harness 已实现；团队公网数据面
+normal、duplicate、reconnect 与双 route 通过。现有控制/UI/render/event/evidence/screenshot 全量回归
+通过，OFF 无 DIRECT 入口。下一阶段为 DIRECT-03 的 trickle ICE 与真实 WebRTC media 绑定；DIRECT-04
+才完成单桌面正式 roster、多 session/tile 映射。当前不声明 MQTTS、安全 Broker、真实媒体或 ARM 真机。
+
 ## 26. WebRTC V2 Week 10 本地 Beta 资格候选（2026-08-31）
 
 - 源版本集中为 `0.2.0-beta.1`；fresh Debug/Release × WebRTC OFF/ON 四矩阵分别通过 39/39、

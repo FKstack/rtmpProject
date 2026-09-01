@@ -981,6 +981,32 @@
 - 相关文件：`docs/versions/webrtc-v2/p2p-direct-02/broker_scope_decision.md`、
   `docs/roadmap/RtmpMonitor_WebRTC_MQTT_Signaling_Direct_P2P_Implementation_Plan.md`
 
+## ADR-049 DIRECT-02 复用现有桌面产品与共享 MQTT Transport
+
+- 日期：2026-09-02
+- 状态：已采用；R2 架构实现，产品范围沿用 ADR-048
+- 背景：RTMP 版本已经拥有唯一 `MainWindow`、控制面板/指令、mailbox、OpenGL/CPU、动态网格、
+  全屏、事件、Evidence 和截图链。DIRECT-02 需要自动信令，但不得把更新底座误做成第二套桌面产品，
+  也不得复制已有 Paho connect/reconnect/callback 生命周期。
+- 决策：从 `MqttDeviceClient` 提取 `MqttAsyncTransport`，由 legacy control façade 和
+  `MqttSignalingChannel` 各持一个独立实例。`ISignalingChannel` 与 Direct Operator/Device Core 使用
+  broker-neutral 值类型；Paho 只在 transport `.cpp` 和 PRIVATE CMake 边。现有 WebRTC-ON
+  `rtmp_monitor.exe` 是唯一 Operator 产品进程，Device Harness 只是 BUILD_TESTING runtime shell。
+- 产品连续性：不新建主窗口、控制 UI、视频网格、renderer、EventCenter、Evidence store 或截图系统；
+  signaling 只由组合根向现有系统投递稳定状态。没有显式 Git 外配置时不创建 signaling connection；
+  WebRTC-OFF 不接受 DIRECT CLI。
+- 协议边界：`session.request`/`session.cancel` 表示 Direct START/STOP，不替换小车按钮、
+  `DeviceCommand` 字节或 legacy topic。重复 messageId 重放缓存结果但只执行一次动作；retained session
+  消息和错误 source-bound route 无副作用拒绝。
+- 验证证据：Windows Debug/Release OFF 43/43、43/43，ON 53/53、53/53；ARM64 RASTER/GLES3 OFF
+  302/302、316/316；团队公网 MQTT normal、duplicate、reconnect 与双 route 四进程退出 0；敏感扫描
+  零命中。资格只写 `plaintext_team_broker`。
+- 后续：DIRECT-03 将信令接入现有 WebRTC transport/trickle ICE；DIRECT-04 才建立单桌面正式 roster、
+  多 session/tile 与真实视频资源绑定。DIRECT-02 不冒充真实媒体完成。
+- 相关文件：`include/common/mqtt_transport/`、`include/common/signaling_session/`、
+  `include/common/mqtt_signaling/`、`src/common/app/DirectDesktopRuntime.cpp`、
+  `docs/versions/webrtc-v2/p2p-direct-02/`
+
 ## ADR-XXX 标题
 
 - 日期：
