@@ -903,6 +903,38 @@
 - 相关文件：`tests/WebRtcQualificationRunnerMain.cpp`、`scripts/webrtc/qualify_week10.ps1`、
   `scripts/webrtc/week10_performance_worker.ps1`、`docs/versions/webrtc-v2/weeks/week10/`
 
+## ADR-046 第一阶段采用隔离的 MQTT TLS 信令并排除 legacy 公网测试 Broker
+
+- 日期：2026-09-01
+- 状态：已确认；`P2P-DIRECT-00` 技术候选资格待完成
+- 背景：现有 RTMP 产品使用默认关闭、Broker 地址为空的单客户端 MQTT 3.1.1 控制路径，
+  `device/control` 与 `device/status` 分别承担嵌入式设备控制和状态观察。用户另行授权的远程设施只
+  提供公网明文 MQTT 与 HTTP 管理面，用于兼容性观察，不具备产品 MQTTS、安全或许可资格。ADR-044
+  原先把 WSS 和 TURN 冻结为后续产品面，但当前双方都是原生客户端，首阶段没有浏览器或 relay 需求。
+- 决策：第一阶段产品信令使用 MQTT 5 over TLS；signaling 与 control 可以共用未来合格的 Broker
+  基础设施，但必须使用独立连接、ClientId、principal、topic、ACL、payload、队列、状态机和指标。
+  `device/control` 与 `device/status` 继续属于 legacy/control 平面，不得承载 SDP、candidate 或会话
+  授权。首阶段严格 Direct-only，不部署 TURN；WSS 只保留为未来 `ISignalingChannel` adapter。
+  现有远程设施永久限定为 legacy 测试输入，从产品候选中排除，不在原实例上原地加固。
+- 安全边界：产品与测试默认均保持网络关闭；真实 Broker/管理地址、凭据和测试 topic 只进入本机忽略
+  配置，不进入源码、文档示例、测试资源、普通日志或发布包。legacy 观察只允许随机精确 topic 的有界
+  SUBSCRIBE，不发布、不订阅控制/状态 topic、不登录管理后台或调用写 API。
+- 原因：MQTT 已是设备侧基础设施，标准 MQTT 5 能承载短期信令；独立平面和 adapter 能避免把协商
+  状态、媒体生命周期和设备控制混入同一故障域。排除明文 legacy 服务可以防止测试便利被误当产品
+  默认或安全证据。
+- 替代方案：继续建设 WSS；把 signaling 塞入 `MqttDeviceClient`；复用 legacy control/status topic；
+  在现有明文 Broker 上直接增加产品 listener；提前部署 TURN。它们分别增加未需要的在线服务、扩大
+  控制故障域、造成身份/消息混淆、违反测试设施边界或超出 Direct-only 范围。
+- 影响：本 ADR 只覆盖 ADR-044 的 WSS/TURN 首阶段选择；ADR-044 的 WebRTC 媒体、MQTT 控制、组合根
+  授权绑定、四路独立会话和禁止静默 RTMP fallback 继续有效。现有 schema、legacy topic、产品线程、
+  默认离线行为和运行时依赖不变。后续若进入第三方托管/客户嵌入、TURN 或 WSS，必须新建许可/架构 ADR。
+- 验证证据：当前只读事实与最终候选资格分别记录在
+  `docs/versions/webrtc-v2/p2p-direct-00/broker_decision.md` 和 `test_results.md`；未完成的隔离候选
+  fixture 不得预写为通过。
+- 相关文件：`docs/roadmap/RtmpMonitor_WebRTC_MQTT_Signaling_Direct_P2P_Productization_Outline_v2.md`、
+  `docs/roadmap/RtmpMonitor_WebRTC_MQTT_Signaling_Direct_P2P_Implementation_Plan.md`、
+  `docs/versions/webrtc-v2/p2p-direct-00/`
+
 ## ADR-XXX 标题
 
 - 日期：
