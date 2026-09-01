@@ -43,9 +43,13 @@ file(GLOB_RECURSE publisher_files
     "${PROJECT_SOURCE_DIR}/src/common/publisher/*.h"
     "${PROJECT_SOURCE_DIR}/src/common/publisher/*.cpp")
 file(GLOB_RECURSE identity_contract_files
-    "${PROJECT_SOURCE_DIR}/include/common/identity_contracts/*.h")
+    "${PROJECT_SOURCE_DIR}/include/common/identity_contracts/*.h"
+    "${PROJECT_SOURCE_DIR}/src/common/identity_contracts/*.h"
+    "${PROJECT_SOURCE_DIR}/src/common/identity_contracts/*.cpp")
 file(GLOB_RECURSE signaling_contract_files
-    "${PROJECT_SOURCE_DIR}/include/common/signaling_contracts/*.h")
+    "${PROJECT_SOURCE_DIR}/include/common/signaling_contracts/*.h"
+    "${PROJECT_SOURCE_DIR}/src/common/signaling_contracts/*.h"
+    "${PROJECT_SOURCE_DIR}/src/common/signaling_contracts/*.cpp")
 file(GLOB_RECURSE signaling_channel_files
     "${PROJECT_SOURCE_DIR}/include/common/signaling_channel/*.h"
     "${PROJECT_SOURCE_DIR}/src/common/signaling_channel/*.h"

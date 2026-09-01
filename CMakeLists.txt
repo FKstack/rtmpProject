@@ -367,6 +367,34 @@ target_link_libraries(rtmp_monitor_logging
 
 rtmp_monitor_apply_project_options(rtmp_monitor_logging)
 
+# P2P-DIRECT-01 is an offline contract layer. These targets are deliberately
+# outside the product object graph and have no network or broker dependency.
+add_library(rtmp_monitor_identity_contracts STATIC
+    include/common/identity_contracts/IdentityContracts.h
+    src/common/identity_contracts/IdentityContracts.cpp)
+target_include_directories(rtmp_monitor_identity_contracts PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/common)
+rtmp_monitor_apply_project_options(rtmp_monitor_identity_contracts)
+
+add_library(rtmp_monitor_signaling_contracts STATIC
+    include/common/signaling_contracts/SignalingContracts.h
+    src/common/signaling_contracts/SignalingContracts.cpp)
+target_include_directories(rtmp_monitor_signaling_contracts PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/common)
+target_link_libraries(rtmp_monitor_signaling_contracts
+    PUBLIC rtmp_monitor_identity_contracts
+    PRIVATE Qt6::Core)
+rtmp_monitor_apply_project_options(rtmp_monitor_signaling_contracts)
+
+add_library(rtmp_monitor_runtime_config STATIC
+    include/common/runtime_config/MqttRuntimeConfig.h
+    src/common/runtime_config/MqttRuntimeConfig.cpp)
+target_include_directories(rtmp_monitor_runtime_config PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/common)
+target_link_libraries(rtmp_monitor_runtime_config
+    PRIVATE rtmp_monitor_identity_contracts)
+rtmp_monitor_apply_project_options(rtmp_monitor_runtime_config)
+
 add_library(rtmp_monitor_webrtc_contracts INTERFACE)
 target_sources(rtmp_monitor_webrtc_contracts INTERFACE
     include/common/webrtc_contracts/WebRtcSessionContracts.h)
@@ -1153,6 +1181,16 @@ endif()
 include(CTest)
 
 if(BUILD_TESTING)
+    add_executable(rtmp_monitor_direct_contracts_test
+        tests/DirectContractsTest.cpp)
+    target_link_libraries(rtmp_monitor_direct_contracts_test PRIVATE
+        rtmp_monitor_identity_contracts
+        rtmp_monitor_signaling_contracts
+        rtmp_monitor_runtime_config)
+    rtmp_monitor_apply_project_options(rtmp_monitor_direct_contracts_test)
+    add_test(NAME rtmp_monitor_direct_contracts_test
+        COMMAND rtmp_monitor_direct_contracts_test)
+
     qt_add_executable(rtmp_monitor_event_center_service_test
         tests/EventCenterServiceTest.cpp
     )
