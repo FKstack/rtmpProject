@@ -5,8 +5,8 @@
 > 权威总纲：`RtmpMonitor_WebRTC_MQTT_Signaling_Direct_P2P_Productization_Outline_v2.md`
 > 实施基线：`Beta` / `23c0949`
 > 风险等级：R2
-> 状态：`P2P-DIRECT-00=passed(scope_reduced_by_user_decision)`；用户通过 ADR-047 取消 Broker
-> 安全资格的阶段前置，`P2P-DIRECT-01` 已解锁。未执行的安全矩阵不声明通过。
+> 状态：`P2P-DIRECT-00=passed(scope_reduced_by_user_decision)`；`P2P-DIRECT-01=passed`（仅离线
+> contract/provisioning 范围）。未执行的 Broker/MQTTS/真实 P2P 能力不声明通过。
 
 本文把 MQTT 信令版总纲展开为可直接执行的阶段、接口、协议、部署、验证和回滚计划。本文不改变总纲约定；实际源码、CMake、运行结果和测试结果高于本文。任何尚未取得的 Broker、摄像头、物理网络或 ARM 真机证据均保持“待验证”。
 
@@ -30,7 +30,9 @@
 ### 1.2 Broker、客户端库与公网选型
 
 - **不得自研 MQTT Broker、STUN/TURN、WSS 转发器或 SDP/ICE 中央协调服务。**
-- 第一选择是加固现有 EMQX 单节点，但 `P2P-DIRECT-00` 必须先取得真实 `emqx version`、补丁状态和许可结论。通过门禁时锁定 EMQX 6.2.x 的受支持补丁版。Mosquitto 2.1.2 只是已冻结的回退候选，也必须通过同一套TLS/ACL/retain/QoS/expiry/limit恶意客户端fixture；Dynamic Security本身若无法按retain/QoS谓词拒绝publish，且没有经审计的受支持扩展，`P2P-DIRECT-00` 阻断，不带病回退、不临时自研Broker插件。
+- EMQX/Mosquitto 的版本、补丁、许可与 TLS/ACL/retain/QoS/expiry/limit 恶意客户端 fixture 保留为
+  可选未来加固；按 ADR-047 不再作为 DIRECT-00/01 的阶段前置。未执行时不得声明产品安全资格，
+  Dynamic Security 能力不足时也不临时自研 Broker 插件。
 - EMQX 5.9+ 使用 BSL 1.1；是否能作为最终交付的一部分必须完成许可审查。Mosquitto 2.1.2 是明确的 EPL/EDL 回退。版本依据见 [EMQX 6.2.3 官方发布说明](https://docs.emqx.com/en/emqx/latest/changes/changes-ee-v6.html#v6-2-3)、[EMQX LICENSE](https://github.com/emqx/emqx/blob/master/LICENSE)、[Mosquitto 2.1.2](https://mosquitto.org/blog/2026/02/version-2-1-2-released/)。
 - 客户端继续使用 [Paho MQTT C 1.3.16](https://github.com/eclipse-paho/paho.mqtt.c/releases/tag/v1.3.16)；不更换 MQTT SDK。产品路径改用 SSL-enabled `paho-mqtt3as` 和 MQTT 5 create/connect API。不得在同一个可执行程序中同时链接 `paho-mqtt3a` 与 `paho-mqtt3as` 的同名 API；迁移时先把现有 control target 统一切到 `paho-mqtt3as`，其原有 `tcp://` 行为仍作为迁移兼容路径。MQTT5属性和packet语义以[OASIS MQTT 5.0](https://docs.oasis-open.org/mqtt/mqtt/v5.0/mqtt-v5.0.html)为准。
 - 公网预发布 MQTTS 是 `P2P-DIRECT-02` 的前置必需品；公网 STUN-only 是 `P2P-DIRECT-03` 的前置必需品。
@@ -262,7 +264,10 @@ rtmp-monitor/v1/authority/to/provisioner/{authorityId}/from/operator/{operatorId
 | Provisioner authority P | 仅向受影响device/operator的source-bound revocation route发布 | 仅订阅对应device/operator ACK route；不订阅SDP/control/presence业务数据 |
 | Broker admin | 仅受控运维接口 | 仅监控/审计接口 |
 
-ACL 由 provisioning 工具生成精确 topic，不给产品 credential 配置 `#` 或根级 `+`。Broker 必须校验 publish topic、QoS 和 retained；客户端再次校验 topic path 与 envelope source/target 一致。EMQX 保留时使用其内置认证/授权和 retain 条件。Mosquitto 候选仅使用 Dynamic Security 不足以假定retain/QoS谓词已受控；它必须用恶意客户端通过同一能力fixture，否则阶段阻断并另立Broker/extension ADR，第一版不临时自研安全插件。
+ACL 由 provisioning 工具生成精确 topic，不给产品 credential 配置 `#` 或根级 `+`。未来 Broker adapter
+仍应校验 publish topic、QoS 和 retained，客户端再次校验 topic path 与 envelope source/target 一致。
+当前未执行 EMQX/Mosquitto 能力 fixture，不据此声明产品安全；能力不足时另立 Broker/extension ADR，
+第一版不临时自研安全插件。
 
 ### 4.4 设备目录与 presence
 
@@ -1169,7 +1174,7 @@ RTMP退役的必要条件是“不安装SRS、不配RTMP URL也能完成设备�
 | --- | --- | --- |
 | SSH host/user/key引用、host fingerprint、现有Broker安装边界 | `P2P-DIRECT-00` Broker审计前 | 只完成本地contract，不猜服务器 |
 | MQTT/STUN域名、DNS变更权限和DNS-01最小权限API方式 | `P2P-DIRECT-01` 结束前 | 使用本地staging证据，不对外声称公网通过 |
-| EMQX许可/交付法务结论 | `P2P-DIRECT-00` 决策门禁 | 运行Mosquitto同等fixture；也不通过则阶段阻断 |
+| EMQX许可/交付法务结论 | 可选未来加固 | 保持未验证，不阻塞当前离线研发；不声明产品交付资格 |
 | 两台Windows x64物理机、至少两个真camera/source、三种已记录NAT/防火墙拓扑 | `P2P-DIRECT-04` 退出前 | 可完成本地/harness开发证据，物理资格保持false |
 | 四个独立DeviceId/agent/source；RC时四个独立物理camera/encoder（可分布在两台以上主机） | `P2P-DIRECT-05` 四路软件门禁 / `P2P-DIRECT-08` RC物理门禁 | `P2P-DIRECT-05`可用四个隔离harness证明生命周期，`P2P-DIRECT-08`不得用单source复制替代四路物理资格 |
 | 执行器/下位机型号、通信协议、独立≤500ms watchdog能力、物理停止传感器/测量方法和安全测试台 | `P2P-DIRECT-06` 开始/退出前 | 缺失时只能保留video与`controlEnabled=false`，不宣称控制闭环 |

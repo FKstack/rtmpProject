@@ -1459,6 +1459,10 @@ CTest 14/14 通过；ARM64 RASTER 构建 NEEDED 无 Qt6OpenGL*/EGL/GLES，GLES3 
 本地四矩阵、ARM、DAG 和 legacy 观察通过；用户通过 ADR-047 取消隔离 Broker 安全资格的阶段前置，
 状态为 `passed(scope_reduced_by_user_decision)` 并解锁 DIRECT-01。未执行的 Broker 安全矩阵不声明通过。
 
+2026-09-02 更新：`P2P-DIRECT-01=passed`。身份/Topic/消息/ACL/TTL/去重/状态机与离线 provisioning
+contract 已实现并通过 Windows 四矩阵、ARM64 OFF 交叉构建和 Go unit/race/fuzz；没有 UI、Broker
+连接或产品入口。该状态不代表 MQTTS、Broker 安全或真实 P2P 链路完成。
+
 ## 26. WebRTC V2 Week 10 本地 Beta 资格候选（2026-08-31）
 
 - 源版本集中为 `0.2.0-beta.1`；fresh Debug/Release × WebRTC OFF/ON 四矩阵分别通过 39/39、

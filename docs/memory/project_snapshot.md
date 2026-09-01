@@ -1,5 +1,11 @@
 # RtmpMonitor 当前项目快照
 
+> P2P-DIRECT-01（2026-09-02）：状态 `passed`，只表示离线身份、Topic、严格消息、TTL/重放/墓碑/ACK、
+> 状态迁移、candidate 策略、非敏感 runtime config 和 Go provisioning artifact 契约稳定。新增三个未接入
+> 产品对象图的 C++ 静态目标与标准库-only Go CLI；无 UI、Broker 连接或默认网络变化。最终 Windows
+> Debug/Release OFF 41/41、41/41，ON 51/51、51/51；ARM64 RASTER/GLES3 OFF 交叉构建通过；Go
+> unit/race/fuzz、CLI smoke、DAG/层门禁和端点扫描通过。Broker/MQTTS/真实 P2P 仍未验证。
+
 > P2P-DIRECT-00 本地基线（2026-09-01）：架构风险 R2。首阶段产品信令冻结为 MQTT 5 over TLS，
 > signaling/control 分连接、principal、topic、ACL、队列和状态机；legacy `device/control`、
 > `device/status` 与默认离线保持不变。旧 WSS Draft 1 已归档，ADR-046 只覆盖 ADR-044 的首阶段

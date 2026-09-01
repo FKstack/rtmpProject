@@ -19,4 +19,5 @@ UNSUBSCRIBE、DISCONNECT；不发布、不订阅 control/status、不记录地�
 ## 产品候选
 
 对隔离 EMQX 6.2.3 运行完整 capability fixture。当前仓库未包含或部署候选实例，未取得真实结果前阶段
-保持 `blocked(broker_candidate)`。Mosquitto 只在 EMQX 任一门禁失败后用同一 fixture 复验。
+按 ADR-047，本阶段已改为 `passed(scope_reduced_by_user_decision)`；该矩阵保留为可选未来加固，
+未执行且不声明通过，也不再阻塞 DIRECT-01。

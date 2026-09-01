@@ -906,7 +906,7 @@
 ## ADR-046 第一阶段采用隔离的 MQTT TLS 信令并排除 legacy 公网测试 Broker
 
 - 日期：2026-09-01
-- 状态：已采用；`P2P-DIRECT-00` 本地门禁完成，产品 Broker 候选仍阻塞
+- 状态：已采用；原 Broker 阻塞结论已由 ADR-047 的用户范围决定覆盖
 - 背景：现有 RTMP 产品使用默认关闭、Broker 地址为空的单客户端 MQTT 3.1.1 控制路径，
   `device/control` 与 `device/status` 分别承担嵌入式设备控制和状态观察。用户另行授权的远程设施只
   提供公网明文 MQTT 与 HTTP 管理面，用于兼容性观察，不具备产品 MQTTS、安全或许可资格。ADR-044
